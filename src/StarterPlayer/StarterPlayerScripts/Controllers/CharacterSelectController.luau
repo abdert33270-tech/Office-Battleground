@@ -17,6 +17,8 @@
 	  cartes verrouillées (cadenas + pastille "$2,500" / "R$ 299" / "FREE" / "OWNED"), skins consultables,
 	  PLAY seulement si possédé sinon BUY (fenêtre de confirmation pour le Cash, Game Pass pour Robux,
 	  "COMING SOON" tant que GamePassId = 0). Le choix auto de l'arrivée ne prend qu'un perso possédé.
+	PERSO PHARE (Characters[id].Featured, ex. The Bacon) : en tête de la grille (Config/Characters), contour + nom dorés,
+	  ruban LEGENDARY et reflet animé ; à l'ouverture sans perso joué, on montre le premier perso POSSÉDÉ.
 ]]
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -664,7 +666,25 @@ local function buildCard(charId, order)
 		sfx("UIClick", 1.1, 0.4)
 		selectChar(charId)
 	end)
-	cards[charId] = { btn = b, stroke = st, view = view, tag = tag, tagL = tagL, playing = playing, order = order, lock = lock, chip = chip, chipL = chipL, name = nm }
+	-- perso phare (Characters[id].Featured, ex. The Bacon) : contour doré, ruban LEGENDARY, reflet qui balaie le portrait
+	local featured = kit.Featured == true
+	if featured then
+		local rib = UIKit.new("Frame", { Name = "Featured", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -4, 1, -4), Size = UDim2.fromOffset(56, 16), BackgroundColor3 = COL.Gold, ZIndex = 9, Parent = band })
+		UIKit.corner(rib, UDim.new(0, 6))
+		UIKit.stroke(rib, 2, UIKit.Black, true)
+		UIKit.new("UIGradient", { Color = ColorSequence.new(Color3.fromRGB(255, 245, 200), Color3.fromRGB(255, 160, 20)), Rotation = 90, Parent = rib })
+		local rl = UIKit.label({ Text = "LEGENDARY", Size = UDim2.new(1, -6, 0.8, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 1.5, ZIndex = 10 })
+		rl.Parent = rib
+		local shine = UIKit.new("Frame", { Name = "Shine", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(-0.4, 0.5), Size = UDim2.new(0, 26, 1.6, 0), Rotation = 20, BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.6, BorderSizePixel = 0, ZIndex = 4, Parent = band })
+		task.spawn(function()
+			while shine.Parent do
+				shine.Position = UDim2.fromScale(-0.4, 0.5)
+				UIKit.tween(shine, 0.7, { Position = UDim2.fromScale(1.4, 0.5) })
+				task.wait(2.6)
+			end
+		end)
+	end
+	cards[charId] = { btn = b, stroke = st, view = view, tag = tag, tagL = tagL, playing = playing, order = order, lock = lock, chip = chip, chipL = chipL, name = nm, featured = featured }
 end
 
 -- état de déblocage des cartes
@@ -673,7 +693,7 @@ local function paintLocks()
 		local e = unlockOf(id)
 		local own = ownsChar(id)
 		c.lock.Visible = not own
-		c.name.TextColor3 = own and UIKit.White or Color3.fromRGB(170, 170, 185)
+		c.name.TextColor3 = c.featured and COL.Gold or (own and UIKit.White or Color3.fromRGB(170, 170, 185))
 		if e.Tier == "Free" then
 			c.chipL.Text = "FREE"
 			c.chip.BackgroundColor3 = Color3.fromRGB(90, 130, 200)
@@ -694,7 +714,7 @@ local function paintCards()
 	local cur = player.Character and player.Character:GetAttribute("CharacterName")
 	for id, c in pairs(cards) do
 		local on = id == selChar
-		c.stroke.Color = on and COL.Yellow or UIKit.Black
+		c.stroke.Color = on and COL.Yellow or (c.featured and COL.Gold or UIKit.Black)
 		c.stroke.Thickness = on and 4 or 3
 		c.btn.BackgroundColor3 = on and COL.CardOn or COL.Card
 		c.playing.Visible = cur == id
@@ -2377,7 +2397,7 @@ function Select.open(withTimer: boolean?)
 	root.Visible = true
 	UIKit.pop(root, 1.04)
 	local cur = player.Character and player.Character:GetAttribute("CharacterName")
-	selectChar((cur and Characters[cur] and cur) or selChar or Characters.Order[1])
+	selectChar((cur and Characters[cur] and cur) or selChar or firstOwned()) -- Order[1] = perso phare (souvent pas encore acheté)
 	refreshAll()
 	scrollToSelected()
 	task.spawn(function()
