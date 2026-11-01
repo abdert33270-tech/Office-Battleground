@@ -6,7 +6,8 @@
 	  Ambiance animée côté client (AFKController) via attributs : AmbSway (Model de feuillage, pivot), AmbBlink/AmbPhase/
 	  AmbMode/AmbBaseT (lumières), AmbCloud (Model nuage, vitesse), AmbHand/AmbPivot (aiguilles), Parts « Window » (ville).
 	- Entrée (remote "AFK" "Enter") validée serveur : données chargées, vivant, pas étourdi, pas de coup REÇU NI DONNÉ
-	  depuis CombatLockout s (Signals.Hit attaquant + victime), pas pendant un effondrement, recharge ToggleCooldown.
+	  depuis CombatLockout s (Signals.Hit / Blocked / GuardBroken / Parried, les deux camps), pas pendant un
+	  effondrement, recharge ToggleCooldown.
 	  L'objet tenu est lâché avant.
 	- Dedans : attribut perso SafeZone = true (CombatService ignore les coups), paie PayAmount / PayInterval s,
 	  bonus BonusAmount toutes les BonusEvery s sans sortir, plafond DailyCap / jour UTC (data.AFK = {Day, Earned}).
@@ -17,11 +18,18 @@
 	- Si un autre système déplace un joueur AFK hors de la salle (effondrement, réunion surprise...), il est remis dans la salle.
 	Attributs Player (HUD client) : AFKActive, AFKSince, AFKNextPay, AFKNextBonus (temps serveur GetServerTimeNow),
 	  AFKEarned (session), AFKCapLeft (Cash AFK encore possible aujourd'hui).
-	Remote "AFK" : client -> serveur "Enter" | "Exit" | "Toggle".
+	Remote "AFK" : client -> serveur "Enter" | "Exit" | "Toggle" | "Rejoin".
+- Reconnexion anti-expulsion ("Rejoin", envoyé par AFKController après Config.RejoinIdle s d'inactivité si l'astuce
+  VirtualUser n'a pas suffi) : joueur AFK, pas en transit, 1 fois / RejoinCooldown s => sauvegarde (DataService.save),
+  puis TeleportService:TeleportAsync(game.PlaceId, {player}, TeleportOptions{afkRejoin = true, afkEarned}) en pcall
+  (Studio : échoue => simple warn). À l'arrivée (GetJoinData().TeleportData.afkRejoin, même PlaceId), le joueur est
+  remis dans la salle dès que ses données et son perso sont prêts ; attribut AFKRejoined (temps serveur) => le HUD
+  affiche « Reconnected to keep you AFK ». afkEarned ne sert qu'à l'affichage (gains déjà dans data.AFK.Earned).
 	API : AFKService.isAFK(player) | enter(player) | exit(player) | forcePay(player) (admin /afkpay)
 ]]
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config.AFK)
@@ -47,6 +55,7 @@ local sessions = {} -- [player] = { character, enteredAt, lastPay, bonuses, earn
 local lastToggle = {} -- [player] = os.clock()
 local lastCombat = setmetatable({}, { __mode = "k" }) -- [character] = os.clock() du dernier coup reçu OU donné
 local busy = {} -- [player] = true pendant une téléportation
+local lastRejoin = {} -- [player] = os.clock() de la dernière reconnexion anti-expulsion demandée
 
 local function serverNow()
 	return workspace:GetServerTimeNow()
@@ -612,7 +621,8 @@ local function deny(player, text)
 	return false
 end
 
-function AFKService.enter(player: Player)
+-- carried : gains d'avant une reconnexion anti-expulsion (affichage seulement, déjà comptés dans data.AFK.Earned)
+function AFKService.enter(player: Player, carried: number?)
 	if sessions[player] or busy[player] then
 		return false
 	end
@@ -654,10 +664,12 @@ function AFKService.enter(player: Player)
 		end
 		return false
 	end
-	local s = { character = character, enteredAt = os.clock(), lastPay = os.clock(), bonuses = 0, earned = 0 }
+	local s = { character = character, enteredAt = os.clock(), lastPay = os.clock(), bonuses = 0, earned = carried or 0 }
 	sessions[player] = s
 	setAttrs(player, s)
-	Announce.toast(player, "Welcome to the Break Room! +" .. Config.PayAmount .. " Cash every minute.", Color3.fromRGB(120, 230, 255))
+	if not carried then
+		Announce.toast(player, "Welcome to the Break Room! +" .. Config.PayAmount .. " Cash every minute.", Color3.fromRGB(120, 230, 255))
+	end
 	return true
 end
 
@@ -779,6 +791,77 @@ local function tick()
 	end
 end
 
+------------------------------------------------------------------------
+-- Reconnexion anti-expulsion (Roblox expulse après 20 min d'inactivité)
+------------------------------------------------------------------------
+local function rejoin(player)
+	local s = sessions[player]
+	if not s or busy[player] then
+		return
+	end
+	local now = os.clock()
+	if now - (lastRejoin[player] or -math.huge) < (Config.RejoinCooldown or 600) then
+		return
+	end
+	lastRejoin[player] = now
+	busy[player] = true
+	task.spawn(function()
+		-- gains AFK déjà dans data.AFK.Earned / data.Cash : on sauve avant de partir pour que le serveur d'arrivée
+		-- les lise (la sauvegarde de PlayerRemoving repasse derrière)
+		pcall(DataService.save, player)
+		local ok, err = pcall(function()
+			local opts = Instance.new("TeleportOptions")
+			opts:SetTeleportData({ afkRejoin = true, afkEarned = s.earned })
+			TeleportService:TeleportAsync(game.PlaceId, { player }, opts)
+		end)
+		busy[player] = nil
+		if not ok then
+			-- Studio (pas de téléportation) ou serveur indisponible : on reste là
+			warn("[AFKService] reconnexion AFK impossible pour " .. player.Name .. " : " .. tostring(err))
+		end
+	end)
+end
+
+-- à l'arrivée d'une reconnexion AFK : remet le joueur dans la salle dès que données + perso sont prêts
+local function resumeAfterRejoin(player)
+	local okJoin, join = pcall(function()
+		return player:GetJoinData()
+	end)
+	local td = okJoin and type(join) == "table" and join.TeleportData
+	if type(td) ~= "table" or td.afkRejoin ~= true then
+		return
+	end
+	if join.SourcePlaceId ~= nil and join.SourcePlaceId ~= game.PlaceId then
+		return
+	end
+	-- donnée venue du client possible : affichage seulement, bornée
+	local cap = (Config.DailyCap or 0) > 0 and Config.DailyCap or 1e6
+	local carried = math.floor(math.clamp(tonumber(td.afkEarned) or 0, 0, cap))
+	task.spawn(function()
+		local t0 = os.clock()
+		local timeout = Config.RejoinAutoEnterTimeout or 45
+		local settled, nextTry = nil, 0
+		while player.Parent and os.clock() - t0 < timeout and not sessions[player] do
+			local character = player.Character
+			if DataService.get(player) and character and alive(character) then
+				-- laisse PlayerService / CharacterService finir l'apparition (afterSpawn) avant de déplacer le perso
+				settled = settled or os.clock()
+				if os.clock() - settled >= 2 and os.clock() >= nextTry and not World.collapsing then
+					if AFKService.enter(player, carried) then
+						player:SetAttribute("AFKRejoined", serverNow())
+						Announce.toast(player, "Reconnected to keep you AFK", Color3.fromRGB(120, 230, 255))
+						break
+					end
+					nextTry = os.clock() + 3 -- refus (message déjà affiché) : on réessaie sans spammer
+				end
+			else
+				settled = nil
+			end
+			task.wait(0.5)
+		end
+	end)
+end
+
 function AFKService.init()
 	local _, door, pad = buildRoom()
 
@@ -818,22 +901,29 @@ function AFKService.init()
 			else
 				AFKService.enter(player)
 			end
+		elseif op == "Rejoin" then
+			rejoin(player)
 		end
 	end)
 
-	-- verrou de combat : la victime ET l'attaquant (Signals.Hit(attacker, victim, ...))
-	Signals.Hit:Connect(function(attacker, victim)
+	-- verrou de combat : les deux camps de chaque échange (touché, bloqué, garde cassée, paré)
+	local function stamp(a, b)
 		local now = os.clock()
-		if typeof(victim) == "Instance" then
-			lastCombat[victim] = now
+		if typeof(a) == "Instance" then
+			lastCombat[a] = now
 		end
-		if typeof(attacker) == "Instance" and attacker ~= victim then
-			lastCombat[attacker] = now
+		if typeof(b) == "Instance" then
+			lastCombat[b] = now
 		end
-	end)
+	end
+	Signals.Hit:Connect(stamp) -- (attacker, victim, damage, info)
+	Signals.Blocked:Connect(stamp) -- (attacker, victim)
+	Signals.GuardBroken:Connect(stamp) -- (victim, attacker)
+	Signals.Parried:Connect(stamp) -- (defender, attacker)
 
 	local function onPlayer(player)
 		player:SetAttribute("AFKActive", false)
+		resumeAfterRejoin(player)
 		player.CharacterAdded:Connect(function()
 			if sessions[player] then
 				endSession(player)
@@ -848,6 +938,7 @@ function AFKService.init()
 		sessions[p] = nil
 		lastToggle[p] = nil
 		busy[p] = nil
+		lastRejoin[p] = nil
 	end)
 
 	task.spawn(function()

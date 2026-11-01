@@ -9,13 +9,18 @@
 	- Ambiance (seulement quand on est dans la salle, caméra proche) : plantes qui ondulent (Models AmbSway),
 	  lumières qui clignotent / pulsent (AmbBlink), nuages qui défilent (AmbCloud), fenêtres de la ville qui s'allument,
 	  horloge à l'heure locale (AmbHand). Qualité « Low » => seulement l'horloge ; « Reduce flashes » => pas de créneaux.
-	- Anti-inactivité : pendant AFKActive, Players.LocalPlayer.Idled => VirtualUser (sinon Roblox expulse au bout de 20 min).
+	- Anti-inactivité : pendant AFKActive, Players.LocalPlayer.Idled => essai VirtualUser (pcall ; souvent réservé aux
+	  scripts privilégiés => sans effet). Filet de sécurité : si l'inactivité (temps donné par Idled, remis à zéro par
+	  toute entrée UserInputService) atteint Config.RejoinIdle (17 min) toujours AFK, remote "AFK" "Rejoin" : le serveur
+	  reconnecte le joueur (TeleportService) et le remet dans la salle (attribut AFKRejoined => « Reconnected to keep
+	  you AFK » dans le HUD pendant 10 s). Sinon Roblox expulse au bout de 20 min.
 	Lit les attributs Player posés par AFKService : AFKActive, AFKSince, AFKNextPay, AFKNextBonus, AFKEarned, AFKCapLeft.
-	Remote "AFK" : "Enter" / "Exit". Fondu noir rapide à l'entrée / la sortie.
+	Remote "AFK" : "Enter" / "Exit" / "Rejoin". Fondu noir rapide à l'entrée / la sortie.
 ]]
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Debris = game:GetService("Debris")
 
 local UIKit = require(script.Parent.UIKit)
@@ -38,7 +43,10 @@ local gui, counter, timeText, earnedText, sub, barFill, fade
 local board -- { gui, labels }
 local lastSend = 0
 local lastEarned = 0
-local idleConn
+local idleConn, inputConn
+local idleStart -- os.clock() estimé du début de l'inactivité (d'après Players.LocalPlayer.Idled), nil = actif
+local lastRejoinAsk = -math.huge
+local REJOIN_NOTE = 10 -- s d'affichage de « Reconnected to keep you AFK »
 
 local function send(op)
 	if not remote or os.clock() - lastSend < 0.6 then
@@ -241,6 +249,10 @@ local function update()
 		barFill.Size = UDim2.fromScale(math.clamp(1 - toPay / Config.PayInterval, 0, 1), 1)
 		barFill.BackgroundColor3 = UIKit.Colors.Cash
 		local parts = { "next +" .. Config.PayAmount .. " in " .. fmt(toPay) }
+		local rj = tonumber(player:GetAttribute("AFKRejoined"))
+		if rj and now - rj < REJOIN_NOTE then
+			parts = { "Reconnected to keep you AFK" }
+		end
 		if nextBonus then
 			table.insert(parts, "bonus in " .. fmt(nextBonus - now))
 		end
@@ -301,8 +313,14 @@ end
 local function setAntiIdle(on)
 	if on and not idleConn then
 		local ok, vu = pcall(game.GetService, game, "VirtualUser")
-		idleConn = player.Idled:Connect(function()
-			if not active() or not ok or not vu then
+		idleStart = nil
+		idleConn = player.Idled:Connect(function(idleTime)
+			if not active() then
+				return
+			end
+			-- Idled donne le temps d'inactivité (s) : sert au filet de sécurité "Rejoin" (checkIdleRejoin)
+			idleStart = os.clock() - (tonumber(idleTime) or 120)
+			if not ok or not vu then
 				return
 			end
 			local done, err = pcall(function()
@@ -311,13 +329,39 @@ local function setAntiIdle(on)
 			end)
 			if not done and not AFK._idleWarned then
 				AFK._idleWarned = true
-				warn("[AFK] anti-idle indisponible : " .. tostring(err))
+				warn("[AFK] anti-idle VirtualUser indisponible (reconnexion à " .. math.floor((Config.RejoinIdle or 1020) / 60) .. " min) : " .. tostring(err))
 			end
 		end)
+		-- vraie entrée du joueur (touche, clic, toucher, souris / stick qui bouge) : il n'est plus inactif
+		local function wake()
+			idleStart = nil
+		end
+		inputConn = { UserInputService.InputBegan:Connect(wake), UserInputService.InputChanged:Connect(wake) }
 	elseif not on and idleConn then
 		idleConn:Disconnect()
 		idleConn = nil
+		if inputConn then
+			for _, c in ipairs(inputConn) do
+				c:Disconnect()
+			end
+			inputConn = nil
+		end
+		idleStart = nil
 	end
+end
+
+-- filet de sécurité : toujours inactif à RejoinIdle s (VirtualUser sans effet) => le serveur nous reconnecte
+-- avant l'expulsion des 20 min (il refuse si on n'est pas AFK ou si on l'a déjà demandé il y a < 10 min)
+local function checkIdleRejoin()
+	if not idleStart or not active() or not remote then
+		return
+	end
+	local now = os.clock()
+	if now - idleStart < (Config.RejoinIdle or 1020) or now - lastRejoinAsk < 60 then
+		return
+	end
+	lastRejoinAsk = now
+	remote:FireServer("Rejoin")
 end
 
 ------------------------------------------------------------------------
@@ -505,6 +549,7 @@ function AFK.init(ctx)
 			return
 		end
 		acc = 0
+		pcall(checkIdleRejoin)
 		local ok, err = pcall(update)
 		if not ok and not AFK._warned then
 			AFK._warned = true

@@ -516,6 +516,9 @@ function CombatService.applyHit(p)
 				hum:TakeDamage(chip)
 			end
 			knockback(victim, p.dir * 6, false, 0.1, attacker)
+			if Signals.Blocked then
+				Signals.Blocked:Fire(attacker, victim)
+			end
 			return "Blocked"
 		end
 	end

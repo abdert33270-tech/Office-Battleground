@@ -4,6 +4,7 @@
 	  un code = une fois par joueur (data.Codes[CODE] = os.time()). Expires : valable jusqu'à cette seconde incluse.
 	- Chargement DataStore raté (DataService.loadFailed) : refusé (« rejoin »), rien n'est consommé.
 	- Expires (os.time UTC) et MaxUses (compteur global DataStore "OfficeBattlegrounds_CodeUses" ; repli mémoire).
+	  Utilisation réservée avant la dernière vérification ; rendue (décrément) si le joueur part pendant l'attente.
 	- Anti-spam : 1 essai / 1,5 s ; 6 codes invalides de suite => bloqué 60 s.
 	Remote "RedeemCode" :
 		client -> serveur : code (string)
@@ -47,11 +48,12 @@ local function normalize(text)
 	return text
 end
 
--- réserve une utilisation globale ; renvoie true si autorisé
+-- réserve une utilisation globale ; renvoie (autorisé, source) — source = "store" | "local" | nil (pas de MaxUses),
+-- à passer à releaseUse si la récompense n'est finalement pas donnée
 local function reserveUse(entry)
 	local max = tonumber(entry.MaxUses)
 	if not max then
-		return true
+		return true, nil
 	end
 	if usesStore then
 		local allowed = false
@@ -67,16 +69,38 @@ local function reserveUse(entry)
 			end)
 		end)
 		if ok then
-			return allowed
+			return allowed, allowed and "store" or nil
 		end
 		warn("[CodeService] compteur MaxUses indisponible :", err)
 	end
 	local n = localUses[entry.Code] or 0
 	if n >= max then
-		return false
+		return false, nil
 	end
 	localUses[entry.Code] = n + 1
-	return true
+	return true, "local"
+end
+
+-- rend une utilisation réservée mais pas consommée (joueur parti pendant l'attente du DataStore, double requête)
+local function releaseUse(entry, source)
+	if source == "local" then
+		localUses[entry.Code] = math.max(0, (localUses[entry.Code] or 1) - 1)
+	elseif source == "store" and usesStore then
+		task.spawn(function()
+			local ok, err = pcall(function()
+				usesStore:UpdateAsync(entry.Code, function(old)
+					local n = tonumber(old) or 0
+					if n <= 0 then
+						return nil
+					end
+					return n - 1
+				end)
+			end)
+			if not ok then
+				warn("[CodeService] impossible de rendre une utilisation de " .. entry.Code .. " :", err)
+			end
+		end)
+	end
 end
 
 local function grant(player, reward)
@@ -148,13 +172,17 @@ function CodeService.redeem(player: Player, raw)
 	if entry.Expires and os.time() > entry.Expires then
 		return false, "Expired"
 	end
-	if not reserveUse(entry) then
+	local allowed, source = reserveUse(entry)
+	if not allowed then
 		return false, "This code has reached its limit"
 	end
+	-- reserveUse a pu attendre le DataStore : si on ne donne finalement rien, l'utilisation globale est rendue
 	if not player.Parent or DataService.get(player) ~= d then
+		releaseUse(entry, source)
 		return false, "Try again"
 	end
 	if d.Codes[code] then -- double requête pendant l'attente du DataStore
+		releaseUse(entry, source)
 		return false, "Already redeemed"
 	end
 	d.Codes[code] = os.time()

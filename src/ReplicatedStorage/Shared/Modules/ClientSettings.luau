@@ -17,8 +17,9 @@ local HttpService = game:GetService("HttpService")
 local ClientSettings = {}
 
 -- Ordre = ordre d'affichage dans le menu PARAMÈTRES. Type : "toggle" | "slider" (Min/Max/Step) | "choice" (Options)
+-- Pas de « MusicVolume » : le jeu n'a aucune musique. Une ancienne sauvegarde qui contient la clé reste valide :
+-- sanitize renvoie nil pour une clé inconnue => ignorée par pull() et retirée de data.Settings par SettingsService.
 ClientSettings.SCHEMA = {
-	{ Key = "MusicVolume", Label = "Music", Type = "slider", Min = 0, Max = 1, Step = 0.05, Default = 0.5, Section = "Audio" },
 	{ Key = "SFXVolume", Label = "Sound effects", Type = "slider", Min = 0, Max = 1, Step = 0.05, Default = 1, Section = "Audio" },
 	{ Key = "ScreenShake", Label = "Screen shake", Type = "slider", Min = 0, Max = 1, Step = 0.1, Default = 1, Section = "Camera" },
 	{ Key = "FOVKick", Label = "Camera zoom on hits", Type = "toggle", Default = true, Section = "Camera" },
@@ -117,10 +118,16 @@ function flush()
 	tokens = math.min(SEND_RATE, tokens + (now - tokensAt) * SEND_RATE)
 	tokensAt = now
 	for key, value in pairs(pending) do
-		if serverValues[key] == value then
-			-- revenu à la valeur déjà sauvegardée : rien à envoyer
-			pending[key] = nil
+		local w = awaiting[key]
+		if w and now > w.untilT then
 			awaiting[key] = nil
+			w = nil
+		end
+		if serverValues[key] == value and w == nil then
+			-- revenu à la valeur déjà sauvegardée et rien en vol : rien à envoyer.
+			-- (Si une autre valeur est encore en vol — A envoyé, retour à S avant l'écho de A —, on renvoie S :
+			-- sinon l'écho de A ferait repasser le serveur et le bouton sur A.)
+			pending[key] = nil
 		elseif tokens >= 1 then
 			tokens -= 1
 			pending[key] = nil

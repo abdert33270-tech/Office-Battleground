@@ -2,8 +2,10 @@
 	SettingsController — panneau SETTINGS (bouton du dock), construit depuis ClientSettings.SCHEMA (groupé par Section).
 	Contrôles : toggle (ON/OFF), slider (glisser, valeur appliquée au relâchement), choice (boutons).
 	Applique lui-même :
-		MusicVolume / SFXVolume -> SoundService SoundGroups "Music" / "SFX" (créés côté client s'ils manquent).
-			Volume du groupe = valeur du réglage (même règle que CartoonFX, qui crée aussi ces groupes).
+		SFXVolume -> SoundService SoundGroup "SFX" (créé côté client s'il manque).
+			Volume du groupe = valeur du réglage (même règle que CartoonFX, qui crée aussi ce groupe).
+			(Plus de réglage MusicVolume : aucune musique dans le jeu. Une piste ajoutée plus tard => remettre la clé
+			dans ClientSettings.SCHEMA et ici MusicVolume = "Music".)
 		AutoShiftLock -> active le shift-lock (ShiftLockController) à chaque apparition.
 		ShowHints     -> PlayerGui.ControlsHint (bandeau des commandes de HintController) visible ou non.
 	Les autres clés (ScreenShake, FOVKick, ComicWords, DamageNumbers, ReducedFlashes, Quality, UltCinematics)
@@ -32,7 +34,7 @@ local ctxRef
 ------------------------------------------------------------------------
 -- Application des réglages
 ------------------------------------------------------------------------
-local VOLUME_GROUPS = { MusicVolume = "Music", SFXVolume = "SFX" }
+local VOLUME_GROUPS = { SFXVolume = "SFX" }
 local DEFAULTS = ClientSettings.DEFAULTS
 
 local function groupVolume(key, value)

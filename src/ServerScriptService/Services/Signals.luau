@@ -13,6 +13,7 @@
 		Transformed(character: Model, characterName: string)
 		Parried(defender: Model, attacker: Model)
 		ItemPickedUp(character: Model, itemId: string) / ItemBroken(itemId: string)
+		Blocked(attacker: Model?, victim: Model) — coup bloqué sans casser la garde (CombatService, branche "Blocked")
 ]]
 local function newSignal()
 	local s = { _c = {} }
