@@ -1,0 +1,10 @@
+{
+  "className": "BloomEffect",
+  "properties": {
+    "Intensity": 1.0,
+    "SerializedOverrides": {
+      "BinaryString": ""
+    },
+    "Threshold": 2.0
+  }
+}
