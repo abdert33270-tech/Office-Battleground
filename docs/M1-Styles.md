@@ -26,7 +26,7 @@ Les objets tenus (Config/Items) ont aussi leur style (traînée, arc, impact) ; 
 La chaîne de 5 M1, l'uppercut, le downslam, les 3 coups du jongle et le dash strike utilisent toujours le style du personnage :
 tenir un objet remplace le M1 par le `Use` de l'objet. Arme en **main gauche** (`Hand = "Left"`, lu sur l'attribut du
 dossier `Signature`, sinon dans les données) → version miroir `<Nom>_L` de chaque animation (membres échangés,
-rotation du buste inversée), générée automatiquement par ProcAnim pour toutes les entrées de `Moves`.
+rotation du buste inversée), construite par ProcAnim à la demande au premier `play` (`ProcAnim.animFrames`).
 
 ## Timing (hit serveur inchangé)
 
@@ -60,24 +60,26 @@ mains), `Blunt5Golf` (swing de golf), `Heavy4Shove` (bélier à deux mains), `He
 Coups 1-3 propres à un personnage : `Brawl1Lead` (jab plongeant), `Brawl2Back` (revers tournant), `Brawl3Knee`
 (genou), `Brawl4Point` (index en mousse), `Slap1Edge` (manchette), `Slap2Fan` (éventail), `Slap3Stamp` (tampon),
 `Blunt1Snap` (coup sec), `Blunt2Baton` (moulinet de matraque), `Blunt2Crank` (tour de clé), `Blunt3Gavel` (« order! »),
-`Blunt3Tamp` (tassage), `Heavy1Curl` (curl), `Tech3Present` (pointeur).
+`Blunt3Tamp` (tassage), `Heavy1Curl` (curl), `Tech3Present` (pointeur), `Tech1Holo` (glissé holo), `Slap1Flip`
+(spatule retournée), `Blunt2Blare` (pavillon de mégaphone), `Long1Cord` (fil par-dessus l'épaule), `Long2Mop`
+(serpillière au ras du sol), `Heavy3Briefcase` (mallette à plat).
 
 ## Les 21 personnages
 
-Chaque personnage a au moins un coup 1-3 qu'aucun autre ne joue (en comptant le miroir `_L`) et une chaîne complète
+Chaque personnage a au moins un coup 1-3 qu'aucun autre ne joue (même en ignorant le miroir `_L`) et une chaîne complète
 différente (vérifié par script). Uppercut / downslam / dash strike / jongle = ceux de son archétype.
 
 | Perso | Arme fétiche (main) | Style | Coups 1-5 (surcharges en gras) | Couleurs traînée | Impact |
 |---|---|---|---|---|---|
 | Intern | gobelet de café (G) | Brawler | P1, P2, **Knee**, **Elbow**, **Shoulder** | crème → café | Splash |
-| Janitor | seau, serpillière (G) | Long | Long1-4, **Long5Spin** | eau | Splash |
-| LunchLady | spatule (D) | Slap | Slap1-3, **Double**, **Overhead** | blanc → rose | Slap |
+| Janitor | seau, serpillière (G) | Long | L1, **Mop**, L3, L4, **Long5Spin** | eau | Splash |
+| LunchLady | spatule (D) | Slap | **Flip**, S2, S3, **Double**, **Overhead** | blanc → rose | Slap |
 | SecurityGuard | matraque (D) | Blunt | B1, **Baton**, B3, B4, B5 | bleu nuit | Blunt |
-| AIAssistant | tablette holo (G) | Tech | Tech1-5 | cyan → magenta | Tech |
+| AIAssistant | tablette holo (G) | Tech | **Holo**, T2-T5 | cyan → magenta | Tech |
 | Accountant | calculatrice (G) | Slap | S1, **Fan**, S3, S4, **Overhead** | vert LCD | Slap |
 | Bacon | tranche de bacon (G) | Bacon | Bacon1-5 | rouge → doré | Bacon |
 | Barista | porte-filtre (D) | Blunt | B1, B2, **Tamp**, **Thrust**, **Golf** | crème → café | Splash |
-| CEO | mallette (D) | Heavy | Heavy1-5 | or | Heavy |
+| CEO | mallette (D) | Heavy | H1, H2, **Briefcase**, H4, H5 | or | Heavy |
 | Consultant | tablette graphiques (G) | Tech | T1, T2, **Present**, **Swipe**, T5 | bleu → orange | Tech |
 | DeliveryGuy | colis (G) | Brawler | **Lead**, P2, P3, Hook, **Shoulder** | carton | Blunt |
 | FitnessCoach | kettlebell (D) | Heavy | **Curl**, H2, H3, **Shove**, **Ground** | vert citron | Heavy |
@@ -85,10 +87,10 @@ différente (vérifié par script). Uppercut / downslam / dash strike / jongle =
 | ITGuy | portable (G) | Slap | **Edge**, S2, S3, **Double**, S5 | turquoise | Tech |
 | Lawyer | marteau de juge (D) | Blunt | B1, B2, **Gavel**, B4, **Hammer** | or → bordeaux | Blunt |
 | MaintenanceGuy | clé à molette (D) | Blunt | B1, **Crank**, B3, **Thrust**, B5 | jaune → orange | Heavy |
-| MarketingGuru | mégaphone (G) | Blunt | B1-4, **Golf** | rose → magenta | Blunt |
+| MarketingGuru | mégaphone (G) | Blunt | B1, **Blare**, B3, B4, **Golf** | rose → magenta | Blunt |
 | Mascot | main en mousse (G) | Brawler | P1, **Back**, P3, **Point**, Haymaker | jaune → rouge | Punch |
 | OfficeCat | pelote, griffes (G) | Claws | Claw1-5 | blanc → orange | Claws |
-| Receptionist | combiné, fil en fouet (D) | Long | Long1-5 | rose | Slap |
+| Receptionist | combiné, fil en fouet (D) | Long | **Cord**, L2-L5 | rose | Slap |
 | Temp | agrafeuse (D) | Blunt | **Snap**, B2, B3, **Thrust**, **Hammer** | indigo | Blunt |
 
 (G) = main gauche → toute la chaîne est jouée en miroir (`_L`). Personnage inconnu → Fists.
@@ -106,10 +108,11 @@ différente (vérifié par script). Uppercut / downslam / dash strike / jongle =
 
 **Mini-chaîne d'objet** (`M1Styles.ItemChains`) : chaque Use alterne `Jab ↔ JabB` (estoc plongeant),
 `SideSwing ↔ SideSwingB` (revers), `OverheadSwing ↔ OverheadSwingB` (diagonale). Les variantes ont exactement les
-mêmes temps de keyframes que l'original et le hit d'ItemService (Use.Windup) ne change pas. Le serveur
-(`ItemService.onUse`) choisit l'animation envoyée aux autres via `M1Style.itemAnim` ; le client local fait le même
-calcul au même moment (compteur par personnage, remis à zéro si l'objet change ou après `ItemChainReset` = 1,2 s
-sans Use). Seul un Use refusé par le serveur peut décaler l'alternance locale jusqu'à la remise à zéro.
+mêmes temps de keyframes que l'original et le hit d'ItemService (Use.Windup) ne change pas. Le client local choisit
+l'index (`M1Style.itemAnim`, compteur par personnage remis à zéro si l'objet change ou après `ItemChainReset` = 1,2 s
+sans Use) et l'envoie dans la remote Attack (`mods.ic`, borné par CombatService) ; le serveur (`ItemService.onUse`)
+l'accepte s'il vaut son index attendu ±1 ou 1 (remise à zéro), sinon garde le sien, et diffuse cette animation aux
+autres : tout le monde voit la variante que l'attaquant a jouée.
 `Slam` (objets à deux mains, trajectoire SlamPath) n'a pas de variante.
 
 ## Effets (M1StyleController)
@@ -122,14 +125,17 @@ sans Use). Seul un Use refusé par le serveur peut décaler l'alternance locale 
   ruban au bout du bras / de la jambe (`Limb` de `Moves` : M, O, B = deux mains, K = jambe).
 - **Arc de taillade** (`CartoonFX.slashArc`) : `Trail.Arc = "All"` ou `"Finisher"` (coups lourds) ; miroir pour la main
   gauche ; jamais en Low ; arcs des autres joueurs seulement en High ; toujours soumis à la charge d'effets
-  (`CartoonFX.count(11)` doit rendre ≥ 6 en local, ≥ 9 pour les autres, et compte l'arc dans la charge).
+  (`CartoonFX.budget()`, lecture seule, ≥ 0,55 en local / ≥ 0,8 pour les autres ; `CartoonFX.count(11)` seulement quand
+  l'arc est joué).
 - **Impact** : joueur local = petit éclair prédit au `Windup` sur les cibles de la hitbox (mêmes filtres que
   CombatController) ; **l'impact stylé complet** (local et autres) part au `Hit` serveur de l'attaquant reçu dans
   `Windup + 0,5 s` **et** dont l'arme `wp` (= `spec.Weapon`) correspond au coup : `Punch` / `Uppercut` / `Downslam` /
   `Dash Strike` pour la chaîne, `DisplayName` de l'objet pour un Use (les attaques / projectiles sont ignorés). Un coup
   paré ou bloqué n'a donc jamais d'impact stylé. S'ajoute à l'effet générique de CartoonFX.
 - **Whoosh** : couche du style (le local garde le Whoosh de CombatController) ; autres joueurs : finishers toujours,
-  sinon seulement à < 50 studs et au plus 3 par 0,35 s. `FinisherKey` = son réservé aux coups lourds (sifflet du Bacon).
+  sinon seulement à < 50 studs et au plus 3 par 0,35 s. `FinisherKey` = son réservé au 5e coup de la chaîne au sol
+  (sifflet du Bacon). Coups du jongle = légers (traînée courte, pas d'arc « Finisher », impact léger) ; uppercut,
+  downslam et dash strike = lourds.
 - **Réglages** : `Quality` (Low / Medium / High : quantités via `CartoonFX.count`, traînées max 4 / 8 / 14, durée des
   traînées −30 % en Low) ; `ReducedFlashes` (pas de néon, `LightEmission` 0, traînée plus transparente, pas de
   lumière). Chaque part d'impact est comptée dans la charge de CartoonFX. Coups des autres au-delà de 80 studs de la
@@ -140,7 +146,7 @@ sans Use). Seul un Use refusé par le serveur peut décaler l'alternance locale 
 ## Ajouter / modifier
 
 - Nouvelle animation : une entrée `swing(i, armé, impact)` dans `STYLE_ANIMS` (ProcAnim) **et** sa méta dans
-  `M1Styles.Moves` (même `I` que l'emplacement). Le miroir `_L` est automatique (sauf Use d'objets, jamais remappés).
+  `M1Styles.Moves` (même `I` que l'emplacement). Le miroir `_L` est construit à la demande (jamais pour les Use d'objets).
   Variantes d'uppercut / downslam / dash : helpers `up`, `slam`, `dash` ; jongle : une entrée dans `AirFrom`.
 - Nouveau personnage : une ligne dans `M1Styles.Characters` (`Style`, `Hand`, `Hits`, `Colors`…).
 - Nouvel objet : rien à faire (famille) ou une ligne dans `M1Styles.Items`.

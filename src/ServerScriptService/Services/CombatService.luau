@@ -1043,7 +1043,9 @@ function CombatService.init()
 		end
 		mods = type(mods) == "table" and mods or {}
 		local wantI = tonumber(mods.i)
+		local wantIC = tonumber(mods.ic) -- index de la mini-chaîne d'objet choisi par le client (vérifié par M1Style.itemAnim)
 		mods = {
+			ic = (wantIC and wantIC == math.floor(wantIC) and wantIC >= 1 and wantIC <= 1000) and wantIC or nil,
 			up = mods.up == true,
 			air = mods.air == true,
 			i = (wantI and wantI == math.floor(wantI) and wantI >= 1 and wantI <= M1.Hits) and wantI or nil,
@@ -1054,7 +1056,7 @@ function CombatService.init()
 		end
 		local s = CharacterState.get(character)
 		if s.held and CombatService.itemUseHandler then
-			CombatService.itemUseHandler(player, character, seq)
+			CombatService.itemUseHandler(player, character, seq, mods)
 		else
 			doM1(player, character, seq, mods)
 		end

@@ -399,7 +399,9 @@ function CombatController.attack()
 		nextAttack = t + use.Cooldown
 		busyUntil = nextAttack
 		combo = 0
-		ProcAnim.play(c, M1Style.itemAnim(c, use.Anim or "Jab"))
+		local useAnim, chainIndex = M1Style.itemAnim(c, use.Anim or "Jab")
+		mods.ic = chainIndex -- le serveur rejoue la même variante pour les autres joueurs
+		ProcAnim.play(c, useAnim)
 		if use.Lunge then
 			push(c, look * use.Lunge, 0.1)
 		end

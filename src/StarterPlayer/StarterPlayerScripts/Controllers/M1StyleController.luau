@@ -9,7 +9,7 @@
 	- autres joueurs : l'anim arrive par la remote « Anim » (FXController -> ProcAnim.play), effets à < 80 studs ;
 	- impact stylé complet (tous) : au « Hit » serveur de cet attaquant pendant la fenêtre du coup, si son arme
 	  (wp = spec.Weapon) est un coup de chaîne (Punch / Uppercut / Downslam / Dash Strike) ou l'objet du Use.
-	Budget : arcs jamais en Low, ceux des autres seulement en High, et soumis à la charge CartoonFX.count ; parts
+	Budget : arcs jamais en Low, ceux des autres seulement en High, et soumis à CartoonFX.budget() (lecture seule ; count seulement si l'arc est joué) ; parts
 	d'impact comptées dans cette charge ; whooshes des autres limités (finishers, ou 3 proches à la fois).
 	Traînée : Attachments sur l'arme (dossier « Signature » visible ou objet tenu via sa HoldWeld), sinon sur le bras
 	/ la jambe qui frappe. Limite de traînées simultanées selon la qualité ; tout est nettoyé par Debris.
@@ -489,8 +489,10 @@ local function heavyOf(meta, itemCfg): boolean
 		return (meta.I or 1) >= M1.Hits
 	elseif k == "Item" then
 		return itemCfg ~= nil and itemCfg.Use ~= nil and itemCfg.Use.Category == "Heavy"
+	elseif k == "Air" then
+		return false -- coups du jongle : légers (le coup qui clôt le jongle est le downslam, Kind "Slam")
 	end
-	return true -- uppercut, downslam, dash strike
+	return true -- uppercut, downslam, dash strike (catégorie Heavy)
 end
 
 local function hitboxOf(meta, itemCfg)
@@ -609,7 +611,9 @@ local function onSwing(c: Model, animName: string)
 	-- budget : jamais en Low ; ceux des autres joueurs seulement en High ; et seulement si la charge d'effets le permet
 	-- (CartoonFX.count réduit le nombre selon qualité × charge, et compte l'arc dans la charge)
 	local arcOk = arc and (arcMode == "All" or (arcMode == "Finisher" and heavy)) and q ~= "Low" and (isLocal or q == "High")
-	if arcOk and CartoonFX.count(11) >= (isLocal and 6 or 9) then
+	-- budget en lecture seule (qualité × charge) ; la charge n'est comptée (count) que si l'arc est vraiment joué
+	if arcOk and CartoonFX.budget() >= (isLocal and 0.55 or 0.8) then
+		CartoonFX.count(11)
 		task.delay(math.max(0, w - 0.04), function()
 			if not root.Parent then
 				return
@@ -639,7 +643,8 @@ local function onSwing(c: Model, animName: string)
 		end
 	end
 	if playWhoosh then
-		local key = (heavy and wh.FinisherKey) or wh.Key or "Whoosh"
+		local fifth = meta.Kind == "M1" and meta.I == M1.Hits -- son de finisher : 5e coup de la chaîne au sol seulement
+		local key = (fifth and wh.FinisherKey) or wh.Key or "Whoosh"
 		task.delay(math.max(0, w - 0.06), function()
 			if root.Parent then
 				CartoonFX.sound(key, root.Position, (wh.Volume or 0.4) * (isLocal and 1 or 0.8), wh.Pitch)

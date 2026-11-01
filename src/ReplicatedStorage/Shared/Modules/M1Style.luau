@@ -6,7 +6,7 @@
 		rendu tel quel. Arme fétiche en main gauche -> version miroir « <Nom>_L » (générée par ProcAnim).
 	M1Style.resolve(character) -> style résolu (objet tenu > arme fétiche > Fists), source ("Item"|"Signature"|"Fists"), itemId?
 	M1Style.forCharacter(name) / M1Style.forItem(itemId) -> style résolu (mis en cache)
-	M1Style.itemAnim(character, useAnim) -> animation du Use d'objet (alterne selon Config/M1Styles.ItemChains)
+	M1Style.itemAnim(character, useAnim, claimed?) -> animation du Use d'objet, index (Config/M1Styles.ItemChains)
 	M1Style.info(animName) -> méta de Moves, mirrored (vrai pour un « _L »), nom de base ; ou nil
 	M1Style.hand(character) -> "Right" | "Left" (main de l'arme fétiche)
 	Aucune dépendance au client (pas de ProcAnim ici) : utilisable par CombatService.
@@ -140,14 +140,15 @@ function M1Style.remap(character: Model, baseAnim: string): string
 	return name
 end
 
--- mini-chaîne d'objet : alterne les animations de Data.ItemChains[baseAnim] à chaque Use. Appelée au même moment
--- logique par le serveur (ItemService.onUse) et par le client local (CombatController) -> même choix, sauf Use refusé
--- par le serveur (le compteur client avance seul ; il se recale à la remise à zéro, ItemChainReset s sans Use).
+-- mini-chaîne d'objet : alterne les animations de Data.ItemChains[baseAnim] à chaque Use -> anim, index.
+-- Client local (CombatController) : calcule l'index et l'envoie (mods.ic de la remote Attack).
+-- Serveur (ItemService.onUse) : claimed = index du client, accepté s'il vaut l'index attendu ±1 ou 1 (remise à zéro
+-- côté client) ; sinon l'index serveur. L'anim diffusée aux autres = celle que le client a jouée.
 local itemChain = setmetatable({}, { __mode = "k" }) -- [personnage] = { n, last, item }
-function M1Style.itemAnim(character: Model, baseAnim: string): string
+function M1Style.itemAnim(character: Model, baseAnim: string, claimed: number?): (string, number?)
 	local list = Data.ItemChains[baseAnim]
 	if not list or not character then
-		return baseAnim
+		return baseAnim, nil
 	end
 	local now = os.clock()
 	local item = character:GetAttribute("HeldItem")
@@ -158,7 +159,10 @@ function M1Style.itemAnim(character: Model, baseAnim: string): string
 	end
 	st.n += 1
 	st.last = now
-	return list[((st.n - 1) % #list) + 1]
+	if type(claimed) == "number" and claimed == math.floor(claimed) and (math.abs(claimed - st.n) <= 1 or claimed == 1) then
+		st.n = claimed
+	end
+	return list[((st.n - 1) % #list) + 1], st.n
 end
 
 function M1Style.info(animName: string?)

@@ -934,6 +934,24 @@ local STYLE_ANIMS = {
 	Heavy1Curl = swing(1, -- curl explosif à deux mains (kettlebell)
 		{ RS = { p = -0.3, r = -0.1 }, LS = { p = -0.3, r = -0.1 }, RJ = { ln = 0.45 }, RH = { p = 0.5 }, LH = { p = 0.5 } },
 		{ RS = { p = 2.0, y = 0.3 }, LS = { p = 1.6, y = 0.4 }, RJ = { ln = -0.1 }, LH = { p = 0.8 }, RH = { p = -0.4 } }),
+	Tech1Holo = swing(1, -- glissé de doigt sur l'hologramme puis paume
+		{ RS = { p = 1.6, y = -0.5, r = -0.5 }, LS = { p = 1.3, y = 0.7 }, RJ = { tw = -0.45, ln = -0.05 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.5, y = 0.5, r = 0.1 }, LS = { p = 0.8, y = 0.7 }, RJ = { tw = 0.5, ln = 0.3 }, LH = { p = 0.7 }, RH = { p = -0.4 } }),
+	Slap1Flip = swing(1, -- coup de spatule retourné, du bas vers le haut
+		{ RS = { p = 0.2, y = 0.3, r = -0.3 }, LS = { p = 1.1, y = 0.7 }, RJ = { tw = -0.4, ln = 0.3 }, RH = { p = 0.35 }, LH = { p = 0.3 } },
+		{ RS = { p = 2.5, y = 0.2 }, LS = { p = 0.6, r = -0.3 }, RJ = { tw = 0.45, ln = -0.15 }, LH = { p = 0.7 }, RH = { p = -0.35 } }),
+	Blunt2Blare = swing(2, -- coup du pavillon du mégaphone, buste qui pousse
+		{ RS = { p = 1.3, y = 0.9, r = 0.1 }, LS = { p = 0.8, r = -0.3 }, RJ = { tw = 0.6, ln = -0.15 }, RH = { p = 0.2 } },
+		{ RS = { p = 1.7, y = -0.35, r = -0.2 }, LS = { p = 0.6, r = -0.6 }, RJ = { tw = -0.45, ln = 0.45 }, RH = { p = 0.85 }, LH = { p = -0.5 } }),
+	Long1Cord = swing(1, -- claquement du fil par-dessus l'épaule
+		{ RS = { p = 3.3, y = -0.6, r = -0.3 }, LS = { p = 1.0, y = 0.7 }, RJ = { tw = -0.5, ln = -0.3 }, RH = { p = -0.1 }, LH = { p = 0.25 } },
+		{ RS = { p = 1.2, y = 0.5 }, LS = { p = 0.5, r = -0.4 }, RJ = { tw = 0.5, ln = 0.4 }, LH = { p = 0.75 }, RH = { p = -0.35 } }),
+	Long2Mop = swing(2, -- coup de serpillière au ras du sol, retour
+		{ RS = { p = 0.9, y = 1.3 }, LS = { p = 0.9, y = 0.9 }, RJ = { tw = 0.8, ln = 0.4 }, RH = { p = 0.5 }, LH = { p = 0.2 } },
+		{ RS = { p = 0.8, y = -1.2, r = -0.4 }, LS = { p = 0.8, y = -0.6 }, RJ = { tw = -0.9, ln = 0.55 }, RH = { p = 0.8 }, LH = { p = -0.3 } }),
+	Heavy3Briefcase = swing(3, -- mallette tenue à plat à deux mains, poussée au visage
+		{ RS = { p = 1.0, y = 0.7 }, LS = { p = 1.0, y = 0.7 }, RJ = { ln = -0.2, tw = -0.35 }, RH = { p = 0.25 } },
+		{ RS = { p = 1.8, y = 0.2 }, LS = { p = 1.8, y = 0.2 }, RJ = { ln = 0.45, tw = 0.2 }, LH = { p = 0.9 }, RH = { p = -0.55 } }),
 	Tech3Present = swing(3, -- pointeur de présentation en estoc
 		{ RS = { p = 0.9, y = -0.8, r = -0.4 }, LS = { p = 1.4, y = 0.6 }, RJ = { tw = -0.6 }, LH = { p = 0.3 } },
 		{ RS = { p = 1.9, y = -0.3, r = -0.2 }, LS = { p = 0.9, y = 0.6 }, RJ = { tw = 0.4, ln = 0.3 }, LH = { p = 0.8 }, RH = { p = -0.45 } }),
@@ -1058,12 +1076,21 @@ local function mirrorFrames(frames)
 	return out
 end
 ProcAnim.mirrorFrames = mirrorFrames
--- version « _L » de chaque animation remappée (arme fétiche en main gauche : M1Style.remap) ; pas pour les Use d'objets
-for name, meta in pairs(M1StylesData.Moves) do
-	if meta.Kind ~= "Item" and ANIMS[name] and not ANIMS[name .. "_L"] then
-		ANIMS[name .. "_L"] = mirrorFrames(ANIMS[name])
+-- version « _L » (arme fétiche en main gauche : M1Style.remap) construite à la demande au premier play : seules les
+-- animations réellement jouées en miroir existent (jamais pour les Use d'objets)
+local function animFrames(name)
+	local frames = ANIMS[name]
+	if frames == nil and type(name) == "string" then
+		local base = string.match(name, "^(.+)_L$")
+		local meta = base and M1StylesData.Moves[base]
+		if meta and meta.Kind ~= "Item" and ANIMS[base] then
+			frames = mirrorFrames(ANIMS[base])
+			ANIMS[name] = frames
+		end
 	end
+	return frames
 end
+ProcAnim.animFrames = animFrames
 
 ProcAnim.Anims = ANIMS
 
@@ -1208,7 +1235,7 @@ local function apply(s, pose)
 end
 
 function ProcAnim.play(character: Model, name: string, speed: number?)
-	local frames = ANIMS[name]
+	local frames = animFrames(name)
 	local s = character and getState(character)
 	if not frames or not s then
 		return

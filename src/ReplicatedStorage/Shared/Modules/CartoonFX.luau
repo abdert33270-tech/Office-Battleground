@@ -133,6 +133,10 @@ local function qn(n: number?): number
 	return r
 end
 CartoonFX.count = qn
+-- facteur de budget en lecture seule (qualité × charge récente, 0,12 .. 1) : n'ajoute aucune charge
+function CartoonFX.budget(): number
+	return CartoonFX.quality() * budgetScale()
+end
 
 -- point d'ancrage invisible dans le monde (attachment dans Terrain)
 local function anchorAt(pos: Vector3, life: number)

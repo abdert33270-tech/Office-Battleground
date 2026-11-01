@@ -478,7 +478,7 @@ local function specialUse(character, rec, use)
 	return false
 end
 
-local function onUse(player: Player, character: Model, seq: number)
+local function onUse(player: Player, character: Model, seq: number, mods)
 	local s = CharacterState.get(character)
 	local rec = s.held
 	if not rec then
@@ -491,7 +491,8 @@ local function onUse(player: Player, character: Model, seq: number)
 	end
 	s.nextAttack = t + use.Cooldown
 	s.combo = 0
-	Anim:FireAllClients(character, M1Style.itemAnim(character, use.Anim or "Jab")) -- mini-chaîne (Config/M1Styles.ItemChains)
+	-- mini-chaîne (Config/M1Styles.ItemChains) : index du client (mods.ic) accepté s'il est cohérent avec celui du serveur
+	Anim:FireAllClients(character, (M1Style.itemAnim(character, use.Anim or "Jab", type(mods) == "table" and mods.ic or nil)))
 	if rec.cfg.SlamPath then
 		local weld = rec.model.PrimaryPart and rec.model.PrimaryPart:FindFirstChild("HoldWeld")
 		if weld then
