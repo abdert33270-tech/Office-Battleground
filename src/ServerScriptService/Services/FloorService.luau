@@ -56,15 +56,18 @@ end
 -- Éclairage par étage
 ------------------------------------------------------------------------
 local lightTweens = {}
-local lightingFloor = nil -- nom de l'étage dont l'éclairage est appliqué (ou visé)
 
-local function outageActive(): boolean
+local function eventActive(name: string): boolean
 	local es = eventService()
 	if not es or type(es.isActive) ~= "function" then
 		return false
 	end
-	local ok, on = pcall(es.isActive, "PowerOutage")
+	local ok, on = pcall(es.isActive, name)
 	return ok and on == true
+end
+
+local function outageActive(): boolean
+	return eventActive("PowerOutage")
 end
 
 local function cancelLighting()
@@ -98,7 +101,6 @@ end
 
 -- applique l'éclairage de l'étage name (fondu de time s ; 0 = instantané). Sans effet pendant une coupure.
 local function applyLighting(name: string?, time: number?)
-	lightingFloor = name
 	if outageActive() then
 		return -- la coupure remettra ses valeurs puis EventEnded relancera le fondu
 	end
@@ -115,7 +117,8 @@ local function applyLighting(name: string?, time: number?)
 	end
 	setProps(Lighting, base, time)
 	local atm = Lighting:FindFirstChildOfClass("Atmosphere")
-	if atm and type(L.Atmosphere) == "table" then
+	-- l'alerte incendie épaissit l'atmosphère (et la remet à la fin) : on n'y touche pas pendant qu'elle dure
+	if atm and type(L.Atmosphere) == "table" and not eventActive("FireAlarm") then
 		setProps(atm, L.Atmosphere, time)
 	end
 	if type(L.Grade) == "table" then
