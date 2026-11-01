@@ -744,8 +744,11 @@ local function doM1(player: Player, character: Model, seq: number, mods)
 	if t < s.nextAttack - TOL or s.blocking or CharacterState.inSafeZone(character) then
 		return
 	end
-	-- en l'air : vu par le serveur, ou annoncé par le client pendant le jongle d'uppercut (la montée arrive avec du retard)
-	local airborne = CharacterState.isAirborne(character) or (mods.air and t < s.airChainUntil)
+	-- en l'air : vu par le serveur, ou annoncé par le client et plausible (jongle d'uppercut en cours, ou vitesse
+	-- verticale répliquée non nulle : la physique du joueur arrive au serveur avec un peu de retard)
+	local cRoot = character:FindFirstChild("HumanoidRootPart")
+	local airborne = CharacterState.isAirborne(character)
+		or (mods.air and (t < s.airChainUntil or (cRoot ~= nil and math.abs(cRoot.AssemblyLinearVelocity.Y) > 3)))
 	local DS = CombatConfig.DashStrike
 	local U = CombatConfig.Uppercut
 	local spec, anim, windup, onLanded

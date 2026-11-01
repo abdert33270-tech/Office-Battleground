@@ -41,15 +41,19 @@ function Net.get(name: string): RemoteEvent
 	return folder:WaitForChild(name)
 end
 
--- Limiteur "seau de jetons" par joueur et par remote
+-- Limiteur "seau de jetons" par joueur et par remote (buckets[UserId][remote])
 local buckets = {}
 function Net.allow(player: Player, name: string, perSecond: number): boolean
-	local key = player.UserId .. name
+	local mine = buckets[player.UserId]
+	if not mine then
+		mine = {}
+		buckets[player.UserId] = mine
+	end
 	local now = os.clock()
-	local b = buckets[key]
+	local b = mine[name]
 	if not b then
 		b = { tokens = perSecond, t = now }
-		buckets[key] = b
+		mine[name] = b
 	end
 	b.tokens = math.min(perSecond, b.tokens + (now - b.t) * perSecond)
 	b.t = now
@@ -61,10 +65,9 @@ function Net.allow(player: Player, name: string, perSecond: number): boolean
 end
 
 if RunService:IsServer() then
+	-- on oublie tous les seaux du joueur (y compris ceux des remotes créées par les services : Dash, Block, Ability...)
 	game:GetService("Players").PlayerRemoving:Connect(function(p)
-		for _, name in ipairs(NAMES) do
-			buckets[p.UserId .. name] = nil
-		end
+		buckets[p.UserId] = nil
 	end)
 end
 

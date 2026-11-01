@@ -103,8 +103,10 @@ local function jumpHeld(hum)
 		or (hum ~= nil and hum.Jump == true) -- bouton saut mobile (et toute entrée de saut du ControlModule)
 end
 
-local function chainActive()
-	return combo > 0 and os.clock() - lastM1 <= M1.ComboReset
+-- fin de chaîne au sol (après le 3e coup) : Espace sert à l'UPPERCUT, il ne doit pas faire sauter.
+-- (sauter pendant les coups 1-3 reste possible : la chaîne continue en l'air et le 5e coup devient un DOWNSLAM)
+local function uppercutReady()
+	return combo >= 3 and combo < M1.Hits and os.clock() - lastM1 <= M1.ComboReset
 end
 
 -- ennemi le plus proche dans le cône devant la caméra (verrouillage doux)
@@ -736,7 +738,7 @@ function CombatController.init()
 	bind("OB_Ability2", function(d) if d then CombatController.ability(2) end end, Enum.KeyCode.Two)
 	bind("OB_Ability3", function(d) if d then CombatController.ability(3) end end, Enum.KeyCode.Three)
 
-	-- verrou de saut : pendant la chaîne au sol (Espace maintenu pour l'uppercut ne doit pas faire sauter)
+	-- verrou de saut : fin de chaîne au sol et armé de l'uppercut (Espace maintenu ne doit pas faire sauter)
 	local jumpLocked, jumpLockHum = false, nil
 	local function setJumpLock(hum, on)
 		if jumpLocked == on and jumpLockHum == hum then
@@ -764,7 +766,7 @@ function CombatController.init()
 			return
 		end
 		local t = os.clock()
-		setJumpLock(hum, (chainActive() or t < riseLockUntil) and hum.FloorMaterial ~= Enum.Material.Air)
+		setJumpLock(hum, (uppercutReady() or t < riseLockUntil) and hum.FloorMaterial ~= Enum.Material.Air)
 		-- clic maintenu = enchaîne
 		if holdingAttack then
 			if holdingWithMouse and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then

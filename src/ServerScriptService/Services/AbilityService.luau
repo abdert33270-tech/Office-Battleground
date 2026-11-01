@@ -575,6 +575,9 @@ local function onAbility(player: Player, slot, aim)
 	if not CharacterState.isAlive(character) or CharacterState.isStunned(character) then
 		return
 	end
+	if CharacterState.inSafeZone and CharacterState.inSafeZone(character) then
+		return -- salle AFK : aucune attaque
+	end
 	local s = CharacterState.get(character)
 	if s.blocking or s.held and s.held.cfg.Hold == "TwoHands" then
 		return

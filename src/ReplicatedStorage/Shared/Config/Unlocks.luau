@@ -5,7 +5,8 @@
 	- Robux : achat permanent via Game Pass (GamePassId ; 0 = pas encore créé sur le site => « COMING SOON »).
 	          Robux = prix affiché seulement (le vrai prix se règle sur le site Roblox).
 	Un perso absent de cette liste est GRATUIT (aucun perso ne devient injouable par oubli).
-	Les persos Robux restent équilibrés comme les autres (jamais plus forts).
+	Les persos Robux restent équilibrés comme les autres (jamais plus forts), SAUF The Bacon : perso phare voulu
+	par le propriétaire comme le plus cher ET le plus fort du jeu (passif Main Character), sans aucun skin.
 	API : Unlocks.get(id) -> entrée {Tier, Price?, GamePassId?, Robux?}
 	      Unlocks.isFree(id) | Unlocks.priceText(id) -> "FREE" | "$2,500" | "R$ 299" | Unlocks.byGamePass(passId) -> id
 ]]
@@ -34,7 +35,8 @@ Unlocks.List = {
 	Temp = { Tier = "Cash", Price = 5000 },
 	Consultant = { Tier = "Cash", Price = 5000 },
 
-	-- Robux (4) : Game Pass permanent (mettre l'id du Game Pass créé sur le site à la place de 0)
+	-- Robux (5) : Game Pass permanent (mettre l'id du Game Pass créé sur le site à la place de 0)
+	Bacon = { Tier = "Robux", GamePassId = 0, Robux = 499 }, -- perso phare : le plus cher et le plus fort
 	OfficeCat = { Tier = "Robux", GamePassId = 0, Robux = 299 },
 	AIAssistant = { Tier = "Robux", GamePassId = 0, Robux = 299 },
 	CEO = { Tier = "Robux", GamePassId = 0, Robux = 249 },

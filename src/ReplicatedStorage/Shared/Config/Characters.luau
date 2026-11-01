@@ -61,4 +61,24 @@ for _, def in ipairs(require(script.Parent.Parent.Modules.ContentLoader).all()) 
 	end
 end
 
+-- persos phares (fiche avec Featured = true, ex. The Bacon) : en TÊTE de la liste (menu de sélection, admin...)
+-- Le perso par défaut reste Unlocks.DEFAULT (Intern) : rien ne suppose que Order[1] est gratuit.
+do
+	local featured = {}
+	for _, id in ipairs(Characters.Order) do
+		local def = Characters[id]
+		if type(def) == "table" and def.Featured then
+			table.insert(featured, id)
+		end
+	end
+	for i = #featured, 1, -1 do
+		local id = featured[i]
+		local at = table.find(Characters.Order, id)
+		if at then
+			table.remove(Characters.Order, at)
+		end
+		table.insert(Characters.Order, 1, id)
+	end
+end
+
 return Characters
