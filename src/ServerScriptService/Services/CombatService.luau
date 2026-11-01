@@ -570,7 +570,7 @@ function CombatService.applyHit(p)
 	FX:FireAllClients({
 		k = "Hit", a = attacker, v = victim, p = p.hitPos or root.Position,
 		c = heavy and category ~= "Heavy" and "Heavy" or category, pw = p.power or 0.4, d = damage, w = p.words, m = p.material,
-		ko = ko, seq = p.seq, r = reaction, combo = combo, fin = p.finisher,
+		ko = ko, seq = p.seq, r = reaction, combo = combo, fin = p.finisher, wp = p.weapon,
 	})
 	Signals.Hit:Fire(attacker, victim, damage, { weapon = p.weapon, category = category, combo = combo, finisher = p.finisher })
 

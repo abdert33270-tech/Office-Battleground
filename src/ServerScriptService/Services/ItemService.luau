@@ -27,6 +27,7 @@ local ItemsConfig = require(Shared.Config.Items)
 local CombatConfig = require(Shared.Config.Combat)
 local Net = require(Shared.Modules.Net)
 local Hitbox = require(Shared.Modules.Hitbox)
+local M1Style = require(Shared.Modules.M1Style) -- mini-chaîne des Use d'objets (Config/M1Styles.ItemChains)
 local CharacterState = require(script.Parent.CharacterState)
 local CombatService = require(script.Parent.CombatService)
 local ZoneService = require(script.Parent.ZoneService)
@@ -490,7 +491,7 @@ local function onUse(player: Player, character: Model, seq: number)
 	end
 	s.nextAttack = t + use.Cooldown
 	s.combo = 0
-	Anim:FireAllClients(character, use.Anim or "Jab")
+	Anim:FireAllClients(character, M1Style.itemAnim(character, use.Anim or "Jab")) -- mini-chaîne (Config/M1Styles.ItemChains)
 	if rec.cfg.SlamPath then
 		local weld = rec.model.PrimaryPart and rec.model.PrimaryPart:FindFirstChild("HoldWeld")
 		if weld then

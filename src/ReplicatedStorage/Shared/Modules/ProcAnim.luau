@@ -594,7 +594,8 @@ require(script.Parent.ContentLoader).merge(ANIMS, "Anims")
 -- swing(i, armé, impact) : même timing que Punch1-5 -> impact pile au Windup de Config/Combat.M1 (hit serveur
 -- inchangé), suivi tenu, puis retour en garde. Le 5e coup a un armé en 2 temps (enroulé lisible) et un souffle.
 ------------------------------------------------------------------------
-local M1Cfg = require(script.Parent.Parent.Config.Combat).M1
+local CombatCfg = require(script.Parent.Parent.Config.Combat)
+local M1Cfg = CombatCfg.M1
 local M1_DUR = { 0.58, 0.58, 0.6, 0.62, 1.2 } -- durées des Punch1-5
 
 local function scaled(pose, k)
@@ -615,9 +616,11 @@ local function at(t, pose)
 	return f
 end
 
+local POSES = setmetatable({}, { __mode = "k" }) -- [frames] = { armé (final), impact } : sert au jongle dérivé
 local function swing(i, antic, impact)
 	local w, d = M1Cfg.Windup[i] or 0.15, M1_DUR[i]
 	local f = { { t = 0 } }
+	POSES[f] = { i >= 5 and antic[2] or antic, impact }
 	if i >= 5 then
 		table.insert(f, at(w - 0.1, antic[1]))
 		table.insert(f, at(w - 0.04, antic[2]))
@@ -633,6 +636,44 @@ local function swing(i, antic, impact)
 	end
 	table.insert(f, { t = d })
 	return f
+end
+
+-- variantes au timing d'une anim de base : armé à tA, impact à tI, suivi tenu à tH, fin à tE (+ réception optionnelle)
+local function timed(tA, tI, tH, tE, antic, impact, landing)
+	local f = { { t = 0 }, at(tA, antic), at(tI, impact), at(tH, scaled(impact, 0.94)) }
+	if landing then
+		table.insert(f, at(tH + (tE - tH) * 0.45, landing))
+	end
+	table.insert(f, { t = tE })
+	return f
+end
+local UpCfg, SlamCfg, DashCfg, AirCfg = CombatCfg.Uppercut, CombatCfg.Downslam, CombatCfg.DashStrike, CombatCfg.Air
+local function up(antic, impact) -- comme Uppercut : impact 0,2 s, fin 0,65 s
+	return timed(UpCfg.Windup - 0.05, UpCfg.Windup, 0.45, 0.65, antic, impact)
+end
+local function slam(antic, impact) -- comme Downslam : impact 0,16 s, fin 0,7 s
+	return timed(SlamCfg.Windup - 0.04, SlamCfg.Windup, 0.45, 0.7, antic, impact)
+end
+local DASH_LAND = { RJ = { ln = 0.3 }, RH = { p = 0.5 }, LH = { p = -0.3 }, RS = { p = 0.6 }, LS = { p = 0.6 } }
+local function dash(antic, impact) -- comme DashStrike : impact 0,16 s, tenu jusqu'à 0,48 s, réception, fin 0,8 s
+	return timed(DashCfg.Windup - 0.06, DashCfg.Windup, 0.48, 0.8, antic, impact, DASH_LAND)
+end
+-- jongle : poses d'un coup au sol, jambes repliées, buste moins penché (impact au Windup Air = 0,11 s, fin 0,4 s)
+local AIR_LEGS = { RH = { p = 1.1 }, LH = { p = 0.6 } }
+local function airPose(pose)
+	local o = table.clone(pose)
+	o.RH, o.LH = AIR_LEGS.RH, AIR_LEGS.LH
+	if pose.RJ then
+		o.RJ = { tw = pose.RJ.tw, ln = (pose.RJ.ln or 0) * 0.6, sd = pose.RJ.sd }
+	end
+	return o
+end
+local function airFrom(ground)
+	local p = POSES[ground]
+	if not p then
+		return nil
+	end
+	return timed(AirCfg.Windup - 0.04, AirCfg.Windup, 0.26, 0.4, airPose(p[1]), airPose(p[2]))
 end
 
 local STYLE_ANIMS = {
@@ -853,7 +894,146 @@ local STYLE_ANIMS = {
 		{ t = 0.45, RS = { p = 0.75, y = 0.3 }, LS = { p = 0.45, r = -0.5 }, RJ = { ln = 0.75 }, RH = { p = 0.8 } },
 		{ t = 0.7 },
 	},
+	-- VARIANTES UNIQUES (au moins un coup 1-3 propre à chaque personnage)
+	Brawl1Lead = swing(1, -- jab plongeant, grand pas
+		{ RS = { p = 1.0, y = 0.6 }, LS = { p = 1.3, y = 0.8 }, RJ = { tw = -0.4, ln = -0.1 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.85, y = 0.0 }, LS = { p = 1.1, y = 0.8 }, RJ = { tw = 0.5, ln = 0.45 }, LH = { p = 1.0 }, RH = { p = -0.7 } }),
+	Brawl2Back = swing(2, -- revers du poing tournant
+		{ RS = { p = 1.2, y = 1.3 }, LS = { p = 1.0, y = 0.8 }, RJ = { tw = 1.0 }, RH = { p = 0.3 } },
+		{ RS = { p = 1.5, y = -1.1, r = -0.5 }, LS = { p = 0.8, y = 0.7 }, RJ = { tw = -1.0, ln = 0.2 }, RH = { p = 0.7 }, LH = { p = -0.4 } }),
+	Brawl3Knee = swing(3, -- on agrippe et coup de genou
+		{ RS = { p = 1.9, y = 0.6 }, LS = { p = 1.9, y = 0.6 }, RJ = { ln = -0.2 }, RH = { p = -0.3 } },
+		{ RS = { p = 1.4, y = 0.5 }, LS = { p = 1.4, y = 0.5 }, RJ = { ln = 0.45 }, RH = { p = 1.7 }, LH = { p = -0.2 } }),
+	Brawl4Point = swing(4, -- index en mousse qui pique vers le haut
+		{ RS = { p = 0.6, y = 0.4 }, LS = { p = 1.2, y = 0.7 }, RJ = { tw = -0.6, ln = 0.3 }, RH = { p = 0.4 }, LH = { p = 0.4 } },
+		{ RS = { p = 2.3, y = 0.1 }, LS = { p = -0.3, r = -0.4 }, RJ = { tw = 0.6, ln = -0.1 }, LH = { p = 0.8 }, RH = { p = -0.4 } }),
+	Slap1Edge = swing(1, -- manchette (tranche de l'objet), de haut à l'extérieur
+		{ RS = { p = 2.4, y = -0.9, r = -0.6 }, LS = { p = 1.0, y = 0.8 }, RJ = { tw = -0.7 }, LH = { p = 0.3 } },
+		{ RS = { p = 1.45, y = 0.6 }, LS = { p = 0.6, y = 0.7 }, RJ = { tw = 0.6, ln = 0.3 }, LH = { p = 0.7 }, RH = { p = -0.35 } }),
+	Slap2Fan = swing(2, -- revers en éventail, du bas vers le haut
+		{ RS = { p = 0.6, y = 1.2 }, LS = { p = 0.8, r = -0.3 }, RJ = { tw = 0.6, ln = 0.25 }, RH = { p = 0.4 } },
+		{ RS = { p = 2.1, y = -0.8, r = -0.4 }, LS = { p = 1.0, y = 0.7 }, RJ = { tw = -0.6, ln = -0.05 }, RH = { p = 0.6 }, LH = { p = -0.3 } }),
+	Slap3Stamp = swing(3, -- « tamponné ! » : on écrase à plat droit devant
+		{ RS = { p = 2.6, y = 0.2 }, LS = { p = 1.6, y = 0.6 }, RJ = { ln = -0.2 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.3, y = 0.05 }, LS = { p = 1.1, y = 0.5 }, RJ = { ln = 0.55 }, LH = { p = 0.8 }, RH = { p = -0.4 } }),
+	Blunt1Snap = swing(1, -- coup sec et court (agrafeuse)
+		{ RS = { p = 1.1, y = 0.3, r = 0.1 }, LS = { p = 1.2, y = 0.7 }, RJ = { tw = -0.4 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.8, y = 0.15 }, LS = { p = 0.8, y = 0.7 }, RJ = { tw = 0.55, ln = 0.3 }, LH = { p = 0.7 }, RH = { p = -0.4 } }),
+	Blunt2Baton = swing(2, -- moulinet de matraque en revers haut
+		{ RS = { p = 2.2, y = 1.2 }, LS = { p = 0.9, y = 0.6 }, RJ = { tw = 0.8, ln = -0.1 }, RH = { p = 0.3 } },
+		{ RS = { p = 1.3, y = -1.1, r = -0.5 }, LS = { p = 1.0, y = 0.6 }, RJ = { tw = -0.8, ln = 0.3 }, RH = { p = 0.7 }, LH = { p = -0.4 } }),
+	Blunt2Crank = swing(2, -- tour de clé bas dans les côtes
+		{ RS = { p = 0.8, y = 1.3, r = 0.1 }, LS = { p = 0.6, r = -0.3 }, RJ = { tw = 0.85, ln = 0.3 }, RH = { p = 0.4 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.2, y = -1.0, r = -0.4 }, LS = { p = 1.0, y = 0.6 }, RJ = { tw = -0.8, ln = 0.4 }, RH = { p = 0.8 }, LH = { p = -0.3 } }),
+	Blunt3Gavel = swing(3, -- « order ! » : coup de poignet sec vers le bas
+		{ RS = { p = 2.7, y = 0.3 }, LS = { p = 0.9, y = 0.6 }, RJ = { ln = -0.15 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.25, y = 0.3 }, LS = { p = 0.7, y = 0.6 }, RJ = { ln = 0.5, tw = 0.2 }, LH = { p = 0.7 }, RH = { p = -0.3 } }),
+	Blunt3Tamp = swing(3, -- tassage à deux mains (porte-filtre)
+		{ RS = { p = 2.3, y = 0.3 }, LS = { p = 2.3, y = 0.3 }, RJ = { ln = -0.2 }, RH = { p = 0.2 } },
+		{ RS = { p = 1.1, y = 0.3 }, LS = { p = 1.1, y = 0.3 }, RJ = { ln = 0.6 }, RH = { p = 0.7 }, LH = { p = -0.3 } }),
+	Heavy1Curl = swing(1, -- curl explosif à deux mains (kettlebell)
+		{ RS = { p = -0.3, r = -0.1 }, LS = { p = -0.3, r = -0.1 }, RJ = { ln = 0.45 }, RH = { p = 0.5 }, LH = { p = 0.5 } },
+		{ RS = { p = 2.0, y = 0.3 }, LS = { p = 1.6, y = 0.4 }, RJ = { ln = -0.1 }, LH = { p = 0.8 }, RH = { p = -0.4 } }),
+	Tech3Present = swing(3, -- pointeur de présentation en estoc
+		{ RS = { p = 0.9, y = -0.8, r = -0.4 }, LS = { p = 1.4, y = 0.6 }, RJ = { tw = -0.6 }, LH = { p = 0.3 } },
+		{ RS = { p = 1.9, y = -0.3, r = -0.2 }, LS = { p = 0.9, y = 0.6 }, RJ = { tw = 0.4, ln = 0.3 }, LH = { p = 0.8 }, RH = { p = -0.45 } }),
+
+	-- UPPERCUT / DOWNSLAM / DASH STRIKE par archétype (mêmes impacts et durées que les originaux)
+	BrawlUppercut = up(
+		{ RS = { p = -0.5, r = -0.2 }, LS = { p = 1.2, y = 0.7 }, RJ = { ln = 0.55, tw = -0.6 }, RH = { p = 0.7 }, LH = { p = 0.7 } },
+		{ RS = { p = 2.9, y = 0.4 }, LS = { p = 0.9, y = 0.7 }, RJ = { ln = -0.3, tw = 0.7 }, LH = { p = 1.0 }, RH = { p = -0.3 } }),
+	BrawlDownslam = slam(
+		{ RS = { p = 3.3, r = -0.3 }, LS = { p = 1.0, y = 0.7 }, RJ = { ln = -0.4, tw = -0.3 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+		{ RS = { p = 0.6, y = 0.2 }, LS = { p = 0.5, r = -0.6 }, RJ = { ln = 0.85, tw = 0.3 }, RH = { p = 1.0 }, LH = { p = 0.9 } }),
+	BrawlDash = dash( -- « superman punch »
+		{ RS = { p = -0.8, r = -0.2 }, LS = { p = 1.2, y = 0.6 }, RJ = { ln = 0.4, tw = -0.6 }, RH = { p = -0.5 }, LH = { p = 0.8 } },
+		{ RS = { p = 1.75, y = 0.1 }, LS = { p = -0.6 }, RJ = { ln = 0.35, tw = 0.6 }, RH = { p = -0.6 }, LH = { p = 0.9 } }),
+	BluntDash = dash( -- bond et coup de massue
+		{ RS = { p = 3.2, y = 0.2 }, LS = { p = 1.0, y = 0.7 }, RJ = { ln = -0.3 }, RH = { p = 0.6 }, LH = { p = -0.3 } },
+		{ RS = { p = 1.1, y = 0.3 }, LS = { p = 0.4, r = -0.5 }, RJ = { ln = 0.6, tw = 0.3 }, RH = { p = 1.0 }, LH = { p = -0.5 } }),
+	HeavyUppercut = up( -- arraché à deux mains
+		{ RS = { p = -0.5 }, LS = { p = -0.5 }, RJ = { ln = 0.7 }, RH = { p = 0.8 }, LH = { p = 0.8 } },
+		{ RS = { p = 3.0, y = 0.2 }, LS = { p = 3.0, y = 0.2 }, RJ = { ln = -0.45 }, RH = { p = -0.2 }, LH = { p = 0.3 } }),
+	HeavyDownslam = slam(
+		{ RS = { p = 3.45 }, LS = { p = 3.45 }, RJ = { ln = -0.55 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+		{ RS = { p = 0.5, y = 0.3 }, LS = { p = 0.5, y = 0.3 }, RJ = { ln = 1.0 }, RH = { p = 1.1 }, LH = { p = 1.0 } }),
+	HeavyDash = dash( -- ruée, le poids part en balancier
+		{ RS = { p = -0.7, r = -0.3 }, LS = { p = 1.0, y = 0.8 }, RJ = { tw = -0.8, ln = 0.3 }, RH = { p = 0.5 }, LH = { p = 0.4 } },
+		{ RS = { p = 1.6, y = 0.6 }, LS = { p = 0.4, r = -0.8 }, RJ = { tw = 0.9, ln = 0.35 }, RH = { p = -0.5 }, LH = { p = 0.9 } }),
+	LongUppercut = up( -- balayage montant
+		{ RS = { p = 0.3, y = -1.0, r = -0.5 }, LS = { p = 1.0, y = 0.8 }, RJ = { ln = 0.5, tw = -0.7 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+		{ RS = { p = 3.1, y = 0.6 }, LS = { p = 0.4, r = -0.6 }, RJ = { ln = -0.35, tw = 0.6 }, LH = { p = 1.0 }, RH = { p = -0.3 } }),
+	LongDownslam = slam(
+		{ RS = { p = 3.4, y = -0.4 }, LS = { p = 2.4, y = 0.3 }, RJ = { ln = -0.45, tw = -0.3 }, RH = { p = 0.6 }, LH = { p = 0.5 } },
+		{ RS = { p = 0.85, y = 0.35 }, LS = { p = 0.6, y = 0.4 }, RJ = { ln = 0.9, tw = 0.2 }, RH = { p = 1.0 }, LH = { p = 0.9 } }),
+	LongDash = dash( -- charge à la lance
+		{ RS = { p = 1.1, y = 0.45, r = 0.15 }, LS = { p = 1.25, y = 0.5 }, RJ = { tw = -0.8, ln = 0.1 }, RH = { p = 0.6 }, LH = { p = -0.2 } },
+		{ RS = { p = 1.6 }, LS = { p = 1.5, y = 0.15 }, RJ = { tw = 0.3, ln = 0.5 }, RH = { p = -0.6 }, LH = { p = 1.0 } }),
+	SlapUppercut = up( -- tape montante à plat
+		{ RS = { p = 0.2, y = -0.6, r = -0.6 }, LS = { p = 1.1, y = 0.7 }, RJ = { ln = 0.5, tw = -0.5 }, RH = { p = 0.7 }, LH = { p = 0.7 } },
+		{ RS = { p = 2.8, y = 0.2, r = 0.2 }, LS = { p = 0.6, r = -0.4 }, RJ = { ln = -0.3, tw = 0.5 }, LH = { p = 1.0 }, RH = { p = -0.25 } }),
+	SlapDownslam = slam( -- claque à deux mains vers le sol
+		{ RS = { p = 3.2, y = 0.3 }, LS = { p = 3.2, y = 0.3 }, RJ = { ln = -0.45 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+		{ RS = { p = 1.0, y = 0.4 }, LS = { p = 1.0, y = 0.4 }, RJ = { ln = 0.85 }, RH = { p = 1.0 }, LH = { p = 0.9 } }),
+	SlapDash = dash( -- gifle volante
+		{ RS = { p = 1.7, y = -1.3, r = -0.7 }, LS = { p = 0.8, r = -0.4 }, RJ = { tw = -0.7, ln = 0.2 }, RH = { p = -0.4 }, LH = { p = 0.8 } },
+		{ RS = { p = 1.55, y = 1.0, r = 0.15 }, LS = { p = 0.4, r = -0.6 }, RJ = { tw = 0.8, ln = 0.35 }, RH = { p = -0.5 }, LH = { p = 0.9 } }),
+	ClawUppercut = up( -- double griffure montante
+		{ RS = { p = -0.5, r = -0.4 }, LS = { p = -0.5, r = -0.4 }, RJ = { ln = 0.7 }, RH = { p = 0.8 }, LH = { p = 0.8 } },
+		{ RS = { p = 3.0, y = 0.4 }, LS = { p = 3.0, y = 0.4 }, RJ = { ln = -0.4 }, RH = { p = -0.2 }, LH = { p = 0.4 } }),
+	ClawDownslam = slam(
+		{ RS = { p = 3.2, y = -0.3, r = -0.4 }, LS = { p = 3.2, y = -0.3, r = -0.4 }, RJ = { ln = -0.45 }, RH = { p = 0.8 }, LH = { p = 0.8 } },
+		{ RS = { p = 0.8, y = 0.5 }, LS = { p = 0.8, y = 0.5 }, RJ = { ln = 1.0 }, RH = { p = 1.2 }, LH = { p = 1.1 } }),
+	ClawDash = dash( -- bond du chat, pattes en avant
+		{ RS = { p = -0.6, r = -0.3 }, LS = { p = -0.6, r = -0.3 }, RJ = { ln = 0.7 }, RH = { p = 0.9 }, LH = { p = 0.9 } },
+		{ RS = { p = 1.9, y = 0.3 }, LS = { p = 1.9, y = 0.3 }, RJ = { ln = 0.2 }, RH = { p = -0.5 }, LH = { p = -0.3 } }),
+	TechUppercut = up( -- paumes qui lancent vers le haut
+		{ RS = { p = 0.4, y = 0.8 }, LS = { p = 0.4, y = 0.8 }, RJ = { ln = 0.5 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+		{ RS = { p = 2.9, y = 0.1 }, LS = { p = 2.9, y = 0.1 }, RJ = { ln = -0.35 }, LH = { p = 0.9 }, RH = { p = -0.2 } }),
+	TechDownslam = slam(
+		{ RS = { p = 3.2, r = -0.6 }, LS = { p = 3.2, r = -0.6 }, RJ = { ln = -0.45 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+		{ RS = { p = 1.2, y = 0.1 }, LS = { p = 1.2, y = 0.1 }, RJ = { ln = 0.8 }, RH = { p = 1.0 }, LH = { p = 0.9 } }),
+	TechDash = dash( -- poussée d'énergie en glissant
+		{ RS = { p = 1.0, y = 0.9 }, LS = { p = 1.0, y = 0.9 }, RJ = { ln = -0.1 }, RH = { p = -0.4 }, LH = { p = 0.8 } },
+		{ RS = { p = 1.7 }, LS = { p = 1.7 }, RJ = { ln = 0.4 }, RH = { p = -0.6 }, LH = { p = 0.9 } }),
+	BaconUppercut = up( -- lasso montant, déhanché
+		{ RS = { p = 0.4, y = -1.3, r = -0.6 }, LS = { p = 1.4, r = -0.6 }, RJ = { ln = 0.45, tw = -0.6, sd = 0.15 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+		{ RS = { p = 3.2, y = 0.9 }, LS = { p = 1.2, r = -0.8 }, RJ = { ln = -0.35, tw = 0.6, sd = -0.15 }, LH = { p = 1.0 }, RH = { p = -0.3 } }),
+	BaconDownslam = slam(
+		{ RS = { p = 3.4, y = 1.0, r = -0.4 }, LS = { p = 0.4, r = -0.9 }, RJ = { ln = -0.45, tw = 0.4 }, RH = { p = 0.6 }, LH = { p = 0.5 } },
+		{ RS = { p = 0.9, y = -0.3 }, LS = { p = 0.5, r = -0.7 }, RJ = { ln = 0.9, tw = -0.3 }, RH = { p = 1.0 }, LH = { p = 0.9 } }),
+	BaconDash = dash( -- fouet volant
+		{ RS = { p = 3.2, y = -0.4 }, LS = { p = 0.5, r = -0.7 }, RJ = { ln = -0.2, tw = -0.4 }, RH = { p = -0.4 }, LH = { p = 0.8 } },
+		{ RS = { p = 1.3, y = 0.5 }, LS = { p = 0.4, r = -0.8 }, RJ = { ln = 0.45, tw = 0.5 }, RH = { p = -0.5 }, LH = { p = 0.9 } }),
+
+	-- OBJETS : variantes alternées (mêmes temps de keyframes que Jab / SideSwing / OverheadSwing)
+	JabB = {
+		{ t = 0 },
+		{ t = 0.05, RS = { p = 2.4, y = -0.3 }, RJ = { tw = -0.25, ln = -0.1 } },
+		{ t = 0.1, RS = { p = 1.4, y = 0.3 }, RJ = { tw = 0.4, ln = 0.3 }, LH = { p = 0.5 }, RH = { p = -0.3 } },
+		{ t = 0.2, RS = { p = 1.35, y = 0.3 }, RJ = { tw = 0.35, ln = 0.25 }, LH = { p = 0.45 } },
+		{ t = 0.3 },
+	},
+	SideSwingB = {
+		{ t = 0 },
+		{ t = 0.09, RS = { p = 1.4, y = 1.2 }, RJ = { tw = 0.75 }, RH = { p = 0.3 } },
+		{ t = 0.17, RS = { p = 1.45, y = -1.0, r = -0.4 }, RJ = { tw = -0.8, ln = 0.15 }, RH = { p = 0.55 }, LH = { p = -0.3 } },
+		{ t = 0.3, RS = { p = 1.4, y = -0.95, r = -0.35 }, RJ = { tw = -0.75, ln = 0.12 }, RH = { p = 0.5 } },
+		{ t = 0.42 },
+	},
+	OverheadSwingB = {
+		{ t = 0 },
+		{ t = 0.15, RS = { p = 3.0, y = -0.9, r = -0.4 }, LS = { p = 1.6 }, RJ = { ln = -0.25, tw = -0.6 }, RH = { p = -0.2 } },
+		{ t = 0.24, RS = { p = 1.0, y = 0.7 }, LS = { p = 0.4 }, RJ = { ln = 0.5, tw = 0.6 }, LH = { p = 0.65 }, RH = { p = -0.45 } },
+		{ t = 0.4, RS = { p = 1.0, y = 0.7 }, RJ = { ln = 0.45, tw = 0.55 }, LH = { p = 0.6 }, RH = { p = -0.4 } },
+		{ t = 0.55 },
+	},
 }
+local M1StylesData = require(script.Parent.Parent.Config.M1Styles)
+-- jongle de chaque archétype, dérivé des coups au sol (Config/M1Styles.AirFrom)
+for name, from in pairs(M1StylesData.AirFrom) do
+	STYLE_ANIMS[name] = STYLE_ANIMS[name] or airFrom(STYLE_ANIMS[from])
+end
 for name, frames in pairs(STYLE_ANIMS) do
 	if not ANIMS[name] then
 		ANIMS[name] = frames
@@ -878,9 +1058,9 @@ local function mirrorFrames(frames)
 	return out
 end
 ProcAnim.mirrorFrames = mirrorFrames
--- version « _L » de chaque animation de style (arme fétiche en main gauche : M1Style.remap)
-for name in pairs(require(script.Parent.Parent.Config.M1Styles).Moves) do
-	if ANIMS[name] and not ANIMS[name .. "_L"] then
+-- version « _L » de chaque animation remappée (arme fétiche en main gauche : M1Style.remap) ; pas pour les Use d'objets
+for name, meta in pairs(M1StylesData.Moves) do
+	if meta.Kind ~= "Item" and ANIMS[name] and not ANIMS[name .. "_L"] then
 		ANIMS[name .. "_L"] = mirrorFrames(ANIMS[name])
 	end
 end

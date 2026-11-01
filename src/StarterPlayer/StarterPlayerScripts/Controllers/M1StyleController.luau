@@ -4,10 +4,13 @@
 
 	Déclenchement : ProcAnim.onPlay. Toute animation listée dans M1Styles.Moves jouée sur un personnage de joueur
 	(ou un mannequin) lance la traînée pendant la fenêtre du coup (Windup de Config/Combat ou de Config/Items) :
-	- joueur local : CombatController joue l'anim au clic -> effets immédiats, impact prédit au Windup sur les cibles
-	  de la hitbox (mêmes filtres que la prédiction de CombatController : block, renversé, bulle, zone sûre...) ;
-	- autres joueurs : l'anim arrive par la remote « Anim » (FXController -> ProcAnim.play) ; l'impact stylé est joué
-	  à la réception du « Hit » serveur (remote FX) de cet attaquant pendant la fenêtre du coup.
+	- joueur local : CombatController joue l'anim au clic -> traînée / arc / whoosh immédiats, petit éclair prédit au
+	  Windup sur les cibles de la hitbox (mêmes filtres que CombatController) ;
+	- autres joueurs : l'anim arrive par la remote « Anim » (FXController -> ProcAnim.play), effets à < 80 studs ;
+	- impact stylé complet (tous) : au « Hit » serveur de cet attaquant pendant la fenêtre du coup, si son arme
+	  (wp = spec.Weapon) est un coup de chaîne (Punch / Uppercut / Downslam / Dash Strike) ou l'objet du Use.
+	Budget : arcs jamais en Low, ceux des autres seulement en High, et soumis à la charge CartoonFX.count ; parts
+	d'impact comptées dans cette charge ; whooshes des autres limités (finishers, ou 3 proches à la fois).
 	Traînée : Attachments sur l'arme (dossier « Signature » visible ou objet tenu via sa HoldWeld), sinon sur le bras
 	/ la jambe qui frappe. Limite de traînées simultanées selon la qualité ; tout est nettoyé par Debris.
 	Réglages : Quality (Low/Medium/High : quantités, arcs, durée des traînées), ReducedFlashes (ni néon, ni lumière).
@@ -34,12 +37,18 @@ local M1 = CombatConfig.M1
 local rng = Random.new()
 
 local MAX_TRAILS = { Low = 4, Medium = 8, High = 14 }
-local REMOTE_RANGE = 150 -- au-delà (distance caméra), pas d'effets pour les coups des autres
+local REMOTE_RANGE = 80  -- au-delà (distance caméra), pas d'effets pour les coups des autres
 local HIT_GRACE = 0.5    -- fenêtre (après le Windup) pendant laquelle un « Hit » serveur reçoit l'impact stylé
+local WHOOSH_RANGE = 50  -- whoosh des autres : proches seulement…
+local WHOOSH_MAX = 3     -- …et au plus 3 dans WHOOSH_WINDOW s (les finishers passent toujours)
+local WHOOSH_WINDOW = 0.35
+-- armes (champ wp du « Hit » serveur = spec.Weapon) qui reçoivent l'impact stylé d'un coup de chaîne
+local CHAIN_WEAPONS = { Punch = true, Uppercut = true, Downslam = true, ["Dash Strike"] = true }
 
 local swings = setmetatable({}, { __mode = "k" })   -- [attaquant] = { style, mirrored, heavy, hitUntil }
 local tipCache = setmetatable({}, { __mode = "k" }) -- [dossier Signature | Handle] = { part, near, tip }
 local activeTrails = {}
+local remoteWhooshes = {} -- os.clock() des derniers whooshes d'autres joueurs
 
 ------------------------------------------------------------------------
 -- utilitaires
@@ -64,6 +73,7 @@ local function tween(obj, t, props, style, dir)
 end
 
 local function fxPart(size: Vector3, cf: CFrame, color: Color3, glow: boolean?, shape)
+	CartoonFX.count(1) -- compte dans la charge d'effets de CartoonFX (réduit les quantités quand ça s'accumule)
 	local p = Instance.new("Part")
 	p.Anchored = true
 	p.CanCollide = false
@@ -499,8 +509,16 @@ local function hitboxOf(meta, itemCfg)
 	return M1.HitboxOffset, M1.HitboxSize
 end
 
--- impact prédit du joueur local (même règle de cibles que CombatController.predictHits)
-local function predictImpact(c: Model, style, meta, itemCfg, w: number, heavy: boolean, mirrored: boolean)
+-- joueur local : petit éclair prédit au Windup sur les cibles de la hitbox (mêmes filtres que CombatController) ;
+-- l'impact stylé complet attend la confirmation serveur (« Hit » de ce coup), donc jamais sur un coup paré / bloqué
+local function flashAt(pos: Vector3, color: Color3)
+	local p = fxPart(Vector3.one * 0.6, CFrame.new(pos), color, true, Enum.PartType.Ball)
+	p.Transparency = reduced() and 0.6 or 0.2
+	tween(p, 0.1, { Size = Vector3.one * 1.8, Transparency = 1 })
+	Debris:AddItem(p, 0.12)
+end
+
+local function predictFlash(c: Model, style, meta, itemCfg, w: number)
 	local offset, size = hitboxOf(meta, itemCfg)
 	if not offset then
 		return
@@ -521,8 +539,7 @@ local function predictImpact(c: Model, style, meta, itemCfg, w: number, heavy: b
 			if vRoot and vHum and vHum.Health > 0 and not victim:FindFirstChildOfClass("ForceField") and not victim:GetAttribute("Blocking")
 				and not victim:GetAttribute("PendingKO") and serverNow() >= (victim:GetAttribute("KnockdownUntil") or 0)
 				and victim:GetAttribute(CombatConfig.SafeZoneAttribute or "SafeZone") ~= true then
-				local pos = vRoot.Position:Lerp(root.Position, 0.3) + Vector3.new(0, 0.6, 0)
-				playImpact(style, pos, vRoot.Position - root.Position, heavy, mirrored)
+				flashAt(vRoot.Position:Lerp(root.Position, 0.3) + Vector3.new(0, 0.6, 0), style.Trail.Colors[1])
 			end
 		end
 	end)
@@ -588,7 +605,11 @@ local function onSwing(c: Model, animName: string)
 	-- arc de taillade (armes larges) : selon le style, jamais en qualité Low
 	local arc = meta.Arc
 	local arcMode = trail.Arc
-	if arc and (arcMode == "All" or (arcMode == "Finisher" and heavy)) and qualityName() ~= "Low" then
+	local q = qualityName()
+	-- budget : jamais en Low ; ceux des autres joueurs seulement en High ; et seulement si la charge d'effets le permet
+	-- (CartoonFX.count réduit le nombre selon qualité × charge, et compte l'arc dans la charge)
+	local arcOk = arc and (arcMode == "All" or (arcMode == "Finisher" and heavy)) and q ~= "Low" and (isLocal or q == "High")
+	if arcOk and CartoonFX.count(11) >= (isLocal and 6 or 9) then
 		task.delay(math.max(0, w - 0.04), function()
 			if not root.Parent then
 				return
@@ -601,34 +622,59 @@ local function onSwing(c: Model, animName: string)
 
 	-- whoosh (le joueur local a déjà le whoosh de CombatController : couche en plus seulement si le style en a une)
 	local wh = style.Whoosh
-	if wh and (not isLocal or wh.Layer ~= false) then
+	local playWhoosh = wh ~= nil and (not isLocal or wh.Layer ~= false)
+	if playWhoosh and not isLocal then
+		-- autres joueurs : finishers toujours, sinon proches et au plus WHOOSH_MAX à la fois (pas d'empilement)
+		local now = os.clock()
+		for i = #remoteWhooshes, 1, -1 do
+			if now - remoteWhooshes[i] > WHOOSH_WINDOW then
+				table.remove(remoteWhooshes, i)
+			end
+		end
+		local cam = workspace.CurrentCamera
+		local near = cam == nil or (cam.CFrame.Position - root.Position).Magnitude <= WHOOSH_RANGE
+		playWhoosh = heavy or (near and #remoteWhooshes < WHOOSH_MAX)
+		if playWhoosh then
+			table.insert(remoteWhooshes, now)
+		end
+	end
+	if playWhoosh then
+		local key = (heavy and wh.FinisherKey) or wh.Key or "Whoosh"
 		task.delay(math.max(0, w - 0.06), function()
 			if root.Parent then
-				CartoonFX.sound(wh.Key or "Whoosh", root.Position, (wh.Volume or 0.4) * (isLocal and 1 or 0.8), wh.Pitch)
+				CartoonFX.sound(key, root.Position, (wh.Volume or 0.4) * (isLocal and 1 or 0.8), wh.Pitch)
 			end
 		end)
 	end
 
 	if isLocal then
-		predictImpact(c, style, meta, itemCfg, w, heavy, mirrored)
-	else
-		swings[c] = { style = style, mirrored = mirrored, heavy = heavy, hitUntil = os.clock() + w + HIT_GRACE }
+		predictFlash(c, style, meta, itemCfg, w)
 	end
+	-- l'impact stylé part au « Hit » serveur de CE coup (arme de chaîne, ou l'objet tenu pour un Use)
+	swings[c] = {
+		style = style, mirrored = mirrored, heavy = heavy, hitUntil = os.clock() + w + HIT_GRACE,
+		weapon = itemCfg and itemCfg.DisplayName or nil,
+	}
 end
 
 function M1StyleController.init()
 	ProcAnim.onPlay(onSwing)
-	-- impact stylé des coups des AUTRES joueurs : à la réception du « Hit » serveur pendant la fenêtre de leur coup
+	-- impact stylé (joueur local compris) : à la réception du « Hit » serveur pendant la fenêtre du coup
 	Net.get("FX").OnClientEvent:Connect(function(data)
 		if type(data) ~= "table" or (data.k or data.type) ~= "Hit" or typeof(data.p) ~= "Vector3" then
 			return
 		end
 		local a = data.a
-		if typeof(a) ~= "Instance" or a == player.Character then
+		if typeof(a) ~= "Instance" then
 			return
 		end
 		local sw = swings[a]
 		if not sw or os.clock() > sw.hitUntil then
+			return
+		end
+		-- seulement le coup de ce swing (pas une attaque / un projectile qui toucherait pendant la fenêtre)
+		local wp = data.wp
+		if wp ~= nil and (if sw.weapon then wp ~= sw.weapon else not CHAIN_WEAPONS[wp]) then
 			return
 		end
 		local aRoot = a:FindFirstChild("HumanoidRootPart")

@@ -399,7 +399,7 @@ function CombatController.attack()
 		nextAttack = t + use.Cooldown
 		busyUntil = nextAttack
 		combo = 0
-		ProcAnim.play(c, use.Anim or "Jab")
+		ProcAnim.play(c, M1Style.itemAnim(c, use.Anim or "Jab"))
 		if use.Lunge then
 			push(c, look * use.Lunge, 0.1)
 		end
@@ -412,7 +412,7 @@ function CombatController.attack()
 		lastDash = -10
 		combo = 0
 		setRecovery(t, DS.Endlag, true)
-		ProcAnim.play(c, DS.Anim)
+		ProcAnim.play(c, M1Style.remap(c, DS.Anim))
 		push(c, look * DS.LungeSpeed, DS.LungeTime)
 		predictHits(c, { Windup = DS.Windup, HitboxOffset = DS.HitboxOffset, HitboxSize = DS.HitboxSize, Damage = DS.Damage,
 			Category = "Heavy", Power = DS.Power }, seq, { Words = DS.Words, Reaction = "Heavy" })
