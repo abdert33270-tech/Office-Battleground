@@ -26,6 +26,7 @@ local SoundsConfig = require(Shared.Config.Sounds)
 local Net = require(Shared.Modules.Net)
 local Hitbox = require(Shared.Modules.Hitbox)
 local ProcAnim = require(Shared.Modules.ProcAnim)
+local M1Style = require(Shared.Modules.M1Style) -- animation de M1 selon l'arme fétiche (Config/M1Styles)
 local CartoonFX = require(Shared.Modules.CartoonFX)
 local UITheme = require(Shared.Modules.UITheme)
 local ClientSettings = require(Shared.Modules.ClientSettings)
@@ -421,13 +422,13 @@ function CombatController.attack()
 		if airCombo >= U.AirHits then
 			airCombo, airChainUntil = 0, 0
 			setRecovery(t, SL.Endlag, true)
-			ProcAnim.play(c, SL.Anim)
+			ProcAnim.play(c, M1Style.remap(c, SL.Anim))
 			task.delay(SL.Windup + 0.03, releaseAir, c) -- le coup qui écrase : l'attaquant retombe juste après
 			predictHits(c, { Windup = SL.Windup, HitboxOffset = A.HitboxOffset, HitboxSize = A.HitboxSize, Damage = SL.Damage,
 				Category = "Heavy", Power = SL.Power }, seq, { Words = SL.Words, Reaction = "Slam" })
 		else
 			setRecovery(t, A.Cooldown, false)
-			ProcAnim.play(c, A.Anim[((airCombo - 1) % #A.Anim) + 1])
+			ProcAnim.play(c, M1Style.remap(c, A.Anim[((airCombo - 1) % #A.Anim) + 1]))
 			if not root:FindFirstChild("LocalLift") then
 				stallLocal(c, A.Stall) -- on reste en l'air pendant la jongle (jamais pendant la montée)
 			end
@@ -439,13 +440,13 @@ function CombatController.attack()
 		mods.i = i
 		if i >= M1.Hits then
 			setRecovery(t, SL.Endlag, true)
-			ProcAnim.play(c, SL.Anim)
+			ProcAnim.play(c, M1Style.remap(c, SL.Anim))
 			task.delay(SL.Windup + 0.03, releaseAir, c)
 			predictHits(c, { Windup = SL.Windup, HitboxOffset = A.HitboxOffset, HitboxSize = A.HitboxSize, Damage = SL.Damage,
 				Category = "Heavy", Power = SL.Power }, seq, { Words = SL.Words, Reaction = "Slam" })
 		else
 			setRecovery(t, M1.Cooldown[i], false)
-			ProcAnim.play(c, A.Anim[((i - 1) % #A.Anim) + 1])
+			ProcAnim.play(c, M1Style.remap(c, A.Anim[((i - 1) % #A.Anim) + 1]))
 			predictHits(c, airSpec(i), seq)
 		end
 	else
@@ -455,7 +456,7 @@ function CombatController.attack()
 			-- UPPERCUT : on reste au sol pendant l'armé, le saut automatique vient après confirmation du serveur
 			riseLockUntil = t + U.Windup + 0.35
 			setRecovery(t, M1.Cooldown[M1.Hits], true)
-			ProcAnim.play(c, U.Anim)
+			ProcAnim.play(c, M1Style.remap(c, U.Anim))
 			push(c, look * (M1.Lunge[i] + extraLunge), 0.1)
 			CartoonFX.sound("Uppercut", root.Position, 0.8)
 			predictHits(c, { Windup = U.Windup, HitboxOffset = M1.HitboxOffset, HitboxSize = M1.HitboxSize, Damage = U.Damage,
@@ -463,7 +464,7 @@ function CombatController.attack()
 		else
 			setRecovery(t, M1.Cooldown[i], i >= M1.Hits)
 			push(c, look * (M1.Lunge[i] + extraLunge), 0.1)
-			ProcAnim.play(c, M1.Anim[i])
+			ProcAnim.play(c, M1Style.remap(c, M1.Anim[i]))
 			predictHits(c, { Windup = M1.Windup[i], HitboxOffset = M1.HitboxOffset, HitboxSize = M1.HitboxSize, Damage = M1.Damage[i],
 				Category = M1.Category[i], Power = M1.Power[i] }, seq,
 				{ Reaction = i >= M1.Hits and "Heavy" or "Light", Words = i >= M1.Hits and M1.FinisherWords or nil })

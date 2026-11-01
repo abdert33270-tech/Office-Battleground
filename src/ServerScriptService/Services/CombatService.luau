@@ -19,6 +19,7 @@ local Shared = ReplicatedStorage.Shared
 local CombatConfig = require(Shared.Config.Combat)
 local Net = require(Shared.Modules.Net)
 local Hitbox = require(Shared.Modules.Hitbox)
+local M1Style = require(Shared.Modules.M1Style) -- animation de M1 selon l'arme fétiche (Config/M1Styles)
 local CharacterState = require(script.Parent.CharacterState)
 local Signals = require(script.Parent.Signals)
 
@@ -924,7 +925,7 @@ local function doM1(player: Player, character: Model, seq: number, mods)
 			end
 		end
 	end
-	Anim:FireAllClients(character, anim)
+	Anim:FireAllClients(character, M1Style.remap(character, anim))
 	task.delay(windup, function()
 		if not CharacterState.isAlive(character) or CharacterState.isStunned(character) or CharacterState.inSafeZone(character) then
 			return

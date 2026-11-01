@@ -587,9 +587,308 @@ local ANIMS = {
 ANIMS.Dropkick = ANIMS.DashStrike
 -- animations ajoutées par les modules de Content
 require(script.Parent.ContentLoader).merge(ANIMS, "Anims")
+
+------------------------------------------------------------------------
+-- STYLES DE M1 PAR ARME (Config/M1Styles, Modules/M1Style, docs/M1-Styles.md)
+-- Écrites pour une arme en main DROITE (RS) ; la version miroir « <Nom>_L » est générée plus bas.
+-- swing(i, armé, impact) : même timing que Punch1-5 -> impact pile au Windup de Config/Combat.M1 (hit serveur
+-- inchangé), suivi tenu, puis retour en garde. Le 5e coup a un armé en 2 temps (enroulé lisible) et un souffle.
+------------------------------------------------------------------------
+local M1Cfg = require(script.Parent.Parent.Config.Combat).M1
+local M1_DUR = { 0.58, 0.58, 0.6, 0.62, 1.2 } -- durées des Punch1-5
+
+local function scaled(pose, k)
+	local out = {}
+	for j, v in pairs(pose) do
+		local o = {}
+		for a, x in pairs(v) do
+			o[a] = x * k
+		end
+		out[j] = o
+	end
+	return out
+end
+
+local function at(t, pose)
+	local f = table.clone(pose)
+	f.t = t
+	return f
+end
+
+local function swing(i, antic, impact)
+	local w, d = M1Cfg.Windup[i] or 0.15, M1_DUR[i]
+	local f = { { t = 0 } }
+	if i >= 5 then
+		table.insert(f, at(w - 0.1, antic[1]))
+		table.insert(f, at(w - 0.04, antic[2]))
+		table.insert(f, at(w, impact))
+		table.insert(f, at(0.5, scaled(impact, 0.92)))
+		table.insert(f, at(0.75, scaled(impact, 0.35)))
+		table.insert(f, { t = 1.0, RS = { p = 0.4, r = -0.3 }, LS = { p = 0.4, r = -0.3 }, RJ = { ln = 0.25 } }) -- souffle (endlag)
+	else
+		table.insert(f, at(w - 0.04, antic))
+		table.insert(f, at(w, impact))
+		table.insert(f, at(w + 0.14, scaled(impact, 0.92)))
+		table.insert(f, at(d - 0.14, scaled(impact, 0.3)))
+	end
+	table.insert(f, { t = d })
+	return f
+end
+
+local STYLE_ANIMS = {
+	-- BAGARREUR (main de l'arme = droite)
+	Brawl4Hook = swing(4,
+		{ RS = { p = 1.0, y = -1.25, r = -0.5 }, LS = { p = 1.25, y = 0.8 }, RJ = { tw = -0.7 }, RH = { p = 0.35 }, LH = { p = -0.1 } },
+		{ RS = { p = 1.6, y = 0.95 }, LS = { p = 0.75, y = 0.8 }, RJ = { tw = 0.9, ln = 0.28 }, LH = { p = 0.75 }, RH = { p = -0.45 } }),
+	Brawl4Elbow = swing(4, -- bras plié en travers (« coude ») qui balaie au visage
+		{ RS = { p = 1.5, y = -0.6, r = -0.6 }, LS = { p = 1.2, y = 0.7 }, RJ = { tw = -0.8, ln = 0.05 }, RH = { p = 0.3 } },
+		{ RS = { p = 1.55, y = 1.45 }, LS = { p = 0.6, y = 0.8 }, RJ = { tw = 1.05, ln = 0.3 }, LH = { p = 0.8 }, RH = { p = -0.45 } }),
+	Brawl5Haymaker = swing(5, -- grand crochet plongeant par-dessus
+		{
+			{ RS = { p = -0.6, r = -0.6 }, LS = { p = 1.4, y = 0.6 }, RJ = { tw = -1.1, ln = -0.15 }, RH = { p = 0.45 }, LH = { p = 0.2 } },
+			{ RS = { p = 2.4, y = -0.9, r = -0.7 }, LS = { p = 1.2, y = 0.6 }, RJ = { tw = -1.25, ln = -0.25 }, RH = { p = 0.5 }, LH = { p = 0.3 } },
+		},
+		{ RS = { p = 1.7, y = 0.55 }, LS = { p = 0.3, r = -0.9 }, RJ = { tw = 1.2, ln = 0.55, sd = -0.1 }, LH = { p = 1.0 }, RH = { p = -0.55 } }),
+	Brawl5Shoulder = swing(5, -- charge d'épaule : on s'enroule, épaule droite en avant, gros pas
+		{
+			{ RS = { p = 0.6, r = 0.1 }, LS = { p = 1.3, y = 0.8 }, RJ = { tw = 0.7, ln = 0.45 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+			{ RS = { p = 0.4, r = 0.15 }, LS = { p = 1.0, y = 0.8 }, RJ = { tw = 0.9, ln = 0.55 }, RH = { p = 0.75 }, LH = { p = 0.7 } },
+		},
+		{ RS = { p = 0.3, r = 0.15 }, LS = { p = 1.0, y = 0.9 }, RJ = { tw = 1.35, ln = 0.3, sd = -0.1 }, LH = { p = 1.1 }, RH = { p = -0.6 } }),
+
+	-- CONTONDANT UNE MAIN (tasse, agrafeuse, marteau, clé, matraque)
+	Blunt1 = swing(1, -- coup droit en diagonale
+		{ RS = { p = 1.75, y = -1.2, r = -0.45 }, LS = { p = 1.0, y = 0.7 }, RJ = { tw = -0.7, ln = -0.05 }, LH = { p = 0.25 }, RH = { p = -0.1 } },
+		{ RS = { p = 1.35, y = 0.85, r = 0.05 }, LS = { p = 0.6, y = 0.6, r = -0.2 }, RJ = { tw = 0.8, ln = 0.28 }, LH = { p = 0.7 }, RH = { p = -0.45 } }),
+	Blunt2 = swing(2, -- revers
+		{ RS = { p = 1.45, y = 1.25, r = 0.1 }, LS = { p = 0.5, r = -0.3 }, RJ = { tw = 0.75, ln = 0.05 }, RH = { p = 0.3 }, LH = { p = -0.1 } },
+		{ RS = { p = 1.5, y = -0.9, r = -0.4 }, LS = { p = 0.9, y = 0.6 }, RJ = { tw = -0.7, ln = 0.24 }, RH = { p = 0.7 }, LH = { p = -0.4 } }),
+	Blunt3 = swing(3, -- frappe verticale sur le crâne
+		{ RS = { p = 3.25, y = 0.15, r = -0.1 }, LS = { p = 1.1, y = 0.6 }, RJ = { tw = -0.3, ln = -0.3 }, RH = { p = -0.15 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.05, y = 0.3 }, LS = { p = 0.5, r = -0.2 }, RJ = { tw = 0.35, ln = 0.6 }, LH = { p = 0.8 }, RH = { p = -0.35 } }),
+	Blunt4 = swing(4, -- remontée sous le menton
+		{ RS = { p = -0.55, r = -0.3 }, LS = { p = 1.1, y = 0.7 }, RJ = { tw = -0.55, ln = 0.5 }, LH = { p = 0.6 }, RH = { p = 0.45 } },
+		{ RS = { p = 2.55, y = 0.35 }, LS = { p = 0.4, r = -0.3 }, RJ = { tw = 0.55, ln = -0.22 }, LH = { p = 0.9 }, RH = { p = -0.3 } }),
+	Blunt5 = swing(5, -- FINISHER : enroulé du buste, gros smash en diagonale descendante
+		{
+			{ RS = { p = 2.4, y = -1.3, r = -0.6 }, LS = { p = 1.0, y = 0.8 }, RJ = { tw = -1.15, ln = -0.15 }, RH = { p = 0.35 }, LH = { p = 0.3 } },
+			{ RS = { p = 3.0, y = -1.0, r = -0.5 }, LS = { p = 0.5, r = -0.6 }, RJ = { tw = -1.3, ln = -0.3 }, RH = { p = 0.45 }, LH = { p = 0.45 } },
+		},
+		{ RS = { p = 1.0, y = 0.75 }, LS = { p = 0.35, r = -1.0 }, RJ = { tw = 1.15, ln = 0.6, sd = -0.1 }, LH = { p = 0.95 }, RH = { p = -0.5 } }),
+	Blunt4Thrust = swing(4, -- estoc : l'arme part droit devant, l'autre main pousse le manche
+		{ RS = { p = 1.2, y = 0.5, r = 0.15 }, LS = { p = 1.3, y = 0.4 }, RJ = { tw = -0.6, ln = -0.1 }, LH = { p = 0.2 }, RH = { p = 0.1 } },
+		{ RS = { p = 1.75, y = 0.05 }, LS = { p = 1.6, y = 0.2 }, RJ = { tw = 0.45, ln = 0.42 }, LH = { p = 0.95 }, RH = { p = -0.6 } }),
+	Blunt5Hammer = swing(5, -- marteau à deux mains au-dessus de la tête
+		{
+			{ RS = { p = 2.6, y = 0.2 }, LS = { p = 2.6, y = 0.2 }, RJ = { ln = -0.25 }, RH = { p = 0.3 }, LH = { p = 0.3 } },
+			{ RS = { p = 3.4, y = 0.2 }, LS = { p = 3.4, y = 0.2 }, RJ = { ln = -0.5 }, RH = { p = 0.1 }, LH = { p = 0.4 } },
+		},
+		{ RS = { p = 0.9, y = 0.35 }, LS = { p = 0.9, y = 0.35 }, RJ = { ln = 0.85 }, RH = { p = 1.0 }, LH = { p = -0.2 } }),
+	Blunt5Golf = swing(5, -- swing de golf à deux mains, du bas à droite vers le haut à gauche
+		{
+			{ RS = { p = 0.35, y = -0.8, r = -0.4 }, LS = { p = 0.45, y = 1.1 }, RJ = { tw = -1.0, ln = 0.45 }, RH = { p = 0.4 }, LH = { p = 0.4 } },
+			{ RS = { p = 0.1, y = -1.0, r = -0.5 }, LS = { p = 0.25, y = 1.2 }, RJ = { tw = -1.2, ln = 0.55 }, RH = { p = 0.5 }, LH = { p = 0.5 } },
+		},
+		{ RS = { p = 2.4, y = 0.6 }, LS = { p = 2.2, y = -0.4 }, RJ = { tw = 1.1, ln = -0.2 }, LH = { p = 0.6 }, RH = { p = -0.3 } }),
+
+	-- LOURD (kettlebell, mallette, caisse à outils) : armés amples, le poids entraîne le buste
+	Heavy1 = swing(1, -- pendule par en dessous
+		{ RS = { p = -0.85, r = -0.15 }, LS = { p = 0.9, y = 0.6 }, RJ = { tw = -0.35, ln = 0.35 }, LH = { p = 0.5 }, RH = { p = 0.2 } },
+		{ RS = { p = 1.65, y = 0.2 }, LS = { p = 0.4, r = -0.3 }, RJ = { tw = 0.45, ln = 0.05 }, LH = { p = 0.8 }, RH = { p = -0.4 } }),
+	Heavy2 = swing(2, -- crochet horizontal chargé
+		{ RS = { p = 1.0, y = -1.45, r = -0.6 }, LS = { p = 1.1, y = 0.7 }, RJ = { tw = -0.9, ln = 0.05 }, LH = { p = 0.35 }, RH = { p = -0.1 } },
+		{ RS = { p = 1.3, y = 1.05 }, LS = { p = 0.5, r = -0.4 }, RJ = { tw = 0.95, ln = 0.3 }, LH = { p = 0.75 }, RH = { p = -0.45 } }),
+	Heavy3 = swing(3, -- chute verticale, l'autre main accompagne
+		{ RS = { p = 3.2, y = 0.1 }, LS = { p = 2.7, y = 0.2 }, RJ = { ln = -0.35, tw = -0.15 }, RH = { p = -0.1 }, LH = { p = 0.25 } },
+		{ RS = { p = 1.0, y = 0.3 }, LS = { p = 0.85, y = 0.35 }, RJ = { ln = 0.75, tw = 0.15 }, LH = { p = 0.85 }, RH = { p = -0.3 } }),
+	Heavy4 = swing(4, -- revers tournant
+		{ RS = { p = 1.25, y = 1.3 }, LS = { p = 0.4, r = -0.5 }, RJ = { tw = 0.95 }, RH = { p = 0.3 }, LH = { p = -0.15 } },
+		{ RS = { p = 1.4, y = -1.05, r = -0.45 }, LS = { p = 0.9, y = 0.6 }, RJ = { tw = -0.95, ln = 0.25 }, RH = { p = 0.75 }, LH = { p = -0.4 } }),
+	Heavy5 = swing(5, -- FINISHER : lancer de marteau (le poids part loin derrière puis traverse)
+		{
+			{ RS = { p = 0.9, y = -1.45, r = -0.7 }, LS = { p = 0.9, y = -0.6, r = -0.4 }, RJ = { tw = -1.25, ln = 0.25 }, RH = { p = 0.5 }, LH = { p = 0.5 } },
+			{ RS = { p = 0.7, y = -1.5, r = -0.8 }, LS = { p = 0.6, r = -0.8 }, RJ = { tw = -1.35, ln = 0.35 }, RH = { p = 0.6 }, LH = { p = 0.6 } },
+		},
+		{ RS = { p = 1.5, y = 0.9 }, LS = { p = 0.4, r = -1.1 }, RJ = { tw = 1.25, ln = 0.4, sd = -0.12 }, LH = { p = 1.0 }, RH = { p = -0.55 } }),
+	Heavy4Shove = swing(4, -- poussée à deux mains (l'objet en bélier)
+		{ RS = { p = 1.2, y = 0.8, r = 0.1 }, LS = { p = 1.2, y = 0.8, r = 0.1 }, RJ = { ln = -0.15, tw = -0.3 }, RH = { p = 0.2 }, LH = { p = 0.1 } },
+		{ RS = { p = 1.7, y = 0.1 }, LS = { p = 1.7, y = 0.1 }, RJ = { ln = 0.45, tw = 0.1 }, LH = { p = 1.0 }, RH = { p = -0.6 } }),
+	Heavy5Ground = swing(5, -- écrasement au sol à deux mains, genoux pliés
+		{
+			{ RS = { p = 2.8, y = 0.2 }, LS = { p = 2.8, y = 0.2 }, RJ = { ln = -0.35 }, RH = { p = 0.25 }, LH = { p = 0.25 } },
+			{ RS = { p = 3.45, y = 0.2 }, LS = { p = 3.45, y = 0.2 }, RJ = { ln = -0.55 }, RH = { p = 0.1 }, LH = { p = 0.55 } },
+		},
+		{ RS = { p = 0.55, y = 0.35 }, LS = { p = 0.55, y = 0.35 }, RJ = { ln = 1.0 }, RH = { p = 1.1 }, LH = { p = 0.9 } }),
+
+	-- LONG / BALAYAGE (serpillière, échelle, câble, parapluie, fil de téléphone)
+	Long1 = swing(1, -- grand balayage horizontal
+		{ RS = { p = 1.3, y = -1.5, r = -0.55 }, LS = { p = 1.2, y = 0.9 }, RJ = { tw = -1.0, ln = -0.05 }, LH = { p = 0.3 }, RH = { p = -0.1 } },
+		{ RS = { p = 1.4, y = 1.3 }, LS = { p = 0.4, r = -0.4 }, RJ = { tw = 1.0, ln = 0.18 }, LH = { p = 0.6 }, RH = { p = -0.35 } }),
+	Long2 = swing(2, -- balayage retour
+		{ RS = { p = 1.35, y = 1.4 }, LS = { p = 0.4, r = -0.4 }, RJ = { tw = 0.95 }, RH = { p = 0.3 }, LH = { p = -0.1 } },
+		{ RS = { p = 1.4, y = -1.3, r = -0.5 }, LS = { p = 1.1, y = 0.8 }, RJ = { tw = -1.0, ln = 0.15 }, RH = { p = 0.6 }, LH = { p = -0.35 } }),
+	Long3 = swing(3, -- estoc de lance à deux mains, grand pas
+		{ RS = { p = 1.1, y = 0.45, r = 0.15 }, LS = { p = 1.25, y = 0.5 }, RJ = { tw = -0.7, ln = -0.12 }, LH = { p = 0.15 }, RH = { p = 0.2 } },
+		{ RS = { p = 1.65, y = 0.0 }, LS = { p = 1.55, y = 0.15 }, RJ = { tw = 0.35, ln = 0.45 }, LH = { p = 1.0 }, RH = { p = -0.65 } }),
+	Long4 = swing(4, -- fauchage bas dans les jambes, accroupi
+		{ RS = { p = 2.3, y = -0.9, r = -0.4 }, LS = { p = 1.0, y = 0.7 }, RJ = { tw = -0.8, ln = -0.1 }, RH = { p = 0.1 }, LH = { p = 0.3 } },
+		{ RS = { p = 0.75, y = 1.2 }, LS = { p = 0.3, r = -0.5 }, RJ = { tw = 0.95, ln = 0.6 }, LH = { p = 0.9 }, RH = { p = 0.5 } }),
+	Long5 = swing(5, -- FINISHER : moulinet au-dessus de la tête puis on abat
+		{
+			{ RS = { p = 2.6, y = -1.2, r = -0.6 }, LS = { p = 1.0, y = 0.8 }, RJ = { tw = -0.9, ln = -0.25 }, RH = { p = 0.2 }, LH = { p = 0.2 } },
+			{ RS = { p = 3.4, y = -0.3 }, LS = { p = 0.6, r = -0.5 }, RJ = { tw = -0.5, ln = -0.4 }, LH = { p = 0.4 } },
+		},
+		{ RS = { p = 0.95, y = 0.4 }, LS = { p = 0.4, r = -0.9 }, RJ = { tw = 0.5, ln = 0.75 }, LH = { p = 0.95 }, RH = { p = -0.45 } }),
+	Long5Spin = swing(5, -- FINISHER : tour complet (revers puis balayage à 360°)
+		{
+			{ RS = { p = 1.35, y = 1.4 }, LS = { p = 0.5, r = -0.6 }, RJ = { tw = 1.1, ln = 0.1 }, RH = { p = 0.3 }, LH = { p = 0.2 } },
+			{ RS = { p = 1.4, y = -1.5, r = -0.6 }, LS = { p = 1.0, y = 0.9 }, RJ = { tw = -1.35, ln = 0.05 }, RH = { p = 0.1 }, LH = { p = 0.4 } },
+		},
+		{ RS = { p = 1.4, y = 1.35 }, LS = { p = 0.4, r = -1.0 }, RJ = { tw = 1.3, ln = 0.3, sd = -0.1 }, LH = { p = 0.85 }, RH = { p = -0.4 } }),
+
+	-- PLAT / CLAQUE (clipboard, plateau, calculatrice, portable, spatule)
+	Slap1 = swing(1, -- gifle à plat, poignet cassé
+		{ RS = { p = 1.8, y = -1.3, r = -0.7 }, LS = { p = 1.1, y = 0.75 }, RJ = { tw = -0.6 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.55, y = 0.95, r = 0.15 }, LS = { p = 0.7, y = 0.7 }, RJ = { tw = 0.7, ln = 0.2 }, LH = { p = 0.6 }, RH = { p = -0.3 } }),
+	Slap2 = swing(2, -- revers à plat
+		{ RS = { p = 1.6, y = 1.35, r = 0.15 }, LS = { p = 0.6, r = -0.3 }, RJ = { tw = 0.7 }, RH = { p = 0.25 } },
+		{ RS = { p = 1.65, y = -0.95, r = -0.55 }, LS = { p = 1.0, y = 0.7 }, RJ = { tw = -0.65, ln = 0.2 }, RH = { p = 0.6 }, LH = { p = -0.3 } }),
+	Slap3 = swing(3, -- tape sur la tête (s'arrête à hauteur du crâne)
+		{ RS = { p = 2.9, y = 0.45, r = -0.2 }, LS = { p = 1.0, y = 0.7 }, RJ = { ln = -0.25, tw = -0.25 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.55, y = 0.2 }, LS = { p = 0.6, r = -0.2 }, RJ = { ln = 0.4, tw = 0.25 }, LH = { p = 0.7 }, RH = { p = -0.35 } }),
+	Slap4 = swing(4, -- gifle de l'autre main
+		{ LS = { p = 1.7, y = -1.2, r = -0.6 }, RS = { p = 1.0, y = 0.6 }, RJ = { tw = 0.6 }, RH = { p = 0.2 } },
+		{ LS = { p = 1.5, y = 0.95, r = 0.1 }, RS = { p = 0.7, y = 0.6 }, RJ = { tw = -0.7, ln = 0.2 }, RH = { p = 0.6 }, LH = { p = -0.3 } }),
+	Slap5 = swing(5, -- FINISHER : revers tournant
+		{
+			{ RS = { p = 1.5, y = 1.35 }, LS = { p = 0.4, r = -0.6 }, RJ = { tw = 1.1 }, RH = { p = 0.35 }, LH = { p = 0.15 } },
+			{ RS = { p = 1.7, y = 1.45, r = 0.1 }, LS = { p = 0.3, r = -0.8 }, RJ = { tw = 1.3, ln = -0.1 }, RH = { p = 0.45 }, LH = { p = 0.25 } },
+		},
+		{ RS = { p = 1.65, y = -1.25, r = -0.6 }, LS = { p = 0.5, r = -1.0 }, RJ = { tw = -1.2, ln = 0.3, sd = 0.1 }, RH = { p = 0.85 }, LH = { p = -0.45 } }),
+	Slap4Double = swing(4, -- double claque (les deux mains se referment devant)
+		{ RS = { p = 1.5, y = -1.2, r = -0.7 }, LS = { p = 1.5, y = -1.2, r = -0.7 }, RJ = { ln = -0.1 }, RH = { p = 0.2 } },
+		{ RS = { p = 1.6, y = 0.55 }, LS = { p = 1.6, y = 0.55 }, RJ = { ln = 0.3 }, RH = { p = 0.6 }, LH = { p = -0.3 } }),
+	Slap5Overhead = swing(5, -- FINISHER : grosse tape à deux mains par-dessus la tête
+		{
+			{ RS = { p = 2.7, y = 0.3 }, LS = { p = 2.7, y = 0.3 }, RJ = { ln = -0.3 }, RH = { p = 0.4 }, LH = { p = 0.4 } },
+			{ RS = { p = 3.3, y = 0.3 }, LS = { p = 3.3, y = 0.3 }, RJ = { ln = -0.45 }, RH = { p = 0.2 }, LH = { p = 0.2 } },
+		},
+		{ RS = { p = 1.35, y = 0.3 }, LS = { p = 1.35, y = 0.3 }, RJ = { ln = 0.65 }, RH = { p = 0.8 }, LH = { p = -0.2 } }),
+
+	-- GRIFFES (Office Cat) : coups de patte en diagonale, alternés, puis bond
+	Claw1 = swing(1,
+		{ RS = { p = 2.8, y = -0.6, r = -0.35 }, LS = { p = 1.3, y = 0.5 }, RJ = { tw = -0.45, ln = -0.1 }, LH = { p = 0.4 }, RH = { p = 0.1 } },
+		{ RS = { p = 1.0, y = 0.75 }, LS = { p = 1.1, y = 0.5 }, RJ = { tw = 0.6, ln = 0.4 }, LH = { p = 0.75 }, RH = { p = -0.35 } }),
+	Claw2 = swing(2,
+		{ LS = { p = 2.85, y = -0.6, r = -0.35 }, RS = { p = 1.2, y = 0.5 }, RJ = { tw = 0.5, ln = -0.1 }, RH = { p = 0.4 }, LH = { p = 0.1 } },
+		{ LS = { p = 0.95, y = 0.75 }, RS = { p = 1.1, y = 0.5 }, RJ = { tw = -0.6, ln = 0.42 }, RH = { p = 0.75 }, LH = { p = -0.35 } }),
+	Claw3 = swing(3, -- double griffure vers le bas
+		{ RS = { p = 3.0, y = -0.4, r = -0.45 }, LS = { p = 3.0, y = -0.4, r = -0.45 }, RJ = { ln = -0.35 }, RH = { p = 0.2 }, LH = { p = 0.2 } },
+		{ RS = { p = 1.05, y = 0.45 }, LS = { p = 1.05, y = 0.45 }, RJ = { ln = 0.6 }, RH = { p = 0.7 }, LH = { p = -0.2 } }),
+	Claw4 = swing(4, -- griffure montante depuis l'accroupi
+		{ RS = { p = 0.3, y = -0.7, r = -0.5 }, LS = { p = 1.2, y = 0.6 }, RJ = { tw = -0.5, ln = 0.7 }, RH = { p = 0.7 }, LH = { p = 0.75 } },
+		{ RS = { p = 2.1, y = 0.8 }, LS = { p = 0.6, r = -0.3 }, RJ = { tw = 0.7, ln = 0.05 }, LH = { p = 0.6 }, RH = { p = -0.3 } }),
+	Claw5 = swing(5, -- FINISHER : bond, double ratissage
+		{
+			{ RS = { p = -0.7, r = -0.35 }, LS = { p = -0.7, r = -0.35 }, RJ = { ln = 0.65 }, RH = { p = 0.8 }, LH = { p = 0.8 } },
+			{ RS = { p = 3.05, y = -0.3, r = -0.4 }, LS = { p = 3.05, y = -0.3, r = -0.4 }, RJ = { ln = -0.4 }, RH = { p = -0.2 }, LH = { p = 0.6 } },
+		},
+		{ RS = { p = 0.95, y = 0.55 }, LS = { p = 0.95, y = 0.55 }, RJ = { ln = 0.85 }, RH = { p = 1.15 }, LH = { p = -0.35 } }),
+
+	-- TECH / HOLO (AI Assistant, Consultant) : paumes ouvertes, poussées d'énergie
+	Tech1 = swing(1,
+		{ RS = { p = 1.05, y = 0.65, r = 0.15 }, LS = { p = 1.3, y = 0.6 }, RJ = { tw = -0.55 }, LH = { p = 0.3 }, RH = { p = -0.05 } },
+		{ RS = { p = 1.75, y = -0.05 }, LS = { p = 0.8, y = 0.7 }, RJ = { tw = 0.6, ln = 0.25 }, LH = { p = 0.75 }, RH = { p = -0.45 } }),
+	Tech2 = swing(2,
+		{ LS = { p = 1.05, y = 0.65, r = 0.15 }, RS = { p = 1.3, y = 0.6 }, RJ = { tw = 0.55 }, RH = { p = 0.3 } },
+		{ LS = { p = 1.75, y = -0.05 }, RS = { p = 0.8, y = 0.7 }, RJ = { tw = -0.6, ln = 0.25 }, RH = { p = 0.75 }, LH = { p = -0.45 } }),
+	Tech3 = swing(3, -- balayage montant de la tablette
+		{ RS = { p = 0.25, y = -0.85, r = -0.55 }, LS = { p = 1.2, y = 0.6 }, RJ = { tw = -0.55, ln = 0.3 }, LH = { p = 0.45 }, RH = { p = 0.25 } },
+		{ RS = { p = 2.35, y = 0.8 }, LS = { p = 0.6, r = -0.3 }, RJ = { tw = 0.6, ln = -0.15 }, LH = { p = 0.7 }, RH = { p = -0.3 } }),
+	Tech4 = swing(4, -- double poussée
+		{ RS = { p = 1.0, y = 0.95, r = 0.1 }, LS = { p = 1.0, y = 0.95, r = 0.1 }, RJ = { ln = -0.15 }, RH = { p = 0.2 } },
+		{ RS = { p = 1.65, y = 0.15 }, LS = { p = 1.65, y = 0.15 }, RJ = { ln = 0.38 }, LH = { p = 0.95 }, RH = { p = -0.55 } }),
+	Tech5 = swing(5, -- FINISHER : « surcharge » (mains au ciel, puis décharge devant)
+		{
+			{ RS = { p = 2.6, r = -0.5 }, LS = { p = 2.6, r = -0.5 }, RJ = { ln = -0.3 }, RH = { p = 0.2 }, LH = { p = 0.2 } },
+			{ RS = { p = 3.1, r = -0.7 }, LS = { p = 3.1, r = -0.7 }, RJ = { ln = -0.45 }, RH = { p = 0.05 }, LH = { p = 0.35 } },
+		},
+		{ RS = { p = 1.7, y = 0.1 }, LS = { p = 1.7, y = 0.1 }, RJ = { ln = 0.4 }, LH = { p = 1.0 }, RH = { p = -0.6 } }),
+	Tech4Swipe = swing(4, -- glissé horizontal (« swipe »)
+		{ RS = { p = 1.5, y = -1.3, r = -0.5 }, LS = { p = 1.4, y = 0.8 }, RJ = { tw = -0.75 }, LH = { p = 0.3 } },
+		{ RS = { p = 1.5, y = 1.1 }, LS = { p = 0.6, r = -0.4 }, RJ = { tw = 0.8, ln = 0.2 }, LH = { p = 0.7 }, RH = { p = -0.4 } }),
+
+	-- BACON (tranche molle en fouet, hanches qui se dandinent)
+	Bacon1 = swing(1, -- claquement de fouet par-dessus
+		{ RS = { p = 3.35, y = -0.3, r = -0.2 }, LS = { p = 0.6, r = -0.5 }, RJ = { ln = -0.35, tw = -0.35 }, RH = { p = -0.1 }, LH = { p = 0.25 } },
+		{ RS = { p = 1.25, y = 0.4 }, LS = { p = 0.4, r = -0.6 }, RJ = { ln = 0.4, tw = 0.45 }, LH = { p = 0.75 }, RH = { p = -0.35 } }),
+	Bacon2 = swing(2, -- fouetté latéral
+		{ RS = { p = 1.25, y = 1.4 }, LS = { p = 0.5, r = -0.6 }, RJ = { tw = 0.85 }, RH = { p = 0.3 } },
+		{ RS = { p = 1.3, y = -1.35, r = -0.6 }, LS = { p = 0.9, y = 0.6 }, RJ = { tw = -0.85, ln = 0.2 }, RH = { p = 0.65 }, LH = { p = -0.35 } }),
+	Bacon3 = swing(3, -- fouetté bas avec déhanché
+		{ RS = { p = 0.5, y = -1.2, r = -0.6 }, LS = { p = 1.6, r = -0.6 }, RJ = { tw = -0.6, ln = 0.3, sd = 0.2 }, RH = { p = 0.5 }, LH = { p = -0.2 } },
+		{ RS = { p = 1.45, y = 1.1 }, LS = { p = 1.4, r = -0.8 }, RJ = { tw = 0.75, ln = 0.35, sd = -0.2 }, LH = { p = 0.7 }, RH = { p = -0.3 } }),
+	Bacon4 = swing(4, -- moulinet au-dessus de la tête puis diagonale
+		{ RS = { p = 2.9, y = 1.2, r = -0.4 }, LS = { p = 0.3, r = -0.9 }, RJ = { tw = 0.5, ln = -0.2 }, RH = { p = 0.4 }, LH = { p = 0.3 } },
+		{ RS = { p = 1.6, y = -0.6, r = -0.3 }, LS = { p = 0.6, r = -0.5 }, RJ = { tw = -0.55, ln = 0.35 }, RH = { p = 0.7 }, LH = { p = -0.35 } }),
+	Bacon5 = swing(5, -- FINISHER « Crispy Cyclone » : lasso au-dessus de la tête puis grand fouetté
+		{
+			{ RS = { p = 3.0, y = -1.2, r = -0.6 }, LS = { p = 0.5, r = -0.8 }, RJ = { tw = -0.9, ln = -0.2 }, RH = { p = 0.3 }, LH = { p = 0.3 } },
+			{ RS = { p = 3.2, y = 1.1, r = -0.5 }, LS = { p = 0.4, r = -1.0 }, RJ = { tw = 0.6, ln = -0.3 }, RH = { p = 0.4 }, LH = { p = 0.4 } },
+		},
+		{ RS = { p = 1.4, y = 0.55 }, LS = { p = 0.3, r = -1.2 }, RJ = { tw = 1.0, ln = 0.45, sd = -0.12 }, LH = { p = 0.95 }, RH = { p = -0.5 } }),
+
+	-- variantes d'arme de l'uppercut (impact 0,2 s) et du downslam (impact 0,16 s) : mêmes timings que les originaux
+	WeaponUppercut = {
+		{ t = 0 },
+		{ t = 0.15, RS = { p = -0.6, r = -0.25 }, LS = { p = 1.1, y = 0.7 }, RJ = { ln = 0.6, tw = -0.5 }, RH = { p = 0.7 }, LH = { p = 0.7 } },
+		{ t = 0.2, RS = { p = 3.0, y = 0.3 }, LS = { p = -0.4 }, RJ = { ln = -0.4, tw = 0.5 }, LH = { p = 0.95 }, RH = { p = -0.25 } },
+		{ t = 0.45, RS = { p = 2.9, y = 0.3 }, LS = { p = -0.35 }, RJ = { ln = -0.34, tw = 0.42 }, LH = { p = 0.8 } },
+		{ t = 0.65 },
+	},
+	WeaponDownslam = {
+		{ t = 0 },
+		{ t = 0.12, RS = { p = 3.4, y = 0.1 }, LS = { p = 2.2 }, RJ = { ln = -0.5 }, RH = { p = 0.7 }, LH = { p = 0.5 } },
+		{ t = 0.16, RS = { p = 0.7, y = 0.3 }, LS = { p = 0.4, r = -0.5 }, RJ = { ln = 0.9 }, RH = { p = 1.0 }, LH = { p = 0.9 } },
+		{ t = 0.45, RS = { p = 0.75, y = 0.3 }, LS = { p = 0.45, r = -0.5 }, RJ = { ln = 0.75 }, RH = { p = 0.8 } },
+		{ t = 0.7 },
+	},
+}
+for name, frames in pairs(STYLE_ANIMS) do
+	if not ANIMS[name] then
+		ANIMS[name] = frames
+	end
+end
+
+-- miroir gauche/droite : on échange les membres et on inverse la rotation / l'inclinaison latérale du buste
+local MIRROR_SWAP = { RS = "LS", LS = "RS", RH = "LH", LH = "RH" }
+local function mirrorFrames(frames)
+	local out = {}
+	for i, f in ipairs(frames) do
+		local m = { t = f.t }
+		for k, v in pairs(f) do
+			if MIRROR_SWAP[k] then
+				m[MIRROR_SWAP[k]] = v
+			elseif k == "RJ" then
+				m.RJ = { tw = -(v.tw or 0), ln = v.ln or 0, sd = -(v.sd or 0) }
+			end
+		end
+		out[i] = m
+	end
+	return out
+end
+ProcAnim.mirrorFrames = mirrorFrames
+-- version « _L » de chaque animation de style (arme fétiche en main gauche : M1Style.remap)
+for name in pairs(require(script.Parent.Parent.Config.M1Styles).Moves) do
+	if ANIMS[name] and not ANIMS[name .. "_L"] then
+		ANIMS[name .. "_L"] = mirrorFrames(ANIMS[name])
+	end
+end
+
 ProcAnim.Anims = ANIMS
 
 local states = {}
+local playHooks = {}
 
 local function getMotors(character)
 	local torso = character:FindFirstChild("Torso")
@@ -736,6 +1035,16 @@ function ProcAnim.play(character: Model, name: string, speed: number?)
 	end
 	s.track = { frames = frames, t = 0, speed = speed or 1 }
 	s.blend = nil
+	for _, fn in ipairs(playHooks) do
+		task.spawn(fn, character, name)
+	end
+end
+
+-- écoute des animations nommées jouées (M1StyleController : traînées / impacts des M1, local ET autres joueurs)
+function ProcAnim.onPlay(fn)
+	if type(fn) == "function" then
+		table.insert(playHooks, fn)
+	end
 end
 
 -- Ultimates / effets : jouer une piste de keyframes fournie directement (même format qu'une entrée de ANIMS)

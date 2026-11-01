@@ -29,6 +29,7 @@ Supprimés : Rising Duo, Uppercut « 3 M1 + Espace », Ground Pin, Dropkick Ctrl
 - L'attaquant est ralenti (`AttackSlow` 0,55) pendant ses M1 ; verrouillage doux (`SoftLock`), mémoire de clic
   (`InputBuffer` 0,25 s), petit pas en avant (`Lunge`) qui recolle à la cible.
 - Le client envoie l'index du coup (`mods.i`) ; le serveur ne l'accepte que s'il continue SA chaîne (ou repart de 1).
+- Animations, traînées et impacts **par arme / personnage** (même timing que Punch1-5) : voir `docs/M1-Styles.md`.
 
 ## Variantes du 5e coup
 
