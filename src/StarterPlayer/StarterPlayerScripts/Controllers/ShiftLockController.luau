@@ -24,14 +24,28 @@ local function humanoid()
 end
 
 -- menus du jeu ouverts (on rend alors la souris pour pouvoir cliquer)
+-- (les panneaux du dock unique sont dans l'écran "Meta" ; le registre d'UIKit couvre aussi les panneaux futurs)
 local MENUS = {
-	{ "HUD", "Tasks" }, { "HUD", "Shop" }, { "HUD", "Combos" },
+	{ "Meta", "TasksPanel" }, { "Meta", "ShopPanel" }, { "Meta", "CombosPanel" },
+	{ "Meta", "PlayerListPanel" }, { "Meta", "LeaderboardPanel" },
 	{ "CharacterSelect", "Root" }, { "CharacterSelect", "CrateShop" }, { "Admin", "Panel" },
 	{ "Meta", "DailyPanel" }, { "Meta", "CodesPanel" }, { "Meta", "SettingsPanel" },
 }
 local GuiService = game:GetService("GuiService")
+local UIKit
+do
+	local m = script.Parent:FindFirstChild("UIKit")
+	local ok, mod = false, nil
+	if m then
+		ok, mod = pcall(require, m)
+	end
+	UIKit = ok and type(mod) == "table" and mod or nil
+end
 local function menuOpen()
 	if GuiService.MenuIsOpen then
+		return true
+	end
+	if UIKit and UIKit.anyPanelOpen and UIKit.anyPanelOpen() then
 		return true
 	end
 	local pg = player:FindFirstChild("PlayerGui")
