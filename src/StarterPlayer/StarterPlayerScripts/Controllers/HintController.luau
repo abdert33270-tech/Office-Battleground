@@ -1,7 +1,8 @@
 --[[
 	HintController — conseils contextuels NON bloquants (objectif : frapper avec un objet en < 30 s).
 	- Étiquette "[E] PICK UP CHAIR" au-dessus de l'objet le plus proche (mains vides).
-	- Bandeau discret en bas d'écran avec les commandes utiles du moment.
+	- Bandeau discret en bas d'écran avec les commandes utiles du moment (combat ABA : combo x5, uppercut, block /
+	  perfect block, dash directionnel ; pendant un combo subi : « Q = EVASIVE » ; pendant un guard break : avertissement).
 ]]
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -138,12 +139,22 @@ function HintController.init()
 			local root = c and c:FindFirstChild("HumanoidRootPart")
 			local held = c and c:GetAttribute("HeldItem")
 			local touch = isTouch()
-			if held then
+			-- combat ABA : rappels contextuels (combo subi -> EVASIVE ; guard break ; sinon les commandes de base)
+			local sn = workspace:GetServerTimeNow()
+			local stunned = c ~= nil and sn < (c:GetAttribute("StunUntil") or 0)
+			local broken = c ~= nil and sn < (c:GetAttribute("GuardBrokenUntil") or 0)
+			local evasiveReady = stunned and not broken and sn >= (c:GetAttribute("CDEvasive") or 0)
+				and sn >= (c:GetAttribute("KnockdownUntil") or 0)
+			if broken then
+				bar.Text = chips({ { "GUARD BROKEN!", "you can't block for a moment" } })
+			elseif evasiveReady then
+				bar.Text = touch and chips({ { "DASH", "EVASIVE: break free!" } }) or chips({ { "Q", "EVASIVE: break free!" } })
+			elseif held then
 				bar.Text = touch and chips({ { "HIT", "swing" }, { "THROW", "throw it" }, { "GRAB", "drop" } })
 					or chips({ { "CLICK", "swing" }, { "R", "throw" }, { "E", "drop" } })
 			else
-				bar.Text = touch and chips({ { "HIT", "punch" }, { "GRAB", "pick up anything!" } })
-					or chips({ { "CLICK", "punch" }, { "E", "pick up anything!" }, { "W W", "run" }, { "SHIFT", "lock aim" } })
+				bar.Text = touch and chips({ { "HIT x5", "combo" }, { "JUMP + 5th HIT", "uppercut" }, { "BLOCK", "guard" }, { "DASH", "dash" }, { "GRAB", "pick up" } })
+					or chips({ { "CLICK x5", "combo" }, { "SPACE + 5th", "uppercut" }, { "F", "block (tap = perfect)" }, { "Q + WASD", "dash" }, { "E", "pick up" }, { "W W", "run" } })
 			end
 			-- objet le plus proche
 			local best, bestDist = nil, CombatConfig.PickupRange
