@@ -1,7 +1,8 @@
 --[[
 	CharacterSelectController — menu PERSONNAGES & SKINS + ouverture de la MALLETTE MYSTÈRE.
-	Ouverture : bouton « CHARACTER » du menu du HUD, et automatiquement à l'arrivée (choix auto après 8 s
-	si le joueur ne touche à rien ; dès qu'il clique, le compte à rebours s'arrête).
+	Ouverture : bouton « CHARACTER » du menu du HUD, et automatiquement à l'arrivée. La PREMIÈRE ouverture de la
+	session n'a pas de choix auto ; les suivantes avec withTimer choisissent après 8 s si le joueur ne touche à rien
+	(dès qu'il clique, le compte à rebours s'arrête). Grille : phares d'abord, puis persos possédés / gratuits, puis verrouillés.
 	PC + téléphone : fenêtre dessinée en 1000x576 « unités design », mise à l'échelle par UIScale selon l'écran,
 	listes qui défilent (grille des persos, infos).
 	  Gauche : grille des persos (Config/Characters.Order), portrait 3D = skin équipé (Base si « Avatar »).
@@ -688,7 +689,33 @@ local function buildCard(charId, order)
 end
 
 -- état de déblocage des cartes
+-- ordre d'affichage de la grille : persos phares (Featured, ruban LEGENDARY) en tête, puis possédés / gratuits,
+-- puis verrouillés ; à égalité, l'ordre de Config/Characters.Order
+local function gridOrder()
+	local list = {}
+	for i, id in ipairs(Characters.Order) do
+		if cards[id] then
+			local rank = (cards[id].featured and 0) or (ownsChar(id) and 1) or 2
+			table.insert(list, { id = id, rank = rank, i = i })
+		end
+	end
+	table.sort(list, function(a, b)
+		if a.rank ~= b.rank then
+			return a.rank < b.rank
+		end
+		return a.i < b.i
+	end)
+	local ids = {}
+	for _, e in ipairs(list) do
+		table.insert(ids, e.id)
+	end
+	return ids
+end
+
 local function paintLocks()
+	for k, id in ipairs(gridOrder()) do
+		cards[id].btn.LayoutOrder = k
+	end
 	for id, c in pairs(cards) do
 		local e = unlockOf(id)
 		local own = ownsChar(id)
@@ -748,12 +775,10 @@ local function scrollToSelected()
 		return
 	end
 	local k = 0
-	for _, id in ipairs(Characters.Order) do
-		if cards[id] then
-			k += 1
-			if id == selChar then
-				break
-			end
+	for _, id in ipairs(gridOrder()) do
+		k += 1
+		if id == selChar then
+			break
 		end
 	end
 	local y = 6 + math.floor((k - 1) / 2) * 136
@@ -2387,10 +2412,15 @@ function Select.choose(name)
 	toast("You are " .. kit.DisplayName .. "!", kit.Color)
 end
 
+local openedOnce = false
 function Select.open(withTimer: boolean?)
 	if not built then
 		return
 	end
+	-- première ouverture de la session : pas de choix automatique (le nouveau joueur prend son temps)
+	local first = not openedOnce
+	openedOnce = true
+	local showTimer = withTimer and not first
 	token += 1
 	local my = token
 	applyScale()
@@ -2414,8 +2444,8 @@ function Select.open(withTimer: boolean?)
 		end
 	end)
 	ui.title.Text = withTimer and "PICK YOUR JOB!" or "CHOOSE YOUR JOB"
-	ui.timer.Text = ""
-	if withTimer then
+	ui.timer.Text = (withTimer and first) and "Take your time  -  pick a job, then PLAY" or ""
+	if showTimer then
 		autoToken = my
 		task.spawn(function()
 			for t = 8, 1, -1 do
