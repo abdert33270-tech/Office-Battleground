@@ -688,6 +688,10 @@ function CombatController.transform()
 		return
 	end
 	if (c:GetAttribute("Overtime") or 0) >= CombatConfig.Overtime.Max then
+		-- même règle que le serveur : pas pendant un stun / guard break / mise au sol / K.O.
+		if isStunned(c) or guardBroken(c) or knockedDown(c) or c:GetAttribute("PendingKO") or c:GetAttribute("UltHeld") then
+			return
+		end
 		Net.get("Transform"):FireServer()
 	end
 end
@@ -953,6 +957,7 @@ function CombatController.init()
 	local function hookCharacter(c)
 		combo, lastM1, airCombo, airChainUntil = 0, -10, 0, 0
 		nextAttack, busyUntil, endlagUntil, riseLockUntil = 0, 0, 0, 0
+		nextDash, nextDashStrike, lastDash, lastDashKind = 0, 0, -10, "F" -- l'état serveur repart à zéro au respawn
 		holdingAttack, wantBlock, blocking = false, false, false
 		c:GetAttributeChangedSignal("AutoFollow"):Connect(function()
 			task.spawn(autoFollow, c)

@@ -589,8 +589,10 @@ local function onAbility(player: Player, slot, aim)
 		return
 	end
 	local t = os.clock()
-	if t < (s.gcdUntil or 0) or t < s.nextAttack - 0.05 or t < (s.busyUntil or 0) - 0.05 then
-		return -- anti-spam : délai global entre attaques, et pas pendant la récupération d'un combo (busyUntil = endlag / chaîne lâchée)
+	if t < (s.gcdUntil or 0) or t < s.nextAttack - 0.05 or t < (s.endlagUntil or 0) - 0.05 then
+		-- anti-spam : délai global, pas avant la fin du coup en cours (nextAttack), ni pendant l'endlag d'un coup lourd.
+		-- Liens M1 -> attaque de perso possibles (façon ABA) : la DropEndlag ne s'applique pas aux attaques de perso.
+		return
 	end
 	s.cd = s.cd or {}
 	s.charges = s.charges or {}

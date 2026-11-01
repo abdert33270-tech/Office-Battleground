@@ -308,6 +308,12 @@ local function transform(player: Player)
 	if (c:GetAttribute("Overtime") or 0) < CombatConfig.Overtime.Max then
 		return
 	end
+	-- pas de transformation « brise-combo » : refusée si étourdi, garde brisée, au sol, K.O. en cours ou tenu par un ulti
+	local st = CharacterState.get(c)
+	if CharacterState.isStunned(c) or CharacterState.isGuardBroken(c) or CharacterState.isKnockedDown(c)
+		or (st and st.pendingKO) or c:GetAttribute("PendingKO") or c:GetAttribute("UltHeld") then
+		return
+	end
 	-- zone AFK : pas de transformation (ni coups, ni ulti là-bas)
 	if CharacterState.inSafeZone(c) then
 		Announce.toast(player, "No Overtime in the AFK zone!", Color3.fromRGB(255, 200, 90))
