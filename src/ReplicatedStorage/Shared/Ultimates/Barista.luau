@@ -427,7 +427,7 @@ local function clientWhiff(K, d)
 		play(c, "BarUltDecaf")
 		local r = rootOf(c)
 		local p = r and r.Position or d.to
-		snd(SND.Grind, p, 0.7, 0.55, 1)
+		snd(SND.Grind, p, 0.7, 0.55)
 		snd(SND.Hiss2, p, 0.6, 0.8)
 		for i = 1, 6 do
 			puff(p + Vector3.new(rng:NextNumber(-1.5, 1.5), rng:NextNumber(0, 2), rng:NextNumber(-1.5, 1.5)), 0.8, 0.6, 2, i % 2 == 0 and CARAMEL or STEAM)
@@ -447,7 +447,7 @@ local function clientHit(K, d)
 	play(c, "BarUltChug")
 	KK.shot(d, "follow", { subject = c, offset = CFrame.new(1.2, 1.4, -5.5), lookOffset = Vector3.new(0, 1.3, 0), fov = 45, flat = true })
 	snd(SND.Slurp, vair, 1.2)
-	snd(SND.Riser, vair, 0.7, 1.15, 3)
+	snd(SND.Riser, vair, 0.7, 1.15)
 	if isNear then
 		tint(d, { TintColor = Color3.fromRGB(255, 214, 160), Saturation = -0.55, Contrast = 0.15 }, T.Boom - 0.05, 0.25, 0.1)
 	end

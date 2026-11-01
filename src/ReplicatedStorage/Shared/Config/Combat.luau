@@ -1,6 +1,19 @@
 --[[
-	Combat — fiche de données du combat commun (tous les personnages).
-	Toutes les valeurs d'équilibrage sont ici : ne pas les coder en dur ailleurs.
+	Combat — fiche de données du combat commun (tous les personnages), système « ABA » (Anime Battle Arena).
+	Toutes les valeurs d'équilibrage sont ici : ne pas les coder en dur ailleurs. Détails : docs/Combat-ABA.md
+
+	COMMANDES (PC) :
+		Clic x5            chaîne de M1 (coups 1-4 légers qui étourdissent, 5e = FINISHER lourd qui renverse)
+		Espace + 5e clic   UPPERCUT : la victime décolle, on la suit automatiquement, puis 3 clics en l'air (le 3e = DOWNSLAM)
+		5e clic en l'air   DOWNSLAM (écrase au sol)
+		F maintenu         BLOCK (jauge de garde) ; F juste avant le coup (PerfectWindow) = PERFECT BLOCK (parade)
+		Q + direction      DASH avant / arrière / CÔTÉ (relatif à la caméra) ; dash avant + clic = DASH STRIKE (lourd)
+		Q pendant un combo EVASIVE : on se libère (longue recharge)
+	LOURD = Category "Heavy" (5e M1, uppercut, downslam, dash strike, attaques de perso / objets / lancers « Heavy »,
+	finisher d'objet) ou p.heavy = true : casse un block normal (GUARD BREAK) sauf PERFECT BLOCK.
+
+	ZONES SÛRES : un personnage avec l'attribut SafeZone = true (zone AFK) ne peut ni frapper ni être frappé
+	(CombatService.applyHit ignore le coup) et ne peut pas lancer de M1 / dash / attaque.
 ]]
 return {
 	MaxHealth = 100,
@@ -8,78 +21,90 @@ return {
 	BaseJumpPower = 50,
 	RespawnTime = 4,
 
-	-- M1 au sol : combo de 4 coups (le 4e repousse). Lunge = petit pas en avant à chaque coup.
+	-- M1 au sol : chaîne de 5 coups, cadence lente et lisible (anticipation visible avant chaque impact).
 	M1 = {
-		Damage = { 4, 4, 5, 7 },
-		Cooldown = { 0.3, 0.3, 0.32, 1.15 }, -- le 4e coup a un gros temps de récupération (anti-spam)
-		ComboReset = 1.0,
-		Windup = 0.06,
+		Hits = 5,
+		Damage = { 3, 3, 3, 4, 7 },
+		Windup = { 0.14, 0.14, 0.15, 0.16, 0.22 },   -- délai entre le clic et l'impact (l'armé se voit)
+		Cooldown = { 0.46, 0.46, 0.48, 0.5, 1.35 },  -- délai avant le M1 suivant ; le 5e = endlag (punissable)
+		DropEndlag = 0.3,   -- chaîne lâchée avant le 5e coup : ni block ni attaque de perso pendant Cooldown + DropEndlag
+		ComboReset = 1.0,   -- sans clic pendant ce délai, la chaîne repart du 1er coup
 		HitboxSize = Vector3.new(5.5, 5.5, 6),
 		HitboxOffset = 3,
-		Knockback = { 2.5, 2.5, 3, 60 }, -- petits reculs : la victime reste à portée (combos fluides)
-		KnockUp = { 0, 0, 0, 20 },
-		Stun = { 0.6, 0.6, 0.65, 0.9 },
-		Power = { 0.3, 0.35, 0.45, 0.85 },
-		Category = { "Light", "Light", "Light", "Heavy" },
-		Anim = { "Punch1", "Punch2", "Punch3", "Punch4" },
-		Lunge = { 14, 14, 16, 20 },
+		Knockback = { 2, 2, 2, 2.5, 58 }, -- coups 1-4 : la victime reste à portée ; 5e : éjection
+		KnockUp = { 0, 0, 0, 0, 18 },
+		Stun = { 0.66, 0.66, 0.68, 0.72, 1.0 }, -- vrai hitstun : couvre l'intervalle jusqu'au coup suivant
+		Power = { 0.3, 0.33, 0.38, 0.45, 0.95 },
+		Category = { "Light", "Light", "Light", "Light", "Heavy" },
+		Anim = { "Punch1", "Punch2", "Punch3", "Punch4", "Punch5" },
+		Lunge = { 11, 11, 12, 12, 16 }, -- petit pas en avant à chaque coup (studs/s pendant 0,1 s)
 		MaxTargets = 3,
+		FinisherWords = { "FINISHER!", "WHAM!", "KAPOW!" },
 	},
 
-	-- Variantes (M1 directionnels)
-	Uppercut = { -- Espace maintenu sur le 4e coup : envoie en l'air
-		Damage = 7, LaunchUp = 56, Knockback = 4, Stun = 1.1, Power = 0.85, Anim = "Uppercut",
-		FollowWindow = 0.9, FollowJump = 82, -- l'attaquant peut sauter pour suivre
-		Words = { "UPPERCUT!", "POW!", "BOING!" },
+	-- Espace maintenu sur le 5e coup : la victime décolle, l'attaquant saute automatiquement derrière elle.
+	Uppercut = {
+		Damage = 6, LaunchUp = 58, LaunchForward = 3, Stun = 1.3, Power = 0.95, Anim = "Uppercut", Windup = 0.2,
+		FollowJump = 60, FollowForward = 10, -- saut automatique de l'attaquant (client) après un uppercut réussi
+		AirHits = 3, AirWindow = 2.4,        -- 3 M1 en l'air (le 3e = DOWNSLAM) pendant AirWindow
+		Words = { "UPPERCUT!", "SKY HIGH!", "BOING!" },
 	},
-	Air = { -- M1 en l'air : jongle
-		Damage = { 4, 4, 5 },
-		Stall = 0.55,             -- suspension en l'air (victime + attaquant) après chaque coup aérien
+	-- M1 en l'air (jongle) : la victime et l'attaquant restent suspendus un instant
+	Air = {
+		Damage = { 3, 3, 3, 4 },
+		Stun = 0.85, Stall = 0.5, Windup = 0.11, Cooldown = 0.4,
+		HitboxSize = Vector3.new(7, 10, 7.5), HitboxOffset = 3,
 		Anim = { "Air1", "Air2", "Air3" },
 	},
-	Downslam = { -- 4e coup en l'air : écrase au sol
-		Damage = 9, SlamSpeed = 140, Stun = 1.3, Power = 1.1, Anim = "Downslam", BounceUp = 0, Pin = true,
+	-- 5e M1 en l'air / 3e coup du jongle d'uppercut : écrase au sol, puis renversé (Knockdown)
+	Downslam = {
+		Damage = 7, SlamSpeed = 140, Stun = 1.2, Power = 1.1, Anim = "Downslam", Windup = 0.16, Endlag = 0.9,
+		BounceUp = 0, Pin = true, Knockdown = true,
 		Words = { "WHAM!", "KABOOM!", "SLAM!" },
 	},
-	Dropkick = { -- Ctrl+M1 (ou M1 juste après un dash) : coup qui traverse et envoie très loin
-		Damage = 8, Knockback = 100, KnockUp = 16, Stun = 1.0, Power = 0.95, Anim = "Dropkick",
-		LungeSpeed = 60, LungeTime = 0.2, Cooldown = 6, Windup = 0.12,
-		HitboxSize = Vector3.new(6, 6, 9), HitboxOffset = 4,
-		Words = { "DROPKICK!", "WHAM!", "KAPOW!" },
+	-- Dash AVANT puis clic dans la fenêtre : coup de pied volant lourd (remplace l'ancien Dropkick)
+	DashStrike = {
+		Damage = 7, Knockback = 72, KnockUp = 14, Stun = 1.0, Power = 1.0, Anim = "DashStrike",
+		LungeSpeed = 56, LungeTime = 0.22, Windup = 0.16, Endlag = 0.8, Cooldown = 7, Window = 0.4,
+		HitboxSize = Vector3.new(6, 6, 8), HitboxOffset = 4,
+		Words = { "DASH STRIKE!", "WHAM!", "KAPOW!" },
 	},
-	-- COMBOS (Espace pendant la chaîne de M1)
-	--   2 M1 + Espace : RISING DUO  -> les DEUX joueurs montent ; en l'air 2 M1, le 2e écrase la victime au sol
-	--   3 M1 + Espace : UPPERCUT    -> seule la victime monte ; sauter pour suivre, 3 M1 en l'air, le 3e écrase
-	--   4 M1          : FINISHER    -> gros recul ; Ctrl + M1 (ou M1 juste après un dash) : DROPKICK (recharge 6 s)
-	Combos = {
-		Window = 0.85,         -- délai max après le dernier M1 pour appuyer sur Espace
-		RisingDuo = { Damage = 6, VictimUp = 52, AttackerUp = 52, Stall = 1.0, AirHits = 2, Power = 0.8, Words = { "RISING DUO!", "UP WE GO!" } },
-		Uppercut = { Damage = 8, VictimUp = 58, AirHits = 3, Power = 0.9, Words = { "UPPERCUT!", "SKY HIGH!" } },
-		AirMaxDefault = 3,     -- M1 en l'air sans lanceur : 3 coups, le dernier écrase
-	},
-	AttackSlow = 0.7,         -- l'attaquant ralentit pendant ses M1 (multiplicateur de vitesse)
+	-- Renversé (finisher, downslam, dash strike) : au sol, intouchable (sauf ultimes), puis relevé invulnérable
+	Knockdown = { Duration = 1.0, GetUpIFrames = 0.6 },
+
+	AttackSlow = 0.55,         -- l'attaquant ralentit pendant ses M1 (multiplicateur de vitesse)
 	AbilityGCD = 0.6,          -- délai minimum entre deux attaques de personnage
-	-- 3 M1 + saut + M1 : GROUND PIN (plaque la victime au sol avec une onde de choc au lieu de l'expulser)
-	GroundPin = { Damage = 10, SlamSpeed = 150, Stun = 1.5, Power = 1.15, Window = 1.1, Words = { "PINNED!", "GROUND POUND!", "STAY DOWN!" } },
-	PinStun = 1.4,            -- durée au sol des attaques qui plaquent (Effects.Pin)
+	PinStun = 1.4,             -- durée au sol des attaques qui plaquent (Effects.Pin)
 	SoftLock = { Range = 11, Angle = 75 }, -- les M1 et les attaques se tournent vers l'ennemi le plus proche devant soi
-	InputBuffer = 0.22,       -- un clic trop tôt est gardé en mémoire et joué dès que possible
+	InputBuffer = 0.25,        -- un clic trop tôt est gardé en mémoire et joué dès que possible
 	ItemFinisher = { MinCombo = 2, Window = 1.6, DamageMult = 1.5, KnockbackMult = 1.3 },
 
-	ComboWindow = 1.6,        -- délai max entre deux coups pour garder le compteur
+	ComboWindow = 1.6,         -- délai max entre deux coups pour garder le compteur de combo (HUD)
 	Run = { SpeedMultiplier = 1.65, DoubleTapWindow = 0.3 }, -- double W = courir (mobile : bouton RUN)
-	Dash = { Speed = 72, Time = 0.18, Cooldown = 1.4, AttackWindow = 0.3 },
+	-- Dash directionnel (WASD relatif à la caméra ; sans direction = avant). Pas d'invulnérabilité.
+	Dash = { Speed = 64, BackSpeed = 56, SideSpeed = 60, Time = 0.2, Cooldown = 2 },
 	Block = {
-		Reduction = 0.8, WalkSpeed = 8, MaxGuard = 45, GuardRegen = 15,
-		GuardBreakStun = 1.5, ParryWindow = 0.25, ParryStun = 1.5, ParryRearm = 0.5, ParryKnockback = 22,
+		Reduction = 0.85,     -- dégâts bloqués (le reste passe en « chip »)
+		WalkSpeed = 7,
+		MaxGuard = 40,        -- jauge de garde : chaque coup bloqué la vide de ses dégâts ; vide = GUARD BREAK
+		GuardRegen = 12,      -- points par seconde
+		GuardRegenDelay = 1.2, -- la jauge ne remonte qu'après ce délai sans coup bloqué
+		GuardBreakStun = 1.6, -- étourdi (et sans block) après un guard break
+		HeavyBreaks = true,   -- un coup lourd casse directement un block normal
+		PerfectWindow = 0.22, -- PERFECT BLOCK : F appuyé dans ce délai avant le coup (marche aussi contre les lourds)
+		ParryWindow = 0.22,   -- (ancien nom, gardé pour compatibilité)
+		ParryStun = 1.4, ParryRearm = 0.5, ParryKnockback = 22,
 	},
-	ComboBreaker = { Hits = 5, Window = 1.4, Cooldown = 15, Radius = 11, Knockback = 60, Protect = 0.7 },
+	-- EVASIVE (combo breaker) : Q pendant un hitstun -> on se libère, invulnérable un instant, les attaquants proches
+	-- sont repoussés. Interdit pendant un guard break (punition du block) et quand on est renversé (déjà intouchable).
+	Evasive = { Cooldown = 18, IFrames = 0.5, Radius = 10, Knockback = 46, AttackerStun = 0.45, Hop = 22 },
 	WallSplat = { MinSpeed = 36, Damage = 5, Stun = 0.9 },
 	Overtime = { Max = 100, DealMult = 0.4, TakeMult = 0.22, Parry = 5, DurationMult = 1.75 }, -- ~250 dégâts infligés pour remplir
 
-	HitStop = { Light = 0.08, Heavy = 0.17, KO = 0.4 },
-	Shake = { Light = 0.35, Heavy = 1.05, KO = 1.6 },
-	FOVKick = { Light = 2, Heavy = 8, KO = 13 },
+	-- ressenti par catégorie (lus par CartoonFX) : un peu plus de gel sur les coups lourds pour la lisibilité
+	HitStop = { Light = 0.08, Heavy = 0.2, KO = 0.42 },
+	Shake = { Light = 0.3, Heavy = 1.0, KO = 1.6 },
+	FOVKick = { Light = 1.5, Heavy = 7, KO = 12 },
 
 	LatencyTolerance = 2,
 	PickupRange = 9,
@@ -88,6 +113,7 @@ return {
 	LowHealth = 30,
 	SpawnProtection = 3,
 	KOLaunch = { Speed = 95, Up = 60 },
+	SafeZoneAttribute = "SafeZone", -- attribut posé par la zone AFK (voir en-tête)
 
-	RemoteRate = { Run = 8, Attack = 14, Pickup = 6, Throw = 4, Dash = 4, Block = 12, Ability = 6, Transform = 2 },
+	RemoteRate = { Run = 8, Attack = 12, Pickup = 6, Throw = 4, Dash = 5, Block = 14, Ability = 6, Transform = 2 },
 }

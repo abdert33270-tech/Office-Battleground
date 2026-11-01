@@ -1,7 +1,7 @@
 --[[
 	CharacterState — état de combat de chaque personnage (joueurs + mannequin), côté serveur.
-	Étourdissement, vitesse (modificateurs cumulés), garde, compteur de combo, série de coups reçus,
-	statuts (aveuglé, marqué, ralenti), protection, dernier attaquant (kill feed).
+	Étourdissement, vitesse (modificateurs cumulés), garde (jauge, guard break), renversé (knockdown),
+	compteur de combo, statuts (aveuglé, marqué, ralenti), protection, zone sûre, dernier attaquant (kill feed).
 	Les attributs répliqués servent aux effets et au HUD côté client (voir CONTRACT).
 ]]
 local Players = game:GetService("Players")
@@ -24,12 +24,17 @@ function CharacterState.get(character: Model)
 		s = {
 			stunUntil = 0,
 			speedMods = {},      -- [nom] = multiplicateur (Item, Transform, Zone, Buff, Slow…)
-			combo = 0, lastM1 = 0, airCombo = 0, lastAir = 0,
-			nextAttack = 0, nextThrow = 0, nextDropkick = 0, nextDash = 0, nextBreak = 0,
+			combo = 0, lastM1 = -10, airCombo = 0, airChainUntil = 0,
+			nextAttack = 0, nextThrow = 0, nextDash = 0, nextDashStrike = 0,
+			nextBreak = 0,                  -- prochaine EVASIVE possible (os.clock) ; UltimateService le repousse pendant une ulti
+			busyUntil = 0,                  -- récupération d'attaque (os.clock) : pas de block ni d'attaque de perso
+			endlagUntil = 0,                -- endlag d'un coup lourd (os.clock) : pas de dash non plus
+			lastDash = -10, lastDashKind = "F",
 			comboCount = 0, comboLast = 0,  -- coups réussis (attaquant)
-			hitStreak = 0, streakLast = 0,  -- coups reçus d'affilée (combo breaker)
+			hitStreak = 0, streakLast = 0,  -- (compatibilité : remis à zéro par UltimateService)
 			recentVictims = {},             -- [victime] = os.clock() du dernier coup (finishers)
-			blocking = false, blockStart = 0, lastBlockPress = -10, guard = CombatConfig.Block.MaxGuard,
+			blocking = false, wantBlock = false, blockStart = -10, lastBlockPress = -10,
+			guard = CombatConfig.Block.MaxGuard, guardT = 0, guardHitT = -100,
 			held = nil,
 		}
 		states[character] = s
@@ -55,17 +60,16 @@ function CharacterState.setup(character: Model)
 			p.CollisionGroup = "Characters"
 		end
 	end
-	for _, a in ipairs({ "StunUntil", "DizzyUntil", "BlindUntil", "CD1", "CD2", "CD3", "CDDash", "CDBreak" }) do
+	for _, a in ipairs({ "StunUntil", "DizzyUntil", "BlindUntil", "CD1", "CD2", "CD3", "CDDash", "CDDashStrike", "CDEvasive", "KnockdownUntil", "GuardBrokenUntil" }) do
 		character:SetAttribute(a, 0)
 	end
 	character:SetAttribute("ComboCount", 0)
-	character:SetAttribute("ComboStep", 0)
-	character:SetAttribute("AirMax", CombatConfig.Combos.AirMaxDefault)
-	character:SetAttribute("CDDropkick", 0)
-	character:SetAttribute("CDMaxDropkick", CombatConfig.Dropkick.Cooldown)
 	character:SetAttribute("Blocking", false)
-	character:SetAttribute("CanBreak", false)
+	character:SetAttribute("Guard", CombatConfig.Block.MaxGuard)
+	character:SetAttribute("MaxGuard", CombatConfig.Block.MaxGuard)
 	character:SetAttribute("CDMaxDash", CombatConfig.Dash.Cooldown)
+	character:SetAttribute("CDMaxDashStrike", CombatConfig.DashStrike.Cooldown)
+	character:SetAttribute("CDMaxEvasive", CombatConfig.Evasive.Cooldown)
 
 	-- mort : un seul endroit calcule le tueur, l'arme et la cause, puis prévient tout le monde
 	hum.Died:Connect(function()
@@ -210,9 +214,11 @@ function CharacterState.setRunning(character: Model, on: boolean)
 end
 
 ------------------------------------------------------------------------
--- Garde (block / parry)
+-- Garde (block / perfect block / guard break)
 ------------------------------------------------------------------------
-function CharacterState.setBlocking(character: Model, on: boolean)
+-- noParry = true : block activé automatiquement (F maintenu à la fin d'un hitstun / d'une récupération) :
+-- pas de fenêtre de PERFECT BLOCK (sinon maintenir F pendant un combo donnerait une parade gratuite)
+function CharacterState.setBlocking(character: Model, on: boolean, noParry: boolean?)
 	local s = CharacterState.get(character)
 	if on == s.blocking then
 		return
@@ -221,11 +227,103 @@ function CharacterState.setBlocking(character: Model, on: boolean)
 	if on then
 		local t = os.clock()
 		-- fenêtre de parade seulement si on n'a pas spammé la touche
-		s.blockStart = (t - s.lastBlockPress >= CombatConfig.Block.ParryRearm) and t or -10
+		s.blockStart = (not noParry and t - s.lastBlockPress >= CombatConfig.Block.ParryRearm) and t or -10
 		s.lastBlockPress = t
 	end
 	character:SetAttribute("Blocking", on)
 	CharacterState.refreshSpeed(character)
+end
+
+-- jauge de garde à l'instant présent (régénération paresseuse après GuardRegenDelay sans coup bloqué)
+function CharacterState.guardNow(character: Model): number
+	local s = CharacterState.get(character)
+	local B = CombatConfig.Block
+	local t = os.clock()
+	if s.guard < B.MaxGuard then
+		local from = math.max(s.guardT or t, (s.guardHitT or -100) + B.GuardRegenDelay)
+		if t > from then
+			s.guard = math.min(B.MaxGuard, s.guard + (t - from) * B.GuardRegen)
+		end
+	end
+	s.guardT = t
+	return s.guard
+end
+
+-- retire de la garde ; renvoie la garde restante
+function CharacterState.drainGuard(character: Model, amount: number): number
+	local s = CharacterState.get(character)
+	CharacterState.guardNow(character)
+	s.guard = math.max(0, s.guard - math.max(0, amount))
+	s.guardHitT = os.clock()
+	character:SetAttribute("Guard", math.floor(s.guard + 0.5))
+	return s.guard
+end
+
+-- GUARD BREAK : block cassé, étourdi, impossible de rebloquer pendant la durée ; la jauge repart pleine
+function CharacterState.guardBreak(character: Model, duration: number?)
+	local s = CharacterState.get(character)
+	duration = duration or CombatConfig.Block.GuardBreakStun
+	s.guard = CombatConfig.Block.MaxGuard
+	s.guardHitT = os.clock()
+	s.wantBlock = false
+	character:SetAttribute("Guard", CombatConfig.Block.MaxGuard)
+	character:SetAttribute("GuardBrokenUntil", now() + duration)
+	CharacterState.setBlocking(character, false)
+	CharacterState.stun(character, duration)
+end
+
+function CharacterState.isGuardBroken(character: Model): boolean
+	return now() < (character:GetAttribute("GuardBrokenUntil") or 0)
+end
+
+-- mise à jour de l'attribut Guard (HUD) pour les jauges qui remontent ; appelé régulièrement par CombatService
+function CharacterState.tickGuards()
+	for character, s in pairs(states) do
+		if s.guard < CombatConfig.Block.MaxGuard and character.Parent then
+			CharacterState.guardNow(character)
+			character:SetAttribute("Guard", math.floor(s.guard + 0.5))
+		end
+	end
+end
+
+------------------------------------------------------------------------
+-- Renversé (knockdown) : au sol, intouchable sauf ultimes, puis relevé avec une courte invulnérabilité
+------------------------------------------------------------------------
+function CharacterState.knockdown(character: Model, duration: number?)
+	local K = CombatConfig.Knockdown
+	duration = duration or K.Duration
+	local s = CharacterState.get(character)
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then
+		return
+	end
+	local untilT = math.max(character:GetAttribute("KnockdownUntil") or 0, now() + duration)
+	character:SetAttribute("KnockdownUntil", untilT)
+	CharacterState.stun(character, untilT - now())
+	hum.PlatformStand = true
+	local token = {}
+	s.kdToken = token
+	task.delay(untilT - now(), function()
+		if s.kdToken ~= token or not character.Parent then
+			return
+		end
+		s.kdToken = nil
+		character:SetAttribute("KnockdownUntil", 0)
+		local h = character:FindFirstChildOfClass("Humanoid")
+		if h and h.Health > 0 then
+			h.PlatformStand = false
+			CharacterState.protect(character, K.GetUpIFrames, false)
+		end
+	end)
+end
+
+function CharacterState.isKnockedDown(character: Model): boolean
+	return now() < (character:GetAttribute("KnockdownUntil") or 0)
+end
+
+-- zone sûre (zone AFK) : ni coups donnés ni coups reçus
+function CharacterState.inSafeZone(character: Model?): boolean
+	return character ~= nil and character:GetAttribute(CombatConfig.SafeZoneAttribute or "SafeZone") == true
 end
 
 ------------------------------------------------------------------------
@@ -258,31 +356,13 @@ function CharacterState.inComboOn(attacker: Model, victim: Model): boolean
 	return t ~= nil and os.clock() - t < CombatConfig.ItemFinisher.Window and s.comboCount >= CombatConfig.ItemFinisher.MinCombo
 end
 
--- série de coups reçus (combo breaker)
-function CharacterState.addStreak(victim: Model)
-	local s = CharacterState.get(victim)
-	local t = os.clock()
-	if t - s.streakLast > CombatConfig.ComboBreaker.Window then
-		s.hitStreak = 0
-	end
-	s.hitStreak += 1
-	s.streakLast = t
-	victim:SetAttribute("CanBreak", s.hitStreak >= CombatConfig.ComboBreaker.Hits and os.clock() >= s.nextBreak)
-	local mine = s.hitStreak
-	task.delay(CombatConfig.ComboBreaker.Window, function()
-		if s.hitStreak == mine and victim.Parent then
-			s.hitStreak = 0
-			victim:SetAttribute("CanBreak", false)
-		end
-	end)
-end
-
 ------------------------------------------------------------------------
 -- Protection d'apparition (bulle ForceField)
 ------------------------------------------------------------------------
-function CharacterState.protect(character: Model, duration: number?)
+-- visible = false : invulnérabilité discrète (relevé, evasive)
+function CharacterState.protect(character: Model, duration: number?, visible: boolean?)
 	local ff = Instance.new("ForceField")
-	ff.Visible = true
+	ff.Visible = visible ~= false
 	ff.Parent = character
 	game:GetService("Debris"):AddItem(ff, duration or CombatConfig.SpawnProtection)
 end

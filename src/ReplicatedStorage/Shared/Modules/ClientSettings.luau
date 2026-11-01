@@ -4,6 +4,7 @@
 	API (client) :
 		ClientSettings.get(key)            -> valeur (défaut si absente)
 		ClientSettings.set(key, value)     -> applique tout de suite en local + envoie au serveur (remote "Settings")
+		ClientSettings.resetAll()          -> remet toutes les valeurs par défaut (menu SETTINGS)
 		ClientSettings.Changed             -> BindableEvent:Event (key, value)
 		ClientSettings.DEFAULTS / ClientSettings.SCHEMA (pour construire le menu)
 	Côté serveur, get() renvoie toujours le défaut (les réglages sont purement visuels / audio / contrôles).
@@ -88,6 +89,12 @@ function ClientSettings.set(key, value)
 		if remote then
 			remote:FireServer(key, value)
 		end
+	end
+end
+
+function ClientSettings.resetAll()
+	for _, s in ipairs(ClientSettings.SCHEMA) do
+		ClientSettings.set(s.Key, s.Default)
 	end
 end
 

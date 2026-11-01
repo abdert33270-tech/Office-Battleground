@@ -13,6 +13,9 @@
 	API : DataService.get(player) -> data | DataService.addXP(player, amount, raw?) |
 	      DataService.setGrade(player, gradeName) | DataService.gradeFor(xp) -> index, grade
 	      DataService.setLevel(player, n) | DataService.onLoaded : liste de hooks function(player, data)
+	      DataService.whenLoaded(fn) : ajoute un hook ET l'appelle pour les joueurs déjà chargés (services tardifs)
+	Méta-systèmes (voir docs/Meta-systemes.md) : Daily {Streak, LastDay, LastClaim, Total} (DailyRewardService),
+	Codes {[CODE]=os.time()} (CodeService), Settings {[clé]=valeur} (SettingsService), AFK {Day, Earned} (AFKService).
 ]]
 local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
@@ -41,7 +44,10 @@ end
 
 -- Cash / Skins / Equipped / Crates : système de skins (SkinService). Champs manquants => valeurs par défaut.
 local function defaultData()
-	return { XP = 0, KOs = 0, Tasks = nil, Cash = 0, Skins = {}, Equipped = {}, Crates = 0, Characters = {}, Level = 1 }
+	return {
+		XP = 0, KOs = 0, Tasks = nil, Cash = 0, Skins = {}, Equipped = {}, Crates = 0, Characters = {}, Level = 1,
+		Daily = {}, Codes = {}, Settings = {}, AFK = {},
+	}
 end
 
 function DataService.gradeFor(xp: number)
@@ -57,6 +63,17 @@ end
 function DataService.get(player: Player)
 	local p = profiles[player]
 	return p and p.data or nil
+end
+
+-- hook de chargement pour un service qui démarre après DataService : appelé aussi pour les joueurs déjà chargés
+-- (ajout puis parcours sans yield entre les deux => jamais appelé deux fois pour le même chargement)
+function DataService.whenLoaded(fn)
+	table.insert(DataService.onLoaded, fn)
+	for player, p in pairs(profiles) do
+		if player.Parent then
+			task.spawn(fn, player, p.data)
+		end
+	end
 end
 
 local function isDummy(model)
