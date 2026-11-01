@@ -58,7 +58,7 @@ end
 local function defaultData()
 	return {
 		XP = 0, KOs = 0, Tasks = nil, Cash = 0, Skins = {}, Equipped = {}, Crates = 0, Characters = {}, Level = 1,
-		Daily = {}, Codes = {}, Settings = {}, AFK = {}, Receipts = {}, Version = 0,
+		Daily = {}, Codes = {}, Settings = {}, AFK = {}, Receipts = {}, Version = 0, Weekly = {}, Titles = {}, WeekKOs = {},
 	}
 end
 
