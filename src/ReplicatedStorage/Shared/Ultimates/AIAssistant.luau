@@ -23,6 +23,20 @@ local SND = {
 }
 
 local T = { Cage = 0.1, Spam0 = 0.5, SpamStep = 0.12, Drones0 = 1.0, ZapStep = 0.1, Lift = 1.75, Key0 = 1.95, Slam = 2.45, End = 3.3 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 local SPAM = { { "ERROR", RED }, { "ARE YOU SURE?", CYAN }, { "YES / YES", LIME }, { "Did you mean: DEFEAT?", MAG } }
 
 ------------------------------------------------------------------------
@@ -147,6 +161,8 @@ end
 ------------------------------------------------------------------------
 local M = {
 	Name = "SYSTEM OVERRIDE",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { T.Cage, "FIREWALL" }, { T.Spam0, "POP-UP STORM" }, { T.Drones0, "DRONE STRIKE" }, { T.Key0, "CTRL + ALT + DELETE" } } },
 	Desc = "Lock them in a hologram cage, spam them with pop-ups, zap them with drones, then press a GIANT delete key.",
 	Color = CYAN,
 	Color2 = MAG,

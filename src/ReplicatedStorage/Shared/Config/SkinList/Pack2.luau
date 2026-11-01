@@ -569,6 +569,13 @@ do
 			P(RA, BA, V(0.4, 0.4, 0.4), GOLD, ME, 0, -0.95, -0.42, { Reflect = 0.3 }),
 			P(RA, CY, V(0.3, 0.08, 0.08), GOLD, ME, -0.2, -0.78, -0.42, 0, 0, -40),
 			P(RA, CY, V(0.3, 0.08, 0.08), GOLD, ME, 0.2, -0.78, -0.42, 0, 0, 40),
+			-- v4 : émeraude sur le pommeau, montre à gousset, flèches boursières flottantes
+			P(RA, BA, V(0.16, 0.16, 0.16), GN, NE, 0, -0.72, -0.42),
+			P(T, CY, V(0.06, 0.3, 0.3), GOLD, ME, 0.58, -0.45, -0.55, 0, 90, 0, { Reflect = 0.3 }),
+			P(H, B, V(0.6, 0.6, 0.05), GN, SP, -1.6, 0.9, 0, { Transparency = 1, Text = { Text = "▲", Color = GN, Face = "Both" },
+				Anim = { Float = true, Seed = 54 } }),
+			P(H, B, V(0.5, 0.5, 0.05), GN, SP, 1.6, 1.3, 0, { Transparency = 1, Text = { Text = "▲", Color = GN, Face = "Both" },
+				Anim = { Float = true, Seed = 55 } }),
 			-- bandeau "BULL RUN"
 			P(H, B, V(3.0, 0.42, 0.06), C(8, 26, 14), SP, 0, 2.45, 0, { Text = { Text = "BULL RUN ▲▲▲ +1000% ▲▲▲ ", Font = "Code",
 				Color = GN, Scroll = 0.3, Width = 4, Face = "Both" }, Anim = { Bob = 0.12, Seed = 53 } }),

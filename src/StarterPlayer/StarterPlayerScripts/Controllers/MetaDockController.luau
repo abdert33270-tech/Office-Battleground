@@ -12,8 +12,11 @@
 		MetaDock.setText(id, text) | MetaDock.setColor(id, color)
 		MetaDock.panel(name, title, color, size, icon?) -> panel, body   (panel.Visible = false au départ)
 		MetaDock.open(panel) | MetaDock.close(panel) | MetaDock.toggle(panel) | MetaDock.isOpen(panel)
-	Chaque panneau contient un TextButton Modal : la souris est libérée même en shift-lock.
+	Panneau ouvert => souris libérée même en shift-lock (TextButton Modal + RenderStep après celui du shift-lock).
 ]]
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
 local UIKit = require(script.Parent.UIKit)
 local UITheme = UIKit.Theme
 
@@ -232,6 +235,16 @@ end
 
 function MetaDock.init()
 	ensure()
+	-- panneau ouvert : souris libre (passe après le shift-lock maison, qui la bloque à chaque image)
+	RunService:BindToRenderStep("OB_MetaMouse", Enum.RenderPriority.Camera.Value + 4, function()
+		for _, p in ipairs(panels) do
+			if p.Visible then
+				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+				UserInputService.MouseIconEnabled = true
+				return
+			end
+		end
+	end)
 end
 
 return MetaDock

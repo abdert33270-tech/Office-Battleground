@@ -16,9 +16,25 @@ local SOUP, HOT, BROWN, GREEN = Color3.fromRGB(255, 140, 40), Color3.fromRGB(255
 local SFX = { Sizzle = 9114542867, Pan = 9125781406, Pan2 = 9125782023, Lid = 9113911811, Splash = 9119481909, Pop = 109359226723492, Boom = 2103404398, Blast = 9114362625, Gong = 9114630316 }
 
 local T = { upper = 0.18, flips = { 0.8, 1.2, 1.6 }, flipDur = 0.36, toss = 1.95, dunk = 2.3, lid = 2.55, boom = 3.05, done = 3.45 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 local ULT = {
 	Name = "Chef's Special",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { T.upper, "ON THE GRILL" }, { T.flips[1], "FLIP IT" }, { T.toss, "INTO THE POT" } } },
 	Desc = "Flip them like a pancake on a giant griddle, dunk them in the soup pot and let it blow.",
 	Color = PINK,
 	Color2 = ORANGE,

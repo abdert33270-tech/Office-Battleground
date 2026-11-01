@@ -22,6 +22,20 @@ local SND = {
 }
 
 local T = { Ex = { 0.6, 0.95, 1.3 }, Bench = 1.5, Verdict = 1.65, Raise = 1.85, Swing = 2.45, Slam = 2.68, End = 3.45 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 ------------------------------------------------------------------------
 -- Animations
@@ -140,6 +154,8 @@ end
 ------------------------------------------------------------------------
 local M = {
 	Name = "SUPREME VERDICT",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "TAKE THE STAND" }, { T.Ex[1], "EXHIBITS A, B, C" }, { T.Verdict, "THE COURT FINDS YOU..." } } },
 	Desc = "Summon them to court, present the evidence, then bring down the colossal gavel: GUILTY!",
 	Color = GOLD,
 	Color2 = BURGUNDY,

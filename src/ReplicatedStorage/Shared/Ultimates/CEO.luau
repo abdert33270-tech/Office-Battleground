@@ -26,6 +26,20 @@ local S = {
 
 -- minutage partagé serveur / client (secondes depuis la phase "Connect")
 local T = { seal = 0.18, bar0 = 0.5, bars = 8, barStep = 0.11, toss = 1.5, chomp = 2.12, snap = 2.7, total = 3.35 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 local DIST = 6
 local RISE = 2.2
 
@@ -421,6 +435,8 @@ end
 
 return {
 	Name = "Hostile Liquidation",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "CONTRACT SEALED" }, { T.bar0, "GOLD RUSH" }, { T.toss, "HOSTILE TAKEOVER" } } },
 	Desc = "A golden contract seals the target, a torrent of gold bars, a giant briefcase CHOMP, then a finger snap blows them away.",
 	Color = GOLD,
 	Color2 = BLACK,

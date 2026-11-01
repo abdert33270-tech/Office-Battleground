@@ -58,7 +58,7 @@
 	K.beats(data, { {t, "TEXT"}, ... })     titres de temps forts sur le minutage d'une phase
 	K.anticipate(data, t, character?, lead?, color?)  pose d'anticipation lead s avant le coup prévu à t
 	K.hitStop(chars, dur)                   = K.slowmo (automatique sur chaque U.hit / U.finish)
-	Anti-fouillis automatique : sparks/debris/shards réduits (et selon "Quality"), au plus 1 onomatopée K.word / 0,45 s,
+	Anti-fouillis automatique : sparks/debris/shards réduits de 30 %, au plus 1 onomatopée K.word / 0,45 s,
 	2 ondes / sphères / anneaux / lumières par 0,12 s ; images d'impact ≤ 3 images, 1 série / 0,4 s, aucune si ReducedFlashes.
 
 	═════════════════════════════  ÉCRAN  ═════════════════════════════
@@ -165,25 +165,22 @@ function K.reducedFlashes()
 	return setting("ReducedFlashes", false) == true
 end
 
+-- (CartoonFX applique déjà ScreenShake / FOVKick / Quality : on n'ajoute que la réduction "sans cinématique")
 local function shakeMult()
-	local m = tonumber(setting("ScreenShake", 1)) or 1
-	if not K.cinematic() then
-		m *= 0.5
-	end
-	return math.clamp(m, 0, 1)
+	return K.cinematic() and 1 or 0.5
 end
 
 ------------------------------------------------------------------------
 -- Anti-fouillis : quantités réduites + budget par type d'effet (un visuel dominant par temps fort)
+-- (la qualité "Quality" est déjà appliquée par CartoonFX ; ici on retire 30 % des particules d'ulti)
 ------------------------------------------------------------------------
-local QUALITY = { Low = 0.35, Medium = 0.55, High = 0.7 }
+local DECLUTTER = 0.7
 local function countScale(n)
 	n = tonumber(n) or 0
 	if n <= 0 then
 		return 0
 	end
-	local q = QUALITY[setting("Quality", "High")] or 0.7
-	return math.max(1, math.floor(n * q + 0.5))
+	return math.max(1, math.floor(n * DECLUTTER + 0.5))
 end
 K.countScale = countScale
 
@@ -655,7 +652,7 @@ function K.shake(amount)
 	end
 end
 function K.fov(amount)
-	if type(amount) == "number" and setting("FOVKick", true) ~= false then
+	if type(amount) == "number" then
 		CartoonFX.fovKick(K.cinematic() and amount or amount * 0.5)
 	end
 end

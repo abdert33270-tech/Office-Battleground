@@ -5,7 +5,8 @@
 	  assombrissement du monde (< 80 studs), son, mini hit-stop, caméra dramatique du lanceur (orbite sur son visage).
 	- Phase "End" (automatique) : rend la caméra, retire bandes noires / assombrissement / objets suivis (K.track / K.prop).
 	- Lisibilité (v3) : bandes noires pendant toute l'ulti (lanceur + victime), contour (Highlight) sur le lanceur puis sur la
-	  victime dès qu'elle est tenue, titre de temps fort (def.Beats[phase] ou payload.beat), hit-stop sur chaque coup
+	  victime dès qu'elle est tenue, titres de temps forts (def.Beats[phase] = texte ou { {t, texte}, ... }, ou payload.beat),
+	  poses d'anticipation (def.Anticipate[phase] = { t, ... }), hit-stop sur chaque coup
 	  (phase interne "_Hit" envoyée par U.hit / U.finish), pose d'anticipation (phase interne "_Windup" de U.windup).
 	  Les phases qui commencent par "_" ne sont PAS transmises au Client du module.
 	- Sécurité : si "End" n'arrive jamais, nettoyage forcé au bout de 12 s ; caméra rendue tout de suite à la mort / au respawn
@@ -124,22 +125,35 @@ local function builtinWindup(data)
 	end
 	K.windup(c, data.t or 0.2, data.color)
 	if K.involved(data) then
-		K.fov(-4)
+		K.fov(3)
 	end
 end
 
--- titre du temps fort
+-- titres de temps forts (def.Beats[phase] = "TEXTE" ou { {t, "TEXTE"}, ... } ; ou payload.beat)
+-- + poses d'anticipation (def.Anticipate[phase] = { t, ... })
 local function beatTitle(def, data)
 	local text = data.beat
 	if text == nil and def and type(def.Beats) == "table" then
 		text = def.Beats[data.phase]
 	end
-	if type(text) ~= "string" then
-		return
+	if type(text) == "string" then
+		local r = K.root(data.caster)
+		if K.involved(data) or (r and K.near(r.Position, 80)) then
+			K.beatTitle(data, text, data.color)
+		end
+	elseif type(text) == "table" then
+		K.beats(data, text)
 	end
-	local r = K.root(data.caster)
-	if K.involved(data) or (r and K.near(r.Position, 80)) then
-		K.beatTitle(data, text, data.color)
+	local ant = def and type(def.Anticipate) == "table" and def.Anticipate[data.phase]
+	if type(ant) == "table" then
+		local r = K.root(data.caster)
+		if r and (K.involved(data) or K.near(r.Position, 90)) then
+			for _, t in ipairs(ant) do
+				if type(t) == "number" then
+					K.anticipate(data, t, data.caster, 0.2, data.color)
+				end
+			end
+		end
 	end
 end
 

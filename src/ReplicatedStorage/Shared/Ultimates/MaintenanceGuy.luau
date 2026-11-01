@@ -23,6 +23,20 @@ local SND = {
 
 -- temps des coups (secondes après "Connect") — partagés serveur / client
 local T = { Drill0 = 0.55, DrillStep = 0.12, Cables = 1.5, Whistle = 1.95, Wreck = 2.6, End = 3.35 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 ------------------------------------------------------------------------
 -- Animations (format ProcAnim)
@@ -153,6 +167,8 @@ end
 ------------------------------------------------------------------------
 local M = {
 	Name = "DEMOLITION DAY",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "CAUTION TAPE" }, { T.Drill0, "POWER DRILL" }, { T.Cables, "JUMP START" }, { T.Whistle, "WRECKING BALL" } } },
 	Desc = "Lasso them with caution tape, drill, jump-start, then call in the wrecking ball.",
 	Color = HIVIS,
 	Color2 = ORANGE,

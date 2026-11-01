@@ -19,6 +19,20 @@ local GOLD = Color3.fromRGB(255, 200, 60)
 local CHART = { ORANGE, TEAL, YELLOW, PINK }
 
 local T = { Pie = 0.6, Bar = 1.1, Laser = { 1.5, 1.66, 1.82 }, Next = 2.1, Launch = 2.5, End = 3.35 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 ------------------------------------------------------------------------
 -- Animations
@@ -120,6 +134,8 @@ end
 ------------------------------------------------------------------------
 local M = {
 	Name = "THE FINAL PRESENTATION",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { T.Pie, "SLIDE 1: MARKET SHARE" }, { T.Bar, "SLIDE 2: GROWTH" }, { T.Laser[1], "SLIDE 3: KEY TAKEAWAYS" }, { T.Next, "Q4 FORECAST" } } },
 	Desc = "Beam them into a giant slideshow where every slide hits harder, then NEXT SLIDE: a colossal growth arrow sends them to the moon.",
 	Color = ROYAL,
 	Color2 = GOLD,

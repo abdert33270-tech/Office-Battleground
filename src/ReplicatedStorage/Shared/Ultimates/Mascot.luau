@@ -22,6 +22,20 @@ local SND = {
 }
 
 local T = { Up = 0.4, Spin0 = 0.85, SpinStep = 0.12, Shirt0 = 1.55, ShirtStep = 0.08, Hoop = 1.75, Grab = 2.1, Dunk = 2.32, Slam = 2.6, End = 3.45 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 ------------------------------------------------------------------------
 -- Animations
@@ -133,6 +147,9 @@ end
 ------------------------------------------------------------------------
 local M = {
 	Name = "HALFTIME SPECTACULAR",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "SPOTLIGHT" }, { T.Spin0, "POM-POM SPIN" }, { T.Shirt0, "T-SHIRT CANNON" }, { T.Hoop, "BUZZER BEATER" } } },
+	Anticipate = { Connect = { T.Up } },
 	Desc = "Spotlight, foam-finger launch, pom-pom tornado, T-shirt volley and a SLAM DUNK through a giant hoop.",
 	Color = RED,
 	Color2 = YELLOW,

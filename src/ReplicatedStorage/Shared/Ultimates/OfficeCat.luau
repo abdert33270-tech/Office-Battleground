@@ -21,6 +21,20 @@ local SND = {
 }
 
 local T = { Tackle = 0.12, Zoom0 = 0.45, ZoomStep = 0.11, Leap = 1.5, Paw0 = 1.6, Slam = 2.1, Land = 2.45, End = 3.3 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 ------------------------------------------------------------------------
 -- Animations
@@ -133,6 +147,8 @@ end
 ------------------------------------------------------------------------
 local M = {
 	Name = "CAT-ASTROPHE",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "LASER POINTER" }, { T.Zoom0, "ZOOMIES" }, { T.Leap, "GIANT PAW" } } },
 	Desc = "Pounce, 9 zoomies claw strikes (one per life), then a GIANT paw from the sky flattens them.",
 	Color = GINGER,
 	Color2 = CREAM,

@@ -25,6 +25,20 @@ local S = {
 
 -- minutage partagé serveur / client (secondes depuis la phase "Connect")
 local T = { slap = 0.12, h1 = 0.62, h2 = 0.98, h3 = 1.34, h4 = 1.72, leap = 1.98, spike = 2.6, total = 3.3 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 local PRICES = { "$100", "$1,000", "$100,000", "$1,000,000" }
 local LIFT = 9 -- hauteur de la victime après l'uppercut
 local DIST = 4.5
@@ -465,6 +479,8 @@ end
 
 return {
 	Name = "Tax Season",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "INVOICED" }, { T.h1, "BILLING..." }, { T.leap, "FINAL TOTAL" } } },
 	Desc = "Bill them, bind them in receipt tape, 4 ever-pricier hits, then spike them into the floor with a giant calculator (PIN).",
 	Color = GREEN,
 	Color2 = GOLD,

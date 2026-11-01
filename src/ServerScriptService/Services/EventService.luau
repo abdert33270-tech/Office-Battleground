@@ -140,7 +140,8 @@ local function allCharacters()
 	for _, p in ipairs(Players:GetPlayers()) do
 		local c = p.Character
 		local h = c and c:FindFirstChildOfClass("Humanoid")
-		if h and h.Health > 0 and c:FindFirstChild("HumanoidRootPart") then
+		-- les joueurs en salle AFK (SafeZone) ne participent ni aux effondrements ni aux événements
+		if h and h.Health > 0 and c:FindFirstChild("HumanoidRootPart") and c:GetAttribute("SafeZone") ~= true then
 			table.insert(list, c)
 		end
 	end

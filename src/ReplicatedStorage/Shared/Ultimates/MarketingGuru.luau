@@ -23,6 +23,20 @@ local SND = {
 }
 
 local T = { Barrage0 = 0.45, BarrageStep = 0.11, BarrageN = 8, Scream = 1.6, Stonks = 2.2, Launch = 2.55, End = 3.4 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 ------------------------------------------------------------------------
 -- Animations
@@ -173,6 +187,8 @@ end
 ------------------------------------------------------------------------
 local M = {
 	Name = "BREAK THE INTERNET",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "GOING LIVE" }, { T.Barrage0, "NOTIFICATIONS" }, { T.Scream, "MEGAPHONE" }, { T.Stonks, "STONKS" } } },
 	Desc = "Snap them into a viral post, drown them in likes, then ride the STONKS arrow to the sky.",
 	Color = MAGENTA,
 	Color2 = CYAN,

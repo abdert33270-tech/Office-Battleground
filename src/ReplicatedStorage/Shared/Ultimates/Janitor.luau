@@ -17,9 +17,25 @@ local SFX = { Roar = 9120551511, Splash = 9119481909, Dive = 132575463084009, Th
 
 -- minutage commun serveur / client (secondes depuis la phase "Connect")
 local T = { hits = { 0.35, 0.6, 0.85 }, scrub = 1.0, scrubs = { 1.15, 1.35, 1.55, 1.75 }, leap = 1.9, surge = 2.3, impact = 2.5, land = 2.68, done = 3.2 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 local ULT = {
 	Name = "Industrial Flood",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "SPIN CYCLE" }, { T.scrub, "DEEP SCRUB" }, { T.leap, "WET FLOOR" } } },
 	Desc = "Lift them in a water vortex, scrub them clean, then surf a tidal wave right through them.",
 	Color = JBLUE,
 	Color2 = YELLOW,

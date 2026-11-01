@@ -27,6 +27,20 @@ local S = {
 
 -- minutage partagé serveur / client (secondes depuis la phase "Connect")
 local T = { desk = 0.5, s1 = 0.85, s2 = 1.15, s3 = 1.45, rip = 1.72, button = 2.22, launch = 2.68, total = 3.4 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 local DIST = 5
 local SEAT = 1.0 -- la victime est assise (racine abaissée)
 local STAMPS = { "TARDY!", "STOLE LUNCH!", "REPLY-ALL!" }
@@ -501,6 +515,8 @@ end
 
 return {
 	Name = "Exit Interview",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { T.desk, "TAKE A SEAT" }, { T.s1, "PERFORMANCE REVIEW" }, { T.rip, "YOU'RE FIRED" }, { T.button, "EJECT" } } },
 	Desc = "Spotlight, chair and desk: a clipboard-slap interview, the TERMINATED letter is ripped and the ejector seat blasts them sky-high.",
 	Color = PURPLE,
 	Color2 = PINK,

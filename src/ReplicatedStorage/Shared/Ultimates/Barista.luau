@@ -63,6 +63,20 @@ local SND = {
 
 -- timeline (secondes après le début de la séquence) — partagée serveur/client
 local T = { Lift = 0.35, Blink0 = 0.5, BlinkStep = 0.14, Blinks = 8, Behind = 1.7, Clink = 2.5, Boom = 2.66, End = 3.25 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 -- base 27 (+ 2 ou 3 « Extra Shot » du passif = 35..39 au total)
 local DMG = { First = 2, Blink = 1.5, Final = 13, Splash = 10, SplashR = 11 }
 
@@ -645,6 +659,8 @@ end
 
 return {
 	Name = "Zero-Second Espresso",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Hit = { { 0, "TRIPLE SHOT" }, { T.Blink0, "ESPRESSO BLITZ" }, { T.Behind, "ORDER'S READY" } } },
 	Desc = "Chug a triple shot, blitz the target from 8 angles in zero seconds, sip... then everything hits at once.",
 	Color = CARAMEL,
 	Color2 = CREAM,

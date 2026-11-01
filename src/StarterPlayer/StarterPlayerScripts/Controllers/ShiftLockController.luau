@@ -27,6 +27,7 @@ end
 local MENUS = {
 	{ "HUD", "Tasks" }, { "HUD", "Shop" }, { "HUD", "Combos" },
 	{ "CharacterSelect", "Root" }, { "CharacterSelect", "CrateShop" }, { "Admin", "Panel" },
+	{ "Meta", "DailyPanel" }, { "Meta", "CodesPanel" }, { "Meta", "SettingsPanel" },
 }
 local GuiService = game:GetService("GuiService")
 local function menuOpen()

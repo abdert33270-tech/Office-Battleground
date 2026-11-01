@@ -63,6 +63,20 @@ local SND = {
 }
 
 local T = { Box = 0.15, Stamp = { 0.55, 0.95, 1.35 }, Horn = 1.55, Roof = 1.75, Ram = 2.05, Brake = 2.45, Kick = 2.75, End = 3.3 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 local DMG = { Kick = 3, Stamp = 3, Ram = 7, Final = 13, Splash = 10, SplashR = 10 }
 
 local ANIMS = {
@@ -718,6 +732,9 @@ end
 
 return {
 	Name = "Overnight Express",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Hit = { { 0, "SIGN HERE" }, { T.Stamp[1], "PRIORITY STAMPS" }, { T.Horn, "EXPRESS TRUCK" }, { T.Brake, "FINAL DROP-OFF" } } },
+	Anticipate = { Hit = { T.Kick } },
 	Desc = "Box them up, stamp them three times, then let the delivery truck and a flying kick ship them far away.",
 	Color = RED,
 	Color2 = YELLOW,

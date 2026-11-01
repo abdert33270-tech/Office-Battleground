@@ -58,6 +58,20 @@ local SND = {
 }
 
 local T = { Rush0 = 0.3, RushStep = 0.105, Reps = 10, Bar = 1.45, Clean = 1.75, Press = 2.05, Jump = 2.45, Slam = 2.8, End = 3.4 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 local DMG = { Rep = 1.6, Final = 18, Splash = 12, SplashR = 12 }
 
 local ANIMS = {
@@ -660,6 +674,8 @@ end
 
 return {
 	Name = "Maximum Rep",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Hit = { { T.Rush0, "10 REPS" }, { T.Bar, "1000 LB" }, { T.Jump, "MAX REP" } } },
 	Desc = "A ten-rep punch rush, then a 1000 LB barbell pressed overhead and slammed down for a NEW PR.",
 	Color = LIME,
 	Color2 = GOLD,

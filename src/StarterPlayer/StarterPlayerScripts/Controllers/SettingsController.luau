@@ -3,7 +3,7 @@
 	Contrôles : toggle (ON/OFF), slider (glisser, valeur appliquée au relâchement), choice (boutons).
 	Applique lui-même :
 		MusicVolume / SFXVolume -> SoundService SoundGroups "Music" / "SFX" (créés côté client s'ils manquent).
-			Volume du groupe = valeur / défaut du schéma (défaut = volume d'origine des sons, max = 1 / défaut).
+			Volume du groupe = valeur du réglage (même règle que CartoonFX, qui crée aussi ces groupes).
 		AutoShiftLock -> active le shift-lock (ShiftLockController) à chaque apparition.
 		ShowHints     -> PlayerGui.ControlsHint (bandeau des commandes de HintController) visible ou non.
 	Les autres clés (ScreenShake, FOVKick, ComicWords, DamageNumbers, ReducedFlashes, Quality, UltCinematics)
@@ -36,11 +36,7 @@ local VOLUME_GROUPS = { MusicVolume = "Music", SFXVolume = "SFX" }
 local DEFAULTS = ClientSettings.DEFAULTS
 
 local function groupVolume(key, value)
-	local def = tonumber(DEFAULTS[key]) or 1
-	if def <= 0 then
-		def = 1
-	end
-	return math.clamp((tonumber(value) or def) / def, 0, 10)
+	return math.clamp(tonumber(value) or tonumber(DEFAULTS[key]) or 1, 0, 1)
 end
 
 local function applyVolume(key, value)

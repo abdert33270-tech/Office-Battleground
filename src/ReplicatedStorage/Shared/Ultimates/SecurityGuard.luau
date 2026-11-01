@@ -16,9 +16,26 @@ local LIGHT, ZAP = Color3.fromRGB(255, 250, 190), Color3.fromRGB(170, 230, 255)
 local SFX = { Wail = 4832498807, Cuffs = 9114764731, Bang = 9114225758, Grate = 9116635173, Thunder = 9126082854, Boom = 2103404398, Blast = 9114362625, Buzz = 9113086839 }
 
 local T = { cuffThrow = 0.5, cuffHit = 0.72, yank = 0.78, batons = { 1.05, 1.22, 1.39, 1.56 }, big = 1.8, cage = 2.05, cageLand = 2.3, remote = 2.45, zaps = { 2.6, 2.75, 2.9 }, implode = 3.1, done = 3.45 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 local ULT = {
 	Name = "Maximum Security",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Lock = { { 0, "FREEZE!" }, { T.batons[1], "BATON CHECK" } }, Cage = { { T.cage - T.big, "LOCKDOWN" } } },
+	Anticipate = { Lock = { T.big } },
 	Desc = "Spotlight, cuff and beat them down, drop a jail cell on them and electrify it.",
 	Color = NAVY,
 	Color2 = RED,

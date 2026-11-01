@@ -25,6 +25,20 @@ local S = {
 
 -- minutage partagé serveur / client (secondes depuis la phase "Connect")
 local T = { s1 = 0.55, s2 = 0.95, s3 = 1.4, del = 1.6, walls = 2.35, slam = 2.85, total = 3.4 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 local DIST = 5 -- distance victime / lanceur pendant la séquence
 
 ------------------------------------------------------------------------
@@ -483,6 +497,9 @@ end
 ------------------------------------------------------------------------
 return {
 	Name = "FORMAT C:",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "SCANNING..." }, { T.s1, "KEYBOARD SMASH" }, { T.del, "DELETING..." }, { T.walls, "ZIP & FORMAT" } } },
+	Anticipate = { Connect = { T.s1 } },
 	Desc = "Scan beam, three giant-keyboard smashes, DELETING... then .ZIP walls crush the target into the floor (PIN).",
 	Color = TEAL,
 	Color2 = BLUE,

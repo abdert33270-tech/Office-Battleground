@@ -56,6 +56,20 @@ local SND = {
 }
 
 local T = { Phones = 0.05, Whip0 = 0.5, WhipStep = 0.2, Whips = 5, Web = 1.6, Yank = 1.95, Scream = 2.3, Crash = 2.95, End = 3.4 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 -- base 34.5 (+15 % du passif Visitor Badge sur les coups suivants = ~38.5)
 local DMG = { Lift = 3, Whip = 2.5, Yank = 5.5, Scream = 4, Final = 9.5, Splash = 10, SplashR = 11 }
 
@@ -699,6 +713,8 @@ end
 
 return {
 	Name = "Out of Office",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Hit = { { 0, "INCOMING CALLS" }, { T.Whip0, "PHONE CORD WHIP" }, { T.Web, "ON HOLD" }, { T.Scream, "OFFICE CLOSED" } } },
 	Desc = "Eight ringing phones, a cord-whip flurry, then a WE'RE CLOSED scream that sends them up and slams them down.",
 	Color = FUCHSIA,
 	Color2 = PINKL,

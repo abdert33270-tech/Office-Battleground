@@ -15,6 +15,20 @@ local STEEL = Color3.fromRGB(200, 205, 215)
 local DARKSTEEL = Color3.fromRGB(70, 72, 85)
 
 local T = { Cut = { 0.35, 0.55, 0.75, 0.95, 1.15, 1.35 }, Rise = 1.6, Slam = 2.35, End = 3.2 }
+-- rythme v3 : temps forts ~15 % plus lents (le serveur ET le client lisent cette même table T)
+do
+	local PACE, COUNTS = 1.15, { bars = true, Blinks = true, Reps = true, BarrageN = true, Whips = true }
+	local function pace(t)
+		for k, v in pairs(t) do
+			if type(v) == "number" and not COUNTS[k] then
+				t[k] = v * PACE
+			elseif type(v) == "table" then
+				pace(v)
+			end
+		end
+	end
+	pace(T)
+end
 
 ------------------------------------------------------------------------
 -- Animations
@@ -132,6 +146,8 @@ end
 ------------------------------------------------------------------------
 local M = {
 	Name = "CONTRACT TERMINATED",
+	-- v3 : titres de temps forts (UltimateController) ; Anticipate = poses d'armement avant ces coups
+	Beats = { Connect = { { 0, "POST-IT BLIZZARD" }, { T.Cut[1], "TEMP CLONES" }, { T.Rise, "STAPLED" } } },
 	Desc = "Vanish, surround them with sticky-note clones that slice through one by one, then staple them into the floor for good.",
 	Color = INDIGO,
 	Color2 = NOTE,

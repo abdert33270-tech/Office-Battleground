@@ -462,6 +462,9 @@ return {
 	Range = 25,
 	Angle = 70,
 	Startup = 1.1,
+	-- v3 : attentes relatives (U.wait) -> le rythme passe par Tempo ; titres de temps forts par phase
+	Tempo = 1.15,
+	Beats = { Connect = "COFFEE BLITZ", Launch = "LIFT OFF", Charge = "GIANT CUP" },
 
 	Server = function(U, caster, target, ctx)
 		U.fx(ctx, "Rush")
@@ -508,6 +511,10 @@ return {
 		local top = center + Vector3.new(0, up, 0)
 		local front = center + toC * 3
 		U.place(ctx, caster, U.facing(front, center))
+		-- anticipation lisible avant l'uppercut
+		if not U.windup(ctx, 0.16) then
+			return
+		end
 		U.fx(ctx, "Launch", { p = center, top = top, g = g })
 		U.hit(ctx, target, 4, { words = { "UPPERCUT!" }, power = 0.95 })
 		U.glide(ctx, target, CFrame.new(top) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(-0.6, 0, 0), 0.3, "Out")
