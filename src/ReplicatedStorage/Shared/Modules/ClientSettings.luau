@@ -21,6 +21,7 @@ local ClientSettings = {}
 -- sanitize renvoie nil pour une clé inconnue => ignorée par pull() et retirée de data.Settings par SettingsService.
 ClientSettings.SCHEMA = {
 	{ Key = "SFXVolume", Label = "Sound effects", Type = "slider", Min = 0, Max = 1, Step = 0.05, Default = 1, Section = "Audio" },
+	{ Key = "AmbienceVolume", Label = "Ambience", Type = "slider", Min = 0, Max = 1, Step = 0.05, Default = 1, Section = "Audio" },
 	{ Key = "ScreenShake", Label = "Screen shake", Type = "slider", Min = 0, Max = 1, Step = 0.1, Default = 1, Section = "Camera" },
 	{ Key = "FOVKick", Label = "Camera zoom on hits", Type = "toggle", Default = true, Section = "Camera" },
 	{ Key = "UltCinematics", Label = "Ultimate cinematic camera", Type = "toggle", Default = true, Section = "Camera" },
@@ -30,6 +31,10 @@ ClientSettings.SCHEMA = {
 	{ Key = "Quality", Label = "Effects quality", Type = "choice", Options = { "Low", "Medium", "High" }, Default = "High", Section = "Effects" },
 	{ Key = "AutoShiftLock", Label = "Shift-lock on spawn", Type = "toggle", Default = false, Section = "Controls" },
 	{ Key = "ShowHints", Label = "Control hints", Type = "toggle", Default = true, Section = "Controls" },
+	-- UIScale : taille de l'interface (SettingsController : UIScale « PopScale »/« AutoScale » des cadres racine, voir
+	-- docs/Monde-audio.md) ; HideHUD : cache HUD, dock, bandeaux d'aide (un petit bouton SHOW HUD reste à l'écran)
+	{ Key = "UIScale", Label = "Interface size", Type = "slider", Min = 0.8, Max = 1.2, Step = 0.05, Default = 1, Section = "Interface" },
+	{ Key = "HideHUD", Label = "Hide HUD", Type = "toggle", Default = false, Section = "Interface" },
 }
 
 ClientSettings.DEFAULTS = {}

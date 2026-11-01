@@ -176,8 +176,8 @@ local ANIMS = {
 	Punch5 = { -- FINISHER : grosse anticipation (accroupi bas, buste enroulé, menton rentré), coup de pied retourné
 		-- qui se déplie en se grandissant (easing « back » = claquement), longue récupération essoufflée
 		{ t = 0 },
-		{ t = 0.12, RH = { p = 0.55, r = -0.2 }, LH = { p = 0.7 }, RJ = { tw = -1.15, ln = 0.35, dy = -0.45 }, RS = { p = 0.5, r = -0.8 }, LS = { p = 1.2, y = 0.7 }, N = { p = 0.2, y = 0.5 } },
-		{ t = 0.18, RH = { p = 0.75, r = -0.5 }, LH = { p = 0.75 }, RJ = { tw = -1.3, ln = 0.3, dy = -0.55 }, RS = { p = 0.4, r = -1.0 }, LS = { p = 0.6, r = -0.8 }, N = { p = 0.25, y = 0.6 }, e = "inout" },
+		{ t = 0.12, RH = { p = 0.9, r = -0.2 }, LH = { p = -0.05 }, RJ = { tw = -1.15, ln = 0.35, dy = -0.35 }, RS = { p = 0.5, r = -0.8 }, LS = { p = 1.2, y = 0.7 }, N = { p = 0.2, y = 0.5 } },
+		{ t = 0.18, RH = { p = 1.0, r = -0.5 }, LH = { p = -0.1 }, RJ = { tw = -1.3, ln = 0.3, dy = -0.4 }, RS = { p = 0.4, r = -1.0 }, LS = { p = 0.6, r = -0.8 }, N = { p = 0.25, y = 0.6 }, e = "inout" },
 		{ t = 0.22, RH = { p = 2.0, r = -0.45 }, RJ = { tw = 1.3, ln = -0.45, sd = -0.22, dy = 0.1, dz = 0.15 }, RS = { p = 0.4, r = -1.35 }, LS = { p = 0.4, r = -1.35 }, LH = { p = -0.2 }, N = { p = 0.35, y = -0.6 }, e = "back" },
 		{ t = 0.5, RH = { p = 1.8, r = -0.4 }, RJ = { tw = 1.15, ln = -0.38, sd = -0.16, dy = 0.05, dz = 0.12 }, RS = { p = 0.35, r = -1.25 }, LS = { p = 0.35, r = -1.25 }, LH = { p = -0.15 }, N = { p = 0.3, y = -0.5 } },
 		{ t = 0.75, RH = { p = 0.5 }, RJ = { tw = 0.35, ln = 0.2, dy = -0.25 }, RS = { p = 0.6, r = -0.5 }, LS = { p = 0.6, r = -0.5 }, LH = { p = 0.2 }, e = "inout" }, -- réception
@@ -187,7 +187,7 @@ local ANIMS = {
 
 	Uppercut = { -- Espace + 5e coup : accroupi très bas, puis tout le corps se déplie, le poing monte au ciel avec le genou
 		{ t = 0 },
-		{ t = 0.15, RS = { p = -0.7, r = -0.15 }, LS = { p = 1.1, y = 0.7 }, RJ = { ln = 0.6, tw = -0.45, dy = -0.6 }, RH = { p = 0.95 }, LH = { p = 0.95 }, N = { p = -0.35 }, e = "inout" },
+		{ t = 0.15, RS = { p = -0.7, r = -0.15 }, LS = { p = 1.1, y = 0.7 }, RJ = { ln = 0.6, tw = -0.45, dy = -0.45 }, RH = { p = 1.15 }, LH = { p = 0.15 }, N = { p = -0.35 }, e = "inout" },
 		{ t = 0.2, RS = { p = 3.15, y = 0.2 }, LS = { p = -0.45 }, RJ = { ln = -0.42, tw = 0.5, dy = 0.3, dz = 0.2 }, LH = { p = 0.95 }, RH = { p = -0.25 }, N = { p = -0.3 }, e = "back" },
 		{ t = 0.45, RS = { p = 3.05, y = 0.2 }, LS = { p = -0.4 }, RJ = { ln = -0.36, tw = 0.42, dy = 0.2, dz = 0.15 }, LH = { p = 0.8 }, N = { p = -0.25 } },
 		{ t = 0.65, e = "inout" },
@@ -198,7 +198,7 @@ local ANIMS = {
 		{ t = 0.1, RJ = { ln = 0.45, dy = -0.45 }, RH = { p = -0.1 }, LH = { p = 1.0 }, RS = { p = -0.9 }, LS = { p = -0.9 }, N = { p = -0.3 } },
 		{ t = 0.16, RH = { p = 1.75 }, LH = { p = 1.5 }, RJ = { ln = -1.0, dy = 0.35, dz = 0.4 }, RS = { p = -1.0, r = -0.45 }, LS = { p = -1.0, r = -0.45 }, N = { p = 0.55 }, e = "back" },
 		{ t = 0.48, RH = { p = 1.65 }, LH = { p = 1.45 }, RJ = { ln = -0.92, dy = 0.3, dz = 0.35 }, RS = { p = -0.95, r = -0.4 }, LS = { p = -0.95, r = -0.4 }, N = { p = 0.5 } },
-		{ t = 0.62, RJ = { ln = 0.3, dy = -0.45, dz = 0.1 }, RH = { p = 0.75 }, LH = { p = -0.1 }, RS = { p = 0.6 }, LS = { p = 0.6 }, N = { p = -0.1 }, e = "in" }, -- réception écrasée
+		{ t = 0.62, RJ = { ln = 0.3, dy = -0.3, dz = 0.1 }, RH = { p = 0.9 }, LH = { p = -0.2 }, RS = { p = 0.6 }, LS = { p = 0.6 }, N = { p = -0.1 }, e = "in" }, -- réception écrasée
 		{ t = 0.8, e = "inout" },
 	},
 
@@ -227,8 +227,8 @@ local ANIMS = {
 	Downslam = { -- bras joints très haut sur la pointe des pieds (regard levé), puis marteau à deux mains, genoux pliés
 		{ t = 0 },
 		{ t = 0.12, RS = { p = 3.35 }, LS = { p = 3.35 }, RJ = { ln = -0.5, dy = 0.15 }, RH = { p = 0.7 }, LH = { p = 0.5 }, N = { p = -0.3 }, e = "inout" },
-		{ t = 0.16, RS = { p = 0.8, y = 0.3 }, LS = { p = 0.8, y = 0.3 }, RJ = { ln = 0.9, dy = -0.55, dz = 0.35 }, RH = { p = 1.15 }, LH = { p = 1.05 }, N = { p = -0.4 }, e = "in" },
-		{ t = 0.45, RS = { p = 0.85, y = 0.3 }, LS = { p = 0.85, y = 0.3 }, RJ = { ln = 0.75, dy = -0.45, dz = 0.3 }, RH = { p = 0.95 }, N = { p = -0.3 } },
+		{ t = 0.16, RS = { p = 0.8, y = 0.3 }, LS = { p = 0.8, y = 0.3 }, RJ = { ln = 0.9, dy = -0.45, dz = 0.35 }, RH = { p = 1.15 }, LH = { p = 1.05 }, N = { p = -0.4 }, e = "in" },
+		{ t = 0.45, RS = { p = 0.85, y = 0.3 }, LS = { p = 0.85, y = 0.3 }, RJ = { ln = 0.75, dy = -0.35, dz = 0.3 }, RH = { p = 0.95 }, N = { p = -0.3 } },
 		{ t = 0.7, e = "inout" },
 	},
 
@@ -284,7 +284,7 @@ local ANIMS = {
 	-- dashs directionnels (Config/Combat.Dash.Time = 0,2 s)
 	Dash = { -- avant : 0,06 s d'anticipation accroupie (CombatController retarde la poussée d'autant), puis buste plongé
 		{ t = 0 },
-		{ t = 0.06, RS = { p = 0.35, r = -0.2 }, LS = { p = 0.35, r = -0.2 }, RJ = { ln = 0.35, dy = -0.45 }, RH = { p = 0.8 }, LH = { p = 0.15 }, N = { p = -0.2 }, e = "inout" },
+		{ t = 0.06, RS = { p = 0.35, r = -0.2 }, LS = { p = 0.35, r = -0.2 }, RJ = { ln = 0.35, dy = -0.35 }, RH = { p = 0.95 }, LH = { p = -0.15 }, N = { p = -0.2 }, e = "inout" },
 		{ t = 0.11, RS = { p = -0.85 }, LS = { p = -0.85 }, RJ = { ln = 0.5, dy = -0.15, dz = 0.3 }, RH = { p = -0.45 }, LH = { p = 0.7 }, N = { p = -0.35 }, e = "back" },
 		{ t = 0.28, RS = { p = -0.75 }, LS = { p = -0.75 }, RJ = { ln = 0.42, dy = -0.1, dz = 0.2 }, RH = { p = -0.3 }, LH = { p = 0.5 }, N = { p = -0.3 } },
 		{ t = 0.4, e = "inout" },
@@ -299,15 +299,15 @@ local ANIMS = {
 
 	SideDashL = { -- pas chassé à gauche : penché dans le sens du dash, jambe gauche qui s'ouvre, garde, regard sur la cible
 		{ t = 0 },
-		{ t = 0.05, RS = { p = 1.3, y = 0.8 }, LS = { p = 0.6, r = -0.9 }, RJ = { sd = 0.32, ln = 0.12, dy = -0.35 }, LH = { r = -0.6 }, RH = { r = 0.25 }, N = { r = -0.3 } },
-		{ t = 0.22, RS = { p = 1.2, y = 0.8 }, LS = { p = 0.5, r = -0.8 }, RJ = { sd = 0.25, ln = 0.1, dy = -0.3 }, LH = { r = -0.45 }, RH = { r = 0.2 }, N = { r = -0.25 } },
+		{ t = 0.05, RS = { p = 1.3, y = 0.8 }, LS = { p = 0.6, r = -0.9 }, RJ = { sd = 0.32, ln = 0.12, dy = -0.2 }, LH = { r = -0.6 }, RH = { r = 0.25 }, N = { r = -0.3 } },
+		{ t = 0.22, RS = { p = 1.2, y = 0.8 }, LS = { p = 0.5, r = -0.8 }, RJ = { sd = 0.25, ln = 0.1, dy = -0.15 }, LH = { r = -0.45 }, RH = { r = 0.2 }, N = { r = -0.25 } },
 		{ t = 0.34, e = "inout" },
 	},
 
 	SideDashR = {
 		{ t = 0 },
-		{ t = 0.05, LS = { p = 1.3, y = 0.8 }, RS = { p = 0.6, r = -0.9 }, RJ = { sd = -0.32, ln = 0.12, dy = -0.35 }, RH = { r = -0.6 }, LH = { r = 0.25 }, N = { r = 0.3 } },
-		{ t = 0.22, LS = { p = 1.2, y = 0.8 }, RS = { p = 0.5, r = -0.8 }, RJ = { sd = -0.25, ln = 0.1, dy = -0.3 }, RH = { r = -0.45 }, LH = { r = 0.2 }, N = { r = 0.25 } },
+		{ t = 0.05, LS = { p = 1.3, y = 0.8 }, RS = { p = 0.6, r = -0.9 }, RJ = { sd = -0.32, ln = 0.12, dy = -0.2 }, RH = { r = -0.6 }, LH = { r = 0.25 }, N = { r = 0.3 } },
+		{ t = 0.22, LS = { p = 1.2, y = 0.8 }, RS = { p = 0.5, r = -0.8 }, RJ = { sd = -0.25, ln = 0.1, dy = -0.15 }, RH = { r = -0.45 }, LH = { r = 0.2 }, N = { r = 0.25 } },
 		{ t = 0.34, e = "inout" },
 	},
 
@@ -379,7 +379,7 @@ local ANIMS = {
 	},
 	BlockPush = { -- coup encaissé en garde : la garde tient, mais on glisse en arrière, genoux qui plient
 		{ t = 0 },
-		{ t = 0.04, RS = { p = 1.85, y = 1.0, r = 0.15 }, LS = { p = 1.85, y = 1.0, r = 0.15 }, RJ = { ln = -0.12, dy = -0.25, dz = -0.3 }, RH = { p = 0.55 }, LH = { p = -0.35 }, N = { p = 0.35 }, e = "back" },
+		{ t = 0.04, RS = { p = 1.85, y = 1.0, r = 0.15 }, LS = { p = 1.85, y = 1.0, r = 0.15 }, RJ = { ln = -0.12, dy = -0.2, dz = -0.3 }, RH = { p = 0.55 }, LH = { p = -0.5 }, N = { p = 0.35 }, e = "back" },
 		{ t = 0.24, e = "inout" },
 	},
 

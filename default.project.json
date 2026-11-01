@@ -35,6 +35,9 @@
       },
       "$path": "src/Lighting"
     },
+    "ReplicatedFirst": {
+      "$path": "src/ReplicatedFirst"
+    },
     "ReplicatedStorage": {
       "$properties": {
         "SerializedOverrides": {

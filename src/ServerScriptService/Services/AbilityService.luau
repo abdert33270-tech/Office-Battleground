@@ -3,6 +3,14 @@
 	Chaque fiche a un Kind ; chaque Kind est une fonction ici (Lunge, Projectile, Melee, AoE, Slam, Cone, Grab,
 	Zone, Barrier, Buff, Guard). Tous les dégâts passent par CombatService.applyHit.
 	Le kit (3 attaques de base ou 3 transformées) vient de CharacterService.getKit(character).
+	ABA :
+	- windup(attaquant, t, cfg?, tele?) : anticipation INTERRUPTIBLE (false si le lanceur est étourdi / meurt pendant t),
+	  télégraphe envoyé pour toute anticipation >= CombatConfig.TelegraphMin ; super armure seulement si cfg.Armor == true.
+	  Exposé aux Kinds de Content via api.windup.
+	- ENDLAG : après la fin du Kind (au plus tard après son temps actif estimé), cfg.Endlag ou
+	  CombatConfig.AbilityEndlag[Heavy|Light] : ni attaque, ni dash, ni block (attribut EndlagUntil, pose « Winded »).
+	- cfg.GuardBreak = true : casse un block normal ; sinon un coup Heavy vide seulement la garde (Block.HeavyGuardMult).
+	- performAbility(character, slot, aim) : point d'entrée sans Player (bot d'entraînement), sans limite de débit.
 ]]
 local Players = game:GetService("Players")
 local Debris = game:GetService("Debris")
@@ -48,7 +56,18 @@ local function hit(attacker, victim, cfg, dir, over)
 		category = over.Category or cfg.Category or "Light", power = over.Power or cfg.Power or 0.4,
 		words = over.Words or cfg.Words, material = cfg.Material, weapon = cfg.Name, kitchen = cfg.Kitchen,
 		unblockable = cfg.Unblockable, hitPos = over.hitPos or vRoot.Position + Vector3.new(0, 0.5, 0),
+		guardBreak = (over.GuardBreak ~= nil and over.GuardBreak) or (over.GuardBreak == nil and cfg.GuardBreak == true) or nil,
 	}
+	-- anti-infini : une attaque multi-coups (Hits) ou un cône continu compte ≈ 2 liens au total, pas 1 par coup
+	local lw = over.LinkWeight or cfg.LinkWeight
+	if not lw then
+		if type(cfg.Hits) == "number" and cfg.Hits > 1 then
+			lw = math.max(0.25, 2 / cfg.Hits)
+		elseif cfg.Kind == "Cone" and type(cfg.Tick) == "number" and type(cfg.Duration) == "number" and cfg.Duration > 0 then
+			lw = math.clamp(2 * cfg.Tick / cfg.Duration, 0.2, 1)
+		end
+	end
+	p.linkWeight = lw
 	if (over.Pin ~= nil and over.Pin) or (over.Pin == nil and cfg.Effects and cfg.Effects.Pin) then
 		p.pin = true -- plaque au sol avec une onde de choc au lieu d'expulser
 		p.knockback = 0
@@ -110,10 +129,92 @@ local function flat(v, fallback)
 end
 
 ------------------------------------------------------------------------
+-- Anticipation (windup) interruptible + télégraphe universel
+------------------------------------------------------------------------
+-- télégraphe déduit de la fiche : Cone (Range + Angle), Box (HitboxSize ; Lunge = couloir parcouru), Circle (Radius)
+local function telegraphFor(cfg)
+	if type(cfg) ~= "table" then
+		return nil
+	end
+	if type(cfg.Range) == "number" and type(cfg.Angle) == "number" then
+		return { shape = "Cone", r = cfg.Range, angle = cfg.Angle }
+	end
+	if typeof(cfg.HitboxSize) == "Vector3" then
+		if cfg.Kind == "Lunge" and type(cfg.Speed) == "number" and type(cfg.Time) == "number" then
+			local len = math.max(cfg.HitboxSize.Z, cfg.Speed * cfg.Time)
+			return { shape = "Box", size = Vector3.new(cfg.HitboxSize.X, 1, len), offset = len / 2 + 1 }
+		end
+		return { shape = "Box", size = cfg.HitboxSize, offset = cfg.HitboxOffset or 3 }
+	end
+	if type(cfg.Radius) == "number" then
+		return { shape = "Circle", r = cfg.Radius }
+	end
+	return nil
+end
+
+-- Attend t secondes d'anticipation. Retourne false si le lanceur meurt, est étourdi (hitstun, guard break, renversé)
+-- ou est remplacé pendant l'attente : l'attaque est alors ANNULÉE (pas de coup, pas d'endlag).
+-- tele : nil = télégraphe déduit de cfg ; false = aucun (le Kind envoie le sien) ; table = payload
+--        { shape = "Circle"|"Box"|"Cone", r, size, offset, angle, p?, force? } (force = même sous TelegraphMin).
+-- cfg.Armor == true : super armure pendant l'anticipation (les coups légers / lourds n'étourdissent pas ; les
+-- casse-garde et les ultimes, si : ils interrompent).
+local function windup(attacker: Model, t: number?, cfg, tele): boolean
+	t = tonumber(t) or 0
+	if not attacker or not CharacterState.isAlive(attacker) or CharacterState.isStunned(attacker) then
+		return false
+	end
+	local s = CharacterState.get(attacker)
+	local payload = tele
+	if payload == nil then
+		payload = telegraphFor(cfg)
+	end
+	if type(payload) == "table" and t > 0 and (t >= (CombatConfig.TelegraphMin or 0.12) or payload.force) then
+		local d = table.clone(payload)
+		d.force = nil
+		d.k, d.a = "Telegraph", attacker
+		d.dur = d.dur or t
+		FX:FireAllClients(d)
+	end
+	if t <= 0 then
+		return true
+	end
+	local armor = type(cfg) == "table" and cfg.Armor == true
+	local armorUntil = now() + t
+	if armor then
+		s.armorUntil = math.max(s.armorUntil or 0, armorUntil)
+	end
+	local t0 = os.clock()
+	local ok = true
+	while os.clock() - t0 < t do
+		task.wait()
+		if not attacker.Parent or not CharacterState.isAlive(attacker) or CharacterState.isStunned(attacker)
+			or CharacterState.get(attacker) ~= s then
+			ok = false
+			break
+		end
+	end
+	if armor and s.armorUntil == armorUntil then
+		s.armorUntil = 0
+	end
+	return ok
+end
+AbilityService.windup = windup
+
+------------------------------------------------------------------------
 -- Kinds
 ------------------------------------------------------------------------
+local function interrupted(attacker)
+	return not CharacterState.isAlive(attacker) or CharacterState.isStunned(attacker)
+end
+
 function Kinds.Lunge(attacker, cfg)
+	if not windup(attacker, cfg.Windup or 0, cfg) then
+		return
+	end
 	local root = attacker:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
 	local look = root.CFrame.LookVector
 	local att = root:FindFirstChild("KBAtt") or Instance.new("Attachment")
 	att.Name = "KBAtt"
@@ -141,6 +242,11 @@ function Kinds.Lunge(attacker, cfg)
 	end
 	wallParams.FilterDescendantsInstances = ex
 	while os.clock() - t0 < cfg.Time and root.Parent and lv.Parent do
+		-- lanceur étourdi / mort en pleine charge : on s'arrête net, plus aucun coup
+		if interrupted(attacker) then
+			lv:Destroy()
+			break
+		end
 		-- on s'arrête devant un mur (jamais traverser les murs de l'étage)
 		local wall = workspace:Raycast(root.Position, look * 4, wallParams)
 		if wall and wall.Instance.CanCollide then
@@ -284,10 +390,9 @@ function Kinds.Projectile(attacker, cfg, aim)
 end
 
 function Kinds.Melee(attacker, cfg)
-	if (cfg.Windup or 0) >= 0.15 then
-		FX:FireAllClients({ k = "Telegraph", shape = "Box", a = attacker, size = cfg.HitboxSize, offset = cfg.HitboxOffset or 3, dur = cfg.Windup })
+	if not windup(attacker, cfg.Windup or 0.08, cfg, { shape = "Box", size = cfg.HitboxSize, offset = cfg.HitboxOffset or 3 }) then
+		return
 	end
-	task.wait(cfg.Windup or 0.08)
 	local hits = cfg.Hits or 1
 	for i = 1, hits do
 		if not CharacterState.isAlive(attacker) or CharacterState.isStunned(attacker) then
@@ -296,7 +401,7 @@ function Kinds.Melee(attacker, cfg)
 		local c = (i == hits and cfg.Final) or cfg
 		local root = attacker:FindFirstChild("HumanoidRootPart")
 		local cf = root.CFrame * CFrame.new(0, 0, -(cfg.HitboxOffset or 3))
-		for _, v in ipairs(Hitbox.box(cf, cfg.HitboxSize + Vector3.one * CombatConfig.LatencyTolerance, attacker, 3)) do
+		for _, v in ipairs(Hitbox.box(cf, cfg.HitboxSize + Vector3.one * CombatConfig.LatencyTolerance, attacker, 3, CombatService.rewindFor(attacker))) do
 			local vr = v:FindFirstChild("HumanoidRootPart")
 			hit(attacker, v, cfg, flat(vr.Position - root.Position, root.CFrame.LookVector), c ~= cfg and c or nil)
 		end
@@ -321,8 +426,9 @@ local function aoe(attacker, cfg, center)
 end
 
 function Kinds.AoE(attacker, cfg)
-	FX:FireAllClients({ k = "Telegraph", shape = "Circle", a = attacker, r = cfg.Radius, dur = cfg.Windup or 0.1 })
-	task.wait(cfg.Windup or 0.1)
+	if not windup(attacker, cfg.Windup or 0.1, cfg, { shape = "Circle", r = cfg.Radius, force = true }) then
+		return -- étourdi / mort pendant l'anticipation : l'onde n'a pas lieu
+	end
 	local root = attacker:FindFirstChild("HumanoidRootPart")
 	if root and CharacterState.isAlive(attacker) then
 		aoe(attacker, cfg, root.Position)
@@ -349,19 +455,20 @@ function Kinds.Slam(attacker, cfg)
 	down.VectorVelocity = root.CFrame.LookVector * 10 + Vector3.new(0, -110, 0)
 	down.Parent = root
 	local t0 = os.clock()
-	while os.clock() - t0 < 1.2 and hum.FloorMaterial == Enum.Material.Air and root.Parent do
+	while os.clock() - t0 < 1.2 and hum.FloorMaterial == Enum.Material.Air and root.Parent and not interrupted(attacker) do
 		RunService.Heartbeat:Wait()
 	end
 	down:Destroy()
-	if CharacterState.isAlive(attacker) then
+	if not interrupted(attacker) then
 		aoe(attacker, cfg, root.Position)
 	end
 end
 
 function Kinds.Cone(attacker, cfg)
 	local root = attacker:FindFirstChild("HumanoidRootPart")
-	FX:FireAllClients({ k = "Telegraph", shape = "Cone", a = attacker, r = cfg.Range, angle = cfg.Angle, dur = cfg.Windup or 0.1 })
-	task.wait(cfg.Windup or 0.1)
+	if not windup(attacker, cfg.Windup or 0.1, cfg, { shape = "Cone", r = cfg.Range, angle = cfg.Angle, force = true }) then
+		return
+	end
 	FX:FireAllClients({ k = "Cone", id = cfg.Name, a = attacker, range = cfg.Range, angle = cfg.Angle, dur = cfg.Duration, c = cfg.Color })
 	local cosA = math.cos(math.rad(cfg.Angle))
 	local t0 = os.clock()
@@ -384,11 +491,24 @@ function Kinds.Cone(attacker, cfg)
 end
 
 function Kinds.Grab(attacker, cfg)
-	task.wait(0.08)
+	if not windup(attacker, cfg.Windup or 0.08, cfg, { shape = "Box", size = cfg.HitboxSize, offset = cfg.HitboxOffset }) then
+		return
+	end
 	local root = attacker:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
 	local cf = root.CFrame * CFrame.new(0, 0, -cfg.HitboxOffset)
-	local victim = Hitbox.box(cf, cfg.HitboxSize + Vector3.one * CombatConfig.LatencyTolerance, attacker, 1)[1]
-	if not victim or CharacterState.isProtected(victim) then
+	-- la plus proche qu'on PEUT saisir : ni protégée, ni renversée (seules les ultimes touchent au sol), ni déjà K.O.
+	local victim
+	for _, v in ipairs(Hitbox.box(cf, cfg.HitboxSize + Vector3.one * CombatConfig.LatencyTolerance, attacker, 4, CombatService.rewindFor(attacker))) do
+		if not CharacterState.isProtected(v) and not CharacterState.isKnockedDown(v) and not CharacterState.get(v).pendingKO
+			and not CharacterState.inSafeZone(v) then
+			victim = v
+			break
+		end
+	end
+	if not victim then
 		return
 	end
 	local vr = victim:FindFirstChild("HumanoidRootPart")
@@ -410,7 +530,8 @@ function Kinds.Grab(attacker, cfg)
 	ap:Destroy()
 	a0:Destroy()
 	a1:Destroy()
-	if CharacterState.isAlive(victim) and CharacterState.isAlive(attacker) then
+	-- lanceur étourdi pendant la prise : il lâche la victime sans la projeter
+	if CharacterState.isAlive(victim) and not interrupted(attacker) then
 		hit(attacker, victim, cfg, root.CFrame.LookVector, { Knockback = cfg.ThrowKnockback, KnockUp = cfg.ThrowUp })
 	end
 	task.delay(0.6, function()
@@ -553,6 +674,8 @@ AbilityService.api = {
 	hit = function(...) return hit(...) end, others = others, flat = flat, projectile = function(...) return projectile(...) end,
 	aoe = function(...) return aoe(...) end, Kinds = Kinds, CharacterState = CharacterState, CombatService = CombatService,
 	ZoneService = ZoneService, Hitbox = Hitbox, getFX = function() return FX end, now = now,
+	-- api.windup(attacker, t, cfg?, tele?) -> boolean : anticipation interruptible + télégraphe (voir windup)
+	windup = function(...) return windup(...) end, telegraphFor = telegraphFor,
 }
 for _, def in ipairs(require(Shared.Modules.ContentLoader).all()) do
 	if type(def.Kinds) == "table" then
@@ -564,35 +687,48 @@ for _, def in ipairs(require(Shared.Modules.ContentLoader).all()) do
 	end
 end
 
-local function onAbility(player: Player, slot, aim)
+-- Kinds « posés » (zone, barrière, buff, garde) : le Kind dure longtemps mais le lanceur est libre tout de suite ->
+-- l'endlag part dès le lancement (la Tray Guard n'en a pas par défaut : elle bloque elle-même)
+local PASSIVE_KINDS = { Zone = true, Barrier = true, Buff = true, Guard = true }
+
+local function abilityEndlag(cfg): number
+	if type(cfg.Endlag) == "number" then
+		return math.max(0, cfg.Endlag)
+	end
+	if cfg.Endlag == false or cfg.Kind == "Guard" then
+		return 0
+	end
+	local E = CombatConfig.AbilityEndlag or {}
+	return (cfg.Category == "Heavy" and E.Heavy or E.Light) or 0
+end
+
+-- Lance l'attaque `slot` (1-3) du kit de `character` (joueur ou PNJ, sans limite de débit). aim : direction visée.
+-- Retourne true si l'attaque part.
+function AbilityService.performAbility(character: Model?, slot, aim): boolean
 	if type(slot) ~= "number" or slot % 1 ~= 0 or slot < 1 or slot > 3 then
-		return
+		return false
 	end
-	if not Net.allow(player, "Ability", CombatConfig.RemoteRate.Ability) then
-		return
-	end
-	local character = player.Character
-	if not CharacterState.isAlive(character) or CharacterState.isStunned(character) then
-		return
+	if not character or not CharacterState.isAlive(character) or CharacterState.isStunned(character) then
+		return false
 	end
 	if CharacterState.inSafeZone and CharacterState.inSafeZone(character) then
-		return -- salle AFK : aucune attaque
+		return false -- salle AFK : aucune attaque
 	end
 	local s = CharacterState.get(character)
 	if s.blocking or s.held and s.held.cfg.Hold == "TwoHands" then
-		return
+		return false
 	end
 	local kit = AbilityService.getKit and AbilityService.getKit(character)
 	local id = kit and kit[slot]
 	local cfg = id and Attacks[id]
 	if not cfg then
-		return
+		return false
 	end
 	local t = os.clock()
 	if t < (s.gcdUntil or 0) or t < s.nextAttack - 0.05 or t < (s.endlagUntil or 0) - 0.05 then
 		-- anti-spam : délai global, pas avant la fin du coup en cours (nextAttack), ni pendant l'endlag d'un coup lourd.
 		-- Liens M1 -> attaque de perso possibles (façon ABA) : la DropEndlag ne s'applique pas aux attaques de perso.
-		return
+		return false
 	end
 	s.cd = s.cd or {}
 	s.charges = s.charges or {}
@@ -605,7 +741,7 @@ local function onAbility(player: Player, slot, aim)
 			ch = { left = cfg.Charges - 1, start = t }
 			s.charges[id] = ch
 		else
-			return
+			return false
 		end
 		if ch.left <= 0 then
 			s.cd[id] = t + cfg.Cooldown
@@ -613,7 +749,7 @@ local function onAbility(player: Player, slot, aim)
 		end
 	else
 		if t < cd or t < s.nextAttack - 0.05 then
-			return
+			return false
 		end
 		s.cd[id] = t + cfg.Cooldown
 		character:SetAttribute("CD" .. slot, now() + cfg.Cooldown)
@@ -630,13 +766,55 @@ local function onAbility(player: Player, slot, aim)
 	FX:FireAllClients({ k = "Ability", a = character, id = id, name = cfg.Name, snd = cfg.Sound, kind = cfg.Kind, prop = cfg.Prop, dur = propTime })
 	local fn = Kinds[cfg.Kind]
 	if fn then
+		-- pendant l'attaque (anticipation + phase active estimée) : ni M1, ni block, ni autre attaque.
+		-- ENDLAG à la fin du Kind, ou au plus tard au bout de ce temps actif (Kinds qui laissent tourner un effet).
+		local passive = PASSIVE_KINDS[cfg.Kind] == true
+		local active = passive and 0
+			or math.clamp((tonumber(cfg.Windup) or 0) + (tonumber(cfg.Time) or 0) + (tonumber(cfg.HoldTime) or 0) + 0.35, 0.35, 2.5)
+		local preBusy, preNext = s.busyUntil, s.nextAttack
+		local castBusy, castNext = math.max(preBusy, t + active), math.max(preNext, t + active)
+		s.busyUntil, s.nextAttack = castBusy, castNext
+		local endlag = abilityEndlag(cfg)
+		local done = false
+		local function finish()
+			if done or CharacterState.get(character) ~= s then
+				return
+			end
+			done = true
+			local t2 = os.clock()
+			-- fin anticipée (Kind terminé / interrompu) : on rend la main tout de suite (sauf si autre chose a repoussé)
+			if s.busyUntil == castBusy then
+				s.busyUntil = math.max(preBusy, math.min(castBusy, t2))
+			end
+			if s.nextAttack == castNext then
+				s.nextAttack = math.max(preNext, math.min(castNext, t2))
+			end
+			-- lanceur étourdi / mort (attaque interrompue) : pas d'endlag par-dessus le hitstun
+			if CharacterState.isAlive(character) and not CharacterState.isStunned(character) then
+				CharacterState.endlag(character, endlag)
+			end
+		end
+		if passive then
+			finish()
+		else
+			task.delay(active, finish)
+		end
 		task.spawn(function()
 			local ok, err = pcall(fn, character, cfg, aim)
 			if not ok then
 				warn("[AbilityService]", id, err)
 			end
+			finish()
 		end)
 	end
+	return true
+end
+
+local function onAbility(player: Player, slot, aim)
+	if type(slot) ~= "number" or not Net.allow(player, "Ability", CombatConfig.RemoteRate.Ability) then
+		return
+	end
+	AbilityService.performAbility(player.Character, slot, aim)
 end
 
 -- remet les recharges à zéro (changement de perso / transformation)

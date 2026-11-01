@@ -1208,12 +1208,23 @@ function CombatService.performBlock(character: Model?, on: boolean, auto: boolea
 		end
 		local req = {}
 		s.blockReq = req
-		task.delay(s.busyUntil - t + 0.01, function()
-			if s.blockReq == req and s.wantBlock and CharacterState.isAlive(character) and not CharacterState.isStunned(character)
-				and not CharacterState.isGuardBroken(character) and os.clock() >= s.busyUntil - 0.02 then
-				startBlock(character, noParry)
+		local function try()
+			if s.blockReq ~= req or not s.wantBlock or not CharacterState.isAlive(character) or CharacterState.isStunned(character)
+				or CharacterState.isGuardBroken(character) then
+				return
 			end
-		end)
+			local left = s.busyUntil - os.clock()
+			if left > 0.02 then
+				-- la récupération a été prolongée entre-temps (endlag d'une attaque) : on attend encore
+				if os.clock() < s.endlagUntil then
+					noParry = true
+				end
+				task.delay(left + 0.01, try)
+				return
+			end
+			startBlock(character, noParry)
+		end
+		task.delay(s.busyUntil - t + 0.01, try)
 		return false
 	end
 	startBlock(character, noParry)
