@@ -156,6 +156,28 @@ M.Character = {
 	TransAttacks = { "NoobRush", "SizzlingPan", "GreaseSlide" },
 }
 
+-- Look signature porté via l'Identity (appelée par SkinBuilder.identity : SkinService pour les persos sans skins,
+-- aperçus du menu) : habille le modèle (vrai perso OU mannequin de ViewportFrame) avec LOOK.
+local SkinBuilder
+local function wearLook(c)
+	if not SkinBuilder then
+		local ok, mod = pcall(require, Shared.Modules.SkinBuilder)
+		if not ok then
+			return
+		end
+		SkinBuilder = mod
+	end
+	local f = c:FindFirstChild(SkinBuilder.FOLDER or "SkinParts")
+	if f and f:GetAttribute("SkinId") == LOOK.Id then
+		return
+	end
+	SkinBuilder.dress(c, LOOK)
+end
+
+function M.Identity(_f, _head, _torso, c)
+	wearLook(c)
+end
+
 M.Attacks = {
 	BaconOof = { Name = "Oof", Kind = "BaconOof", Desc = "Take a deep breath and let out the legendary OOF: a sound blast that sends everyone in front flying.", Cooldown = 7, Anim = "BaconShout", Sound = "Whoosh",
 		Windup = 0.32, Range = 17, Angle = 38, Damage = 9, Knockback = 55, KnockUp = 16, Stun = 0.9, Category = "Heavy", Power = 0.9, Words = { "OOF!", "OOOOF!" } },
@@ -581,22 +603,6 @@ local function isBacon(c)
 	return c ~= nil and c:GetAttribute("CharacterName") == "Bacon"
 end
 
-local SkinBuilder
-local function wearLook(c)
-	if not SkinBuilder then
-		local ok, mod = pcall(require, Shared.Modules.SkinBuilder)
-		if not ok then
-			return
-		end
-		SkinBuilder = mod
-	end
-	local f = c:FindFirstChild(SkinBuilder.FOLDER or "SkinParts")
-	if f and f:GetAttribute("SkinId") == LOOK.Id then
-		return
-	end
-	SkinBuilder.clearIdentity(c)
-	SkinBuilder.dress(c, LOOK)
-end
 
 local function checkLook(c)
 	if not isBacon(c) or not c.Parent then
