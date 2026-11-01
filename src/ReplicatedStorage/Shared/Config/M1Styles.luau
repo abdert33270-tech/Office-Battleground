@@ -22,7 +22,7 @@
 		Trail    = { Colors = { début, fin }, Width (échelle), Lifetime (s), Light (LightEmission), Fist (taille de la
 		           traînée de poing si pas d'arme), Arc = "All" | "Finisher" | nil, ArcWidth }
 		Whoosh   = { Key (Config/Sounds), Volume, Pitch, Layer = false : pas de couche en plus du whoosh local,
-		           FinisherKey : son réservé aux coups lourds }
+		           FinisherKey : son du 5e coup de la chaîne au sol uniquement }
 		Impact   = "Punch" | "Blunt" | "Heavy" | "Slash" | "Slap" | "Claws" | "Tech" | "Bacon" | "Splash"
 	Characters[id] = { Style, Hand ("Left"/"Right" : main de l'arme fétiche), Hits = { [i] = anim } (remplace des coups),
 		Colors = { début, fin } (traînée), Impact?, Whoosh? (remplacent ceux du style), Weapon = description (doc) }

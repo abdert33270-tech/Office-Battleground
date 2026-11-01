@@ -609,7 +609,6 @@ local function onSwing(c: Model, animName: string)
 	local arcMode = trail.Arc
 	local q = qualityName()
 	-- budget : jamais en Low ; ceux des autres joueurs seulement en High ; et seulement si la charge d'effets le permet
-	-- (CartoonFX.count réduit le nombre selon qualité × charge, et compte l'arc dans la charge)
 	local arcOk = arc and (arcMode == "All" or (arcMode == "Finisher" and heavy)) and q ~= "Low" and (isLocal or q == "High")
 	-- budget en lecture seule (qualité × charge) ; la charge n'est comptée (count) que si l'arc est vraiment joué
 	if arcOk and CartoonFX.budget() >= (isLocal and 0.55 or 0.8) then
