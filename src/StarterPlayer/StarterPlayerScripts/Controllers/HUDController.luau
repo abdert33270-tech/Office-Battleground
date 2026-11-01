@@ -979,7 +979,7 @@ local function slot(parent, key, order, color)
 	UIKit.corner(well, UDim.new(0, 5))
 	local holder = UIKit.new("Frame", { Name = "IconHolder", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(54, 54), BackgroundTransparency = 1, ZIndex = 3, Parent = well })
 	UIKit.Theme.shine(f, 2)
-	UIKit.Theme.keycap({ Name = "Key", Text = key, Size = UDim2.fromOffset(key == "CTRL" and 42 or 26, 24), Position = UDim2.fromOffset(-8, -9), ZIndex = 8, Parent = f })
+	UIKit.Theme.keycap({ Name = "Key", Text = key, Size = UDim2.fromOffset(#key > 2 and 48 or (#key == 2 and 34 or 26), 24), Position = UDim2.fromOffset(-8, -9), ZIndex = 8, Parent = f })
 	local name = UIKit.label({
 		Name = "Name",
 		Text = "",
@@ -1039,7 +1039,7 @@ local function buildAbilities()
 		Name = "Abilities",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -54), -- au milieu, en bas (au-dessus du bandeau des commandes)
-		Size = UDim2.fromOffset(6 * 92, 88),
+		Size = UDim2.fromOffset(7 * 92, 88),
 		BackgroundTransparency = 1,
 		Parent = gui,
 	})
@@ -1077,11 +1077,22 @@ local function buildAbilities()
 	UIKit.corner(refs.gFill, UDim.new(0, 8))
 	gName.Text = "OVERTIME"
 	setAttackIcon(gIcon, "Transform", nil, "Bolt")
-	local dk, dkName, _, dkIcon = slot(f, "CTRL", 5, Color3.fromRGB(130, 55, 55))
-	dkName.Text = "DROPKICK"
+	-- système ABA : DASH STRIKE (dash avant + clic) et EVASIVE (Q pendant un combo), avec leurs recharges
+	local dk, dkName, _, dkIcon = slot(f, "Q+M1", 5, Color3.fromRGB(130, 55, 55))
+	dkName.Text = "DASH STRIKE"
 	setAttackIcon(dkIcon, "Dropkick", nil, "Boot")
-	HUD.bindCooldown(dk, "Dropkick")
+	HUD.bindCooldown(dk, "DashStrike")
 	refs.dkSlot = dk
+	local ev, evName, _, evIcon = slot(f, "Q", 6, Color3.fromRGB(150, 120, 30))
+	ev.Name = "SlotEvasive"
+	evName.Text = "EVASIVE"
+	if AttackIcon and AttackIcon.has and AttackIcon.has("Evasive") then
+		setAttackIcon(evIcon, "Evasive", nil, "Bolt")
+	else
+		setIcon(evIcon, "Bolt", Color3.new(1, 1, 1))
+	end
+	HUD.bindCooldown(ev, "Evasive")
+	refs.evSlot = ev
 	f.Visible = not UIKit.isTouch()
 
 	-- info-bulle : description de l'attaque au survol (on comprend ce que fait chaque move)
@@ -1124,8 +1135,13 @@ local function buildAbilities()
 	local function iconKeyFor(key)
 		local kit, cname = HUD.currentKit()
 		local c = myChar()
-		if key == "CTRL" then
+		if key == "Q+M1" then
 			return "Dropkick", nil, "Boot"
+		elseif key == "EVA" then
+			if AttackIcon and AttackIcon.has and AttackIcon.has("Evasive") then
+				return "Evasive", nil, "Bolt"
+			end
+			return "Block", nil, "Bolt"
 		elseif key == "Q" then
 			return "Dash", nil, "Dash"
 		elseif key == "G" then
@@ -1142,10 +1158,12 @@ local function buildAbilities()
 	local function describe(key)
 		local kit = HUD.currentKit()
 		local c = myChar()
-		if key == "CTRL" then
-			return Y .. "DROPKICK:</font> Ctrl + click (or click right after a dash). Flies through and sends them FAR into walls. 6s cooldown."
+		if key == "Q+M1" then
+			return Y .. "DASH STRIKE:</font> dash FORWARD then click right away: flying kick that breaks guards and knocks them down. " .. CombatConfig.DashStrike.Cooldown .. "s cooldown."
+		elseif key == "EVA" then
+			return Y .. "EVASIVE:</font> getting combo'd? Press Q to burst free and push them away (not while guard-broken). " .. CombatConfig.Evasive.Cooldown .. "s cooldown."
 		elseif key == "Q" then
-			return Y .. "DASH:</font> quick dodge that cancels your combo recovery. Stuck in a 5-hit combo? Press Q to BREAK FREE!"
+			return Y .. "DASH:</font> Q + direction (W/A/S/D): forward, back or SIDE dash. Cancels a combo you stopped. " .. CombatConfig.Dash.Cooldown .. "s cooldown."
 		elseif key == "G" then
 			if c and c:GetAttribute("UltReady") then
 				return Y .. "ULTIMATE: " .. UIKit.escape(string.upper(tostring(c:GetAttribute("UltName") or "?"))) .. "</font> Press G again during OVERTIME to unleash it (once per transformation)."
@@ -1178,7 +1196,8 @@ local function buildAbilities()
 		hook(refs.slots[i].frame, tostring(i))
 	end
 	hook(g, "G")
-	hook(dk, "CTRL")
+	hook(dk, "Q+M1")
+	hook(ev, "EVA")
 end
 
 -- bandeau de titre coloré en haut d'un panneau
@@ -1354,22 +1373,23 @@ end
 
 -- Liste des combos (pour apprendre)
 local COMBO_LIST = {
-	{ "CLICK x4", "FINISHER", "4th hit knocks them back. Long recovery after it: don't spam!" },
-	{ "CLICK x2 + SPACE", "RISING DUO", "You BOTH fly up. Then CLICK x2 in the air: the 2nd slams them into the floor." },
-	{ "CLICK x3 + SPACE", "UPPERCUT", "Only they fly up. Jump to follow, CLICK x3 in the air: the 3rd slams them down." },
-	{ "CLICK x3 + JUMP + CLICK", "GROUND PIN", "Jump after 3 hits and click in the air: slams them INTO the floor with a shockwave." },
-	{ "CTRL + CLICK", "DROPKICK", "Flying kick that sends them across the room (6s cooldown). Also: click right after a dash." },
-	{ "Q while combo'd", "BREAK FREE", "Took 5 hits in a row? Q = explosion that frees you (15s cooldown)." },
-	{ "F (timed)", "PARRY", "Press block right as they hit (0.25s window): THEY are stunned 1.5s and disarmed." },
+	{ "CLICK x5", "M1 STRING", "Hits 1-4 stun, the 5th KNOCKS DOWN. Long recovery after it: don't whiff!" },
+	{ "HOLD SPACE + 5th CLICK", "UPPERCUT", "Launches them, you jump after them: CLICK x3 in the air, the 3rd slams them down." },
+	{ "5th CLICK IN THE AIR", "DOWNSLAM", "Jump during your string: the 5th hit smashes them into the floor." },
+	{ "HOLD F", "BLOCK", "Blocks hits from the front. The guard bar drains: empty = GUARD BREAK!" },
+	{ "F (just before a hit)", "PERFECT BLOCK", "Tap F right as they swing: THEY are stunned and disarmed. Even stops heavy hits." },
+	{ "HEAVY HITS", "GUARD BREAK", "5th hit, uppercut, slam, dash strike and heavy moves break a normal block." },
+	{ "Q + W/A/S/D", "DASH", "Dash forward, back or SIDEWAYS (2s cooldown). Cancels a combo you stopped." },
+	{ "Q (forward) + CLICK", "DASH STRIKE", "Dash forward then click: flying kick, knocks down (7s cooldown)." },
+	{ "Q while combo'd", "EVASIVE", "Burst free and push them away (18s cooldown). Not while guard-broken." },
 	{ "COMBO + ITEM", "ITEM FINISHER", "Punch twice then hit with an item: huge damage (\"CHAIR COMBO!\")." },
-	{ "COMBO + THROW", "THROW JUGGLE", "Thrown items break on them and pop them up: dash in and keep going!" },
 }
 local function buildCombos()
 	local f = UIKit.panel({
 		Name = "Combos",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(640, 520),
+		Size = UDim2.fromOffset(640, 570),
 		Visible = false,
 		ZIndex = 20,
 		Parent = gui,

@@ -671,13 +671,14 @@ function K.impactFrames(pattern, step)
 	if K.reducedFlashes() then
 		return
 	end
+	pattern = pattern or "BW"
+	-- les grosses séries (finisher, ≥ 3 images) passent quand même après 0,15 s
 	local t = os.clock()
-	if t - lastIF < 0.4 then
+	if t - lastIF < (#pattern >= 3 and 0.15 or 0.4) then
 		return
 	end
 	lastIF = t
 	step = math.min(step or 0.04, 0.04)
-	pattern = pattern or "BW"
 	if #pattern > 3 then
 		pattern = pattern:sub(1, 3)
 	end
