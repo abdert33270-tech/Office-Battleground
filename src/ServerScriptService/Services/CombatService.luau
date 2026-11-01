@@ -873,7 +873,7 @@ local function doM1(character: Model, seq: number?, mods)
 	local s = CharacterState.get(character)
 	local t = os.clock()
 	if t < s.nextAttack - TOL or s.blocking or CharacterState.inSafeZone(character) then
-		return
+		return false
 	end
 	-- en l'air : vu par le serveur, ou annoncé par le client et plausible (jongle d'uppercut en cours, ou vitesse
 	-- verticale répliquée non nulle : la physique du joueur arrive au serveur avec un peu de retard)
@@ -994,6 +994,7 @@ local function doM1(character: Model, seq: number?, mods)
 			onLanded(landed, hits)
 		end
 	end)
+	return true
 end
 
 ------------------------------------------------------------------------
@@ -1049,10 +1050,184 @@ end
 local DASH_ANIMS = { F = "Dash", B = "DashBack", L = "SideDashL", R = "SideDashR" }
 
 ------------------------------------------------------------------------
+-- POINTS D'ENTRÉE (remotes des joueurs ET PNJ / bot d'entraînement sans Player).
+-- Aucune limite de débit ici (Net.allow est appliqué par les remotes seulement) ; un PNJ est un Model avec Humanoid +
+-- HumanoidRootPart, rangé dans workspace.Dummies pour être touchable (Hitbox.characters), CharacterState.setup() fait.
+------------------------------------------------------------------------
+local function cleanMods(mods)
+	mods = type(mods) == "table" and mods or {}
+	local wantI = tonumber(mods.i)
+	local wantIC = tonumber(mods.ic) -- index de la mini-chaîne d'objet choisi par le client (vérifié par M1Style.itemAnim)
+	return {
+		ic = (wantIC and wantIC == math.floor(wantIC) and wantIC >= 1 and wantIC <= 1000) and wantIC or nil,
+		up = mods.up == true,
+		air = mods.air == true,
+		i = (wantI and wantI == math.floor(wantI) and wantI >= 1 and wantI <= M1.Hits) and wantI or nil,
+	}
+end
+
+-- M1 (ou utilisation de l'objet tenu, joueurs seulement). mods = { i = index voulu 1-5, up = uppercut, air = en l'air }.
+-- Retourne true si le coup part (ou est mis en attente pendant l'avantage d'un coup bloqué).
+function CombatService.performM1(character: Model?, mods, seq: number?): boolean
+	if not character or not CharacterState.isAlive(character) or CharacterState.isStunned(character)
+		or CharacterState.inSafeZone(character) then
+		return false
+	end
+	mods = cleanMods(mods)
+	local s = CharacterState.get(character)
+	local player = Players:GetPlayerFromCharacter(character)
+	if s.held and CombatService.itemUseHandler and player then
+		CombatService.itemUseHandler(player, character, seq, mods)
+		return true
+	end
+	-- clic arrivé pendant le retard ajouté par un coup BLOQUÉ (Block.BlockAdvantage) : le client ne connaît pas ce
+	-- retard, on joue donc le coup dès qu'il est écoulé au lieu de le perdre
+	local wait = s.nextAttack - TOL - os.clock()
+	if wait > 0 and s.blockAdvUntil and s.nextAttack <= s.blockAdvUntil + 1e-3
+		and wait <= (CombatConfig.Block.BlockAdvantage or 0) + 0.02 then
+		local token = {}
+		s.m1Pending = token
+		task.delay(wait + 0.01, function()
+			if s.m1Pending == token and CharacterState.isAlive(character) and not CharacterState.isStunned(character) then
+				s.m1Pending = nil
+				doM1(character, seq, mods)
+			end
+		end)
+		return true
+	end
+	return doM1(character, seq, mods)
+end
+
+-- Dash (kind = "F" | "B" | "L" | "R", wantDir = direction horizontale optionnelle) ; pendant un hitstun = EVASIVE.
+-- Un joueur se déplace lui-même (prédiction client) ; un PNJ est poussé ici par le serveur.
+-- Retourne "Dash" | "Evasive" | nil (refusé : recharge, endlag d'un coup lourd / d'une attaque, zone sûre...)
+function CombatService.performDash(character: Model?, kind, wantDir): string?
+	if not character or not CharacterState.isAlive(character) then
+		return nil
+	end
+	local s = CharacterState.get(character)
+	local t = os.clock()
+	if CharacterState.isStunned(character) then
+		return evasive(character) and "Evasive" or nil
+	end
+	if CharacterState.inSafeZone(character) or t < s.nextDash - 0.15 or t < s.endlagUntil - TOL then
+		return nil
+	end
+	if kind ~= "F" and kind ~= "B" and kind ~= "L" and kind ~= "R" then
+		kind = "F"
+	end
+	local D = CombatConfig.Dash
+	s.nextDash = t + D.Cooldown
+	s.lastDash = t
+	s.lastDashKind = kind
+	-- dash cancel au milieu de la chaîne (jamais pendant l'endlag d'un coup lourd, voir plus haut) :
+	-- la chaîne CONTINUE (s.combo gardé) : dash après le 4e coup = le prochain M1 est le FINISHER, jamais un
+	-- retour au 1er coup (sinon combo infini). La laisse est relâchée : le dash ne traîne pas la victime.
+	if t < s.nextAttack then
+		s.nextAttack = t
+	end
+	s.busyUntil = math.min(s.busyUntil, t)
+	for victim, d in pairs(tethers) do
+		if d.a == character then
+			releaseTether(victim)
+		end
+	end
+	s.wantBlock = false
+	CharacterState.setBlocking(character, false)
+	character:SetAttribute("CDDash", now() + D.Cooldown)
+	character:SetAttribute("CDMaxDash", D.Cooldown)
+	-- direction : celle du client si plausible (horizontale), sinon déduite du type et de l'orientation
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local dir
+	if typeof(wantDir) == "Vector3" and wantDir.Magnitude == wantDir.Magnitude and wantDir.Magnitude < 1e3 then
+		local f = Vector3.new(wantDir.X, 0, wantDir.Z)
+		dir = f.Magnitude > 0.05 and f.Unit or nil
+	end
+	if not dir and root then
+		local cf = root.CFrame
+		dir = (kind == "B" and -cf.LookVector) or (kind == "L" and -cf.RightVector) or (kind == "R" and cf.RightVector) or cf.LookVector
+	end
+	dir = dir or Vector3.new(0, 0, -1)
+	-- PNJ (pas de client pour se déplacer) : poussée serveur, même vitesse / durée que le dash du joueur
+	if root and not Players:GetPlayerFromCharacter(character) then
+		if kind == "F" then
+			root.CFrame = CFrame.lookAt(root.Position, root.Position + dir)
+		end
+		local speed = kind == "F" and D.Speed or (kind == "B" and D.BackSpeed or D.SideSpeed)
+		local old = root:FindFirstChild("DashPush")
+		if old then
+			old:Destroy()
+		end
+		local lv = Instance.new("LinearVelocity")
+		lv.Name = "DashPush"
+		lv.Attachment0 = rootAttachment(root)
+		lv.MaxForce = 1e6
+		lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+		lv.PrimaryTangentAxis = Vector3.xAxis
+		lv.SecondaryTangentAxis = Vector3.zAxis
+		lv.PlaneVelocity = Vector2.new(dir.X * speed, dir.Z * speed)
+		lv.Parent = root
+		Debris:AddItem(lv, D.Time)
+	end
+	-- skipSelf : le dasheur a déjà joué son effet en local (CombatController)
+	FX:FireAllClients({ type = "DashFX", character = character, dir = dir, skipSelf = true })
+	Anim:FireAllClients(character, DASH_ANIMS[kind])
+	return "Dash"
+end
+
+-- Block (on = true : lever la garde, false : la baisser). auto = true : réactivation automatique (F maintenu) ->
+-- pas de PERFECT BLOCK. Pendant une récupération (busyUntil) le block est mis en attente et part à la fin ; pendant
+-- un ENDLAG il est refusé jusqu'à la fin et ne donne alors jamais de perfect block (pas de parade « bufferisée »).
+-- Retourne true si la garde est levée (ou baissée) tout de suite.
+local function startBlock(character: Model, auto: boolean)
+	CharacterState.setBlocking(character, true, auto)
+	CharacterState.setRunning(character, false)
+	Anim:FireAllClients(character, "BlockStart")
+end
+
+function CombatService.performBlock(character: Model?, on: boolean, auto: boolean?): boolean
+	if not character or not CharacterState.isAlive(character) then
+		return false
+	end
+	local s = CharacterState.get(character)
+	s.wantBlock = on == true
+	if not on then
+		s.blockReq = nil
+		CharacterState.setBlocking(character, false)
+		return true
+	end
+	if CharacterState.isStunned(character) or CharacterState.isGuardBroken(character) then
+		return false
+	end
+	local noParry = auto == true
+	local t = os.clock()
+	if t < s.busyUntil then
+		-- encore en récupération d'attaque (le client est un peu en avance) : on bloque dès qu'elle finit
+		if t < s.endlagUntil then
+			noParry = true
+		end
+		local req = {}
+		s.blockReq = req
+		task.delay(s.busyUntil - t + 0.01, function()
+			if s.blockReq == req and s.wantBlock and CharacterState.isAlive(character) and not CharacterState.isStunned(character)
+				and not CharacterState.isGuardBroken(character) and os.clock() >= s.busyUntil - 0.02 then
+				startBlock(character, noParry)
+			end
+		end)
+		return false
+	end
+	startBlock(character, noParry)
+	return true
+end
+
+------------------------------------------------------------------------
 function CombatService.init()
 	FX = Net.get("FX")
 	Anim = Net.get("Anim")
 	RunService.Heartbeat:Connect(updateTethers)
+	-- historique des positions (compensation de latence des hitboxes)
+	local LC = CombatConfig.LagComp or {}
+	Hitbox.startHistory(LC.Rate, LC.History)
 	-- jauge de garde qui remonte : attribut Guard mis à jour 5 fois par seconde (HUD)
 	task.spawn(function()
 		while true do
@@ -1089,25 +1264,7 @@ function CombatService.init()
 		if type(seq) ~= "number" or not Net.allow(player, "Attack", R.Attack) then
 			return
 		end
-		mods = type(mods) == "table" and mods or {}
-		local wantI = tonumber(mods.i)
-		local wantIC = tonumber(mods.ic) -- index de la mini-chaîne d'objet choisi par le client (vérifié par M1Style.itemAnim)
-		mods = {
-			ic = (wantIC and wantIC == math.floor(wantIC) and wantIC >= 1 and wantIC <= 1000) and wantIC or nil,
-			up = mods.up == true,
-			air = mods.air == true,
-			i = (wantI and wantI == math.floor(wantI) and wantI >= 1 and wantI <= M1.Hits) and wantI or nil,
-		}
-		local character = player.Character
-		if not CharacterState.isAlive(character) or CharacterState.isStunned(character) or CharacterState.inSafeZone(character) then
-			return
-		end
-		local s = CharacterState.get(character)
-		if s.held and CombatService.itemUseHandler then
-			CombatService.itemUseHandler(player, character, seq, mods)
-		else
-			doM1(player, character, seq, mods)
-		end
+		CombatService.performM1(player.Character, mods, seq)
 	end)
 
 	-- Q : dash directionnel (kind = "F" | "B" | "L" | "R") ; pendant un hitstun = EVASIVE
@@ -1115,56 +1272,7 @@ function CombatService.init()
 		if not Net.allow(player, "Dash", R.Dash) then
 			return
 		end
-		local character = player.Character
-		if not CharacterState.isAlive(character) then
-			return
-		end
-		local s = CharacterState.get(character)
-		local t = os.clock()
-		if CharacterState.isStunned(character) then
-			evasive(character)
-			return
-		end
-		if CharacterState.inSafeZone(character) or t < s.nextDash - 0.15 or t < s.endlagUntil - TOL then
-			return
-		end
-		if kind ~= "F" and kind ~= "B" and kind ~= "L" and kind ~= "R" then
-			kind = "F"
-		end
-		local D = CombatConfig.Dash
-		s.nextDash = t + D.Cooldown
-		s.lastDash = t
-		s.lastDashKind = kind
-		-- dash cancel au milieu de la chaîne (jamais pendant l'endlag d'un coup lourd, voir plus haut) :
-		-- la chaîne CONTINUE (s.combo gardé) : dash après le 4e coup = le prochain M1 est le FINISHER, jamais un
-		-- retour au 1er coup (sinon combo infini). La laisse est relâchée : le dash ne traîne pas la victime.
-		if t < s.nextAttack then
-			s.nextAttack = t
-		end
-		s.busyUntil = math.min(s.busyUntil, t)
-		for victim, d in pairs(tethers) do
-			if d.a == character then
-				releaseTether(victim)
-			end
-		end
-		s.wantBlock = false
-		CharacterState.setBlocking(character, false)
-		character:SetAttribute("CDDash", now() + D.Cooldown)
-		character:SetAttribute("CDMaxDash", D.Cooldown)
-		-- direction : celle du client si plausible (horizontale), sinon déduite du type et de l'orientation
-		local root = character:FindFirstChild("HumanoidRootPart")
-		local dir
-		if typeof(wantDir) == "Vector3" and wantDir.Magnitude == wantDir.Magnitude and wantDir.Magnitude < 1e3 then
-			local f = Vector3.new(wantDir.X, 0, wantDir.Z)
-			dir = f.Magnitude > 0.05 and f.Unit or nil
-		end
-		if not dir and root then
-			local cf = root.CFrame
-			dir = (kind == "B" and -cf.LookVector) or (kind == "L" and -cf.RightVector) or (kind == "R" and cf.RightVector) or cf.LookVector
-		end
-		-- skipSelf : le dasheur a déjà joué son effet en local (CombatController)
-		FX:FireAllClients({ type = "DashFX", character = character, dir = dir, skipSelf = true })
-		Anim:FireAllClients(character, DASH_ANIMS[kind])
+		CombatService.performDash(player.Character, kind, wantDir)
 	end)
 
 	Net.get("Run").OnServerEvent:Connect(function(player, on)
@@ -1183,44 +1291,11 @@ function CombatService.init()
 	end)
 
 	-- F : block (maintenu). auto = true : réactivation automatique (F maintenu) -> pas de PERFECT BLOCK
-	local function startBlock(character: Model, auto: boolean)
-		CharacterState.setBlocking(character, true, auto)
-		CharacterState.setRunning(character, false)
-		Anim:FireAllClients(character, "BlockStart")
-	end
 	Net.get("Block").OnServerEvent:Connect(function(player, on, auto)
 		if type(on) ~= "boolean" or not Net.allow(player, "Block", R.Block) then
 			return
 		end
-		local character = player.Character
-		if not CharacterState.isAlive(character) then
-			return
-		end
-		local s = CharacterState.get(character)
-		s.wantBlock = on
-		if not on then
-			s.blockReq = nil
-			CharacterState.setBlocking(character, false)
-			return
-		end
-		if CharacterState.isStunned(character) or CharacterState.isGuardBroken(character) then
-			return
-		end
-		auto = auto == true
-		local t = os.clock()
-		if t < s.busyUntil then
-			-- encore en récupération d'attaque (le client est un peu en avance) : on bloque dès qu'elle finit
-			local req = {}
-			s.blockReq = req
-			task.delay(s.busyUntil - t + 0.01, function()
-				if s.blockReq == req and s.wantBlock and CharacterState.isAlive(character) and not CharacterState.isStunned(character)
-					and os.clock() >= s.busyUntil - 0.02 then
-					startBlock(character, auto)
-				end
-			end)
-			return
-		end
-		startBlock(character, auto)
+		CombatService.performBlock(player.Character, on, auto == true)
 	end)
 end
 

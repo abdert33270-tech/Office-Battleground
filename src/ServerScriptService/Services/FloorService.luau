@@ -5,11 +5,22 @@
 	Modèles d'étage : ServerStorage.Floors.<Nom> (sol = FloorTiles pré-découpées, Decor, ItemSpawns, PlayerSpawns,
 	DummySpawns, EventPoints). Durées et pool : Config/Floors. Test rapide : ReplicatedStorage attribut FastFloors = true.
 
+	Éclairage par étage (Config/Floors.Lighting) : fondu de LightingTween s (1,5) quand le premier perso atterrit
+	sur le nouvel étage (ou à la fin de l'attente d'atterrissage) ; instantané au démarrage. Touche Lighting
+	(Ambient, OutdoorAmbient, ClockTime, Brightness), Lighting.Atmosphere (Density, Color, Decay) et un
+	ColorCorrectionEffect « FloorGrade » (TintColor, Saturation, Contrast) créé ici.
+	Coupure de courant (EventService.PowerOutage : pas d'attribut, elle sauve les valeurs de Lighting au début et
+	les remet à la fin) : pendant qu'elle est active on ne touche à rien (EventService.isActive) ; au démarrage
+	d'une coupure on annule notre fondu en cours ; à sa fin (Signals.EventEnded, après sa remise en état) on refait
+	un fondu vers l'étage actuel. ExposureCompensation / EnvironmentDiffuseScale restent à la coupure seule.
+
 	API (admin) : forceCollapse(nextName?), setNextFloor(name), getFloorNames(), skipPhase(), getCurrent()
 ]]
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage.Shared
 local FloorConfig = require(Shared.Config.Floors)
@@ -39,6 +50,77 @@ local function eventService()
 	end
 	local ok, es = pcall(require, mod)
 	return ok and es or nil
+end
+
+------------------------------------------------------------------------
+-- Éclairage par étage
+------------------------------------------------------------------------
+local lightTweens = {}
+local lightingFloor = nil -- nom de l'étage dont l'éclairage est appliqué (ou visé)
+
+local function outageActive(): boolean
+	local es = eventService()
+	if not es or type(es.isActive) ~= "function" then
+		return false
+	end
+	local ok, on = pcall(es.isActive, "PowerOutage")
+	return ok and on == true
+end
+
+local function cancelLighting()
+	for _, t in ipairs(lightTweens) do
+		t:Cancel()
+	end
+	table.clear(lightTweens)
+end
+
+local function gradeEffect()
+	local cc = Lighting:FindFirstChild("FloorGrade")
+	if not cc or not cc:IsA("ColorCorrectionEffect") then
+		cc = Instance.new("ColorCorrectionEffect")
+		cc.Name = "FloorGrade"
+		cc.Parent = Lighting
+	end
+	return cc
+end
+
+local function setProps(inst, props, time)
+	if time and time > 0 then
+		local t = TweenService:Create(inst, TweenInfo.new(time, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), props)
+		table.insert(lightTweens, t)
+		t:Play()
+	else
+		for k, v in pairs(props) do
+			inst[k] = v
+		end
+	end
+end
+
+-- applique l'éclairage de l'étage name (fondu de time s ; 0 = instantané). Sans effet pendant une coupure.
+local function applyLighting(name: string?, time: number?)
+	lightingFloor = name
+	if outageActive() then
+		return -- la coupure remettra ses valeurs puis EventEnded relancera le fondu
+	end
+	local L = (name and FloorConfig.Lighting and FloorConfig.Lighting[name]) or FloorConfig.LightingDefault
+	if not L then
+		return
+	end
+	cancelLighting()
+	local base = {}
+	for _, k in ipairs({ "Ambient", "OutdoorAmbient", "ClockTime", "Brightness" }) do
+		if L[k] ~= nil then
+			base[k] = L[k]
+		end
+	end
+	setProps(Lighting, base, time)
+	local atm = Lighting:FindFirstChildOfClass("Atmosphere")
+	if atm and type(L.Atmosphere) == "table" then
+		setProps(atm, L.Atmosphere, time)
+	end
+	if type(L.Grade) == "table" then
+		setProps(gradeEffect(), L.Grade, time)
+	end
 end
 
 local function durations()
@@ -319,6 +401,7 @@ local function doCollapse()
 				task.delay(FloorConfig.LandingProtection, unprotect, c)
 				if not announced then
 					announced = true
+					applyLighting(current.name, FloorConfig.LightingTween or 1.5)
 					Announce.banner("FLOOR " .. current.number, current.model:GetAttribute("DisplayName"), current.model:GetAttribute("Palette"), 3, "Floor")
 				end
 			end
@@ -333,6 +416,7 @@ local function doCollapse()
 		end
 	end
 	if not announced then
+		applyLighting(current.name, FloorConfig.LightingTween or 1.5)
 		Announce.banner("FLOOR " .. current.number, current.model:GetAttribute("DisplayName"), current.model:GetAttribute("Palette"), 3, "Floor")
 	end
 	-- personnages apparus pendant la chute : enlever une éventuelle protection restante
@@ -472,6 +556,18 @@ function FloorService.init()
 	end
 	current = buildFloor(pickName(nil), FloorConfig.StartFloor, 0)
 	applyCurrent()
+	applyLighting(current.name, 0)
+	-- coupure de courant : elle fige Lighting (valeurs sauvées à son début) => on s'efface pendant qu'elle dure
+	Signals.EventStarted:Connect(function(name)
+		if name == "PowerOutage" then
+			cancelLighting()
+		end
+	end)
+	Signals.EventEnded:Connect(function(name)
+		if name == "PowerOutage" and current then
+			applyLighting(current.name, FloorConfig.LightingTween or 1.5)
+		end
+	end)
 	setPhase("Business", durations().Business)
 	preloadNext()
 	task.spawn(cycle)

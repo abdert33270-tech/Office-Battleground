@@ -248,11 +248,11 @@ local function buildCard(pg)
 	end
 	-- souris libérée même en shift-lock
 	UITheme.new("TextButton", { Name = "ModalMouse", Modal = true, Text = "", BackgroundTransparency = 1, Size = UDim2.fromOffset(1, 1), Parent = cardRoot })
-	cardTitle = UITheme.label({ Name = "Title", Text = "CONTROLS", TextColor3 = UITheme.Colors.Yellow, Position = UDim2.fromOffset(18, 16), Size = UDim2.new(1, -36, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 3, Parent = cardRoot })
-	cardList = UITheme.new("Frame", { Name = "List", BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 48), Size = UDim2.new(1, -36, 1, -112), Parent = cardRoot })
+	cardTitle = UITheme.label({ Name = "Title", Text = "CONTROLS", TextColor3 = UITheme.Colors.Yellow, Position = UDim2.fromOffset(18, 16), Size = UDim2.new(1, -36, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 3, ZIndex = 3, Parent = cardRoot })
+	cardList = UITheme.new("Frame", { Name = "List", BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 48), Size = UDim2.new(1, -36, 1, -112), ZIndex = 3, Parent = cardRoot })
 	UITheme.new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 3), Parent = cardList })
-	cardFoot = UITheme.label({ Name = "Foot", Text = "", Body = true, TextScaled = false, TextSize = 14, TextColor3 = UITheme.Colors.Muted, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 18, 1, -18), Size = UDim2.new(1, -200, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 1.5, Parent = cardRoot })
-	local ok = UITheme.button({ Name = "GotIt", Text = "GOT IT!", Color = UITheme.Colors.Green, AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -14), Size = UDim2.fromOffset(150, 44), Parent = cardRoot })
+	cardFoot = UITheme.label({ Name = "Foot", Text = "", Body = true, TextScaled = false, TextSize = 14, TextColor3 = UITheme.Colors.Muted, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 18, 1, -18), Size = UDim2.new(1, -200, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 1.5, ZIndex = 3, Parent = cardRoot })
+	local ok = UITheme.button({ Name = "GotIt", Text = "GOT IT!", Color = UITheme.Colors.Green, AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -14), Size = UDim2.fromOffset(150, 44), ZIndex = 3, Parent = cardRoot })
 	ok.Activated:Connect(HintController.hideControls)
 	fillCard(HintController.device())
 end

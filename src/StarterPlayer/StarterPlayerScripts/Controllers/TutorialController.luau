@@ -118,10 +118,12 @@ local function build()
 	if workspace.CurrentCamera then
 		workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
 	end
-	UIKit.new("UIPadding", { PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), Parent = root })
-	UIKit.new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4), Parent = root })
+	-- contenu dans un cadre à part : le panneau du thème a ses propres cadres décoratifs (hors liste)
+	local content = UIKit.new("Frame", { Name = "Content", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, ZIndex = 3, Parent = root })
+	UIKit.new("UIPadding", { PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), Parent = content })
+	UIKit.new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4), Parent = content })
 
-	local header = UIKit.new("Frame", { Name = "Header", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 30), LayoutOrder = 0, Parent = root })
+	local header = UIKit.new("Frame", { Name = "Header", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 0, Parent = content })
 	headerTitle = UITheme.label({ Name = "Title", Text = "TRAINING", TextColor3 = C.Yellow, Size = UDim2.new(1, -78, 0, 16), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 2.5, Parent = header })
 	local R = TutorialCfg.Reward
 	UITheme.label({
@@ -166,7 +168,7 @@ local function build()
 
 	rows = {}
 	for i, s in ipairs(TutorialCfg.Steps) do
-		local row = UIKit.new("Frame", { Name = s.Id, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = i, Parent = root })
+		local row = UIKit.new("Frame", { Name = s.Id, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = i, Parent = content })
 		local box = UIKit.new("Frame", { Name = "Box", Position = UDim2.fromOffset(0, 2), Size = UDim2.fromOffset(18, 18), BackgroundColor3 = C.PanelDark, Parent = row })
 		UITheme.corner(box, 3)
 		UITheme.stroke(box, 2, C.Ink, true)
