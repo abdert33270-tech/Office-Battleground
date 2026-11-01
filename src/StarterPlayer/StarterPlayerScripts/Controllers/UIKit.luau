@@ -13,6 +13,7 @@
 			(boutique de caisses plein écran : elle s'ouvre PAR-DESSUS la sélection de perso, qui doit rester derrière).
 		UIKit.openPanel(obj) | UIKit.closePanel(obj) | UIKit.togglePanel(obj) | UIKit.closeAllPanels(except?)
 		UIKit.anyPanelOpen() -> bool, nom   (ShiftLockController : souris libre)
+		UIKit.openPanelObject() -> GuiObject?  panneau ouvert (GamepadController : focus du 1er bouton)
 		UIKit.isPanel(obj) -> bool
 ]]
 local Players = game:GetService("Players")
@@ -267,6 +268,25 @@ function UIKit.anyPanelOpen(): (boolean, string?)
 		end
 	end
 	return false, nil
+end
+
+-- panneau actuellement ouvert (le dernier inscrit visible, hors passifs en priorité) ; nil si aucun (GamepadController)
+function UIKit.openPanelObject(): GuiObject?
+	local fallback
+	for i = #registry, 1, -1 do
+		local e = registry[i]
+		if e.obj.Parent and e.obj.Visible then
+			local g = e.obj:FindFirstAncestorWhichIsA("LayerCollector")
+			if not g or g.Enabled then
+				if e.noClose then
+					fallback = fallback or e.obj
+				else
+					return e.obj
+				end
+			end
+		end
+	end
+	return fallback
 end
 
 function UIKit.fmtTime(sec: number): string
