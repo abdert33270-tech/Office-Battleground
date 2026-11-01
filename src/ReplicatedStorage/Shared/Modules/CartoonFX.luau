@@ -1566,7 +1566,8 @@ function CartoonFX.block(data)
 	CartoonFX.blockHit(data.p, n, data)
 	-- mot discret, seulement pour les combattants concernés
 	if rng:NextNumber() < 0.5 then
-		CartoonFX.word(data.p, "BLOCK!", 0.2, "Parry", { a = data.a, v = data.v, avoid = { data.a, data.v } })
+		local list = Words.Block or { "BLOCK!" }
+		CartoonFX.word(data.p, list[rng:NextInteger(1, #list)], 0.2, "Parry", { a = data.a, v = data.v, avoid = { data.a, data.v } })
 	end
 	if type(data.d) == "number" and data.d > 0 then
 		CartoonFX.damageNumber(data.p, data.d, 0.2, { a = data.a, v = data.v })
@@ -1635,7 +1636,8 @@ function CartoonFX.guardBreak(arg, attacker)
 		CartoonFX.sparks(center, 20, GUARD_BLUE)
 		CartoonFX.shockwave(center, 10, GUARD_BLUE)
 	end)
-	CartoonFX.word(p, "GUARD BREAK!", 1.1, "KO", { a = a, v = victim, prefer = "up", avoid = { a, victim } })
+	local glist = Words.GuardBreak or { "GUARD BREAK!" }
+	CartoonFX.word(p, glist[rng:NextInteger(1, #glist)], 1.1, "KO", { a = a, v = victim, prefer = "up", avoid = { a, victim } })
 	CartoonFX.soundLayer({ { "GlassBreak", 1.1 }, { "Clang", 0.8, 0.85 }, { "BigImpact", 0.6, 1.1, 0.04 } }, p)
 	if victim then
 		CartoonFX.flash(victim, 0.14, GUARD_BLUE)
@@ -1674,7 +1676,8 @@ function CartoonFX.perfectBlock(arg, attacker)
 	if blocker then
 		CartoonFX.flash(blocker, 0.1, Color3.fromRGB(200, 240, 255))
 	end
-	CartoonFX.word(front, "PERFECT!", 1.0, "Parry", { a = a, v = blocker, avoid = { a, blocker } })
+	local plist = Words.Perfect or { "PERFECT!" }
+	CartoonFX.word(front, plist[rng:NextInteger(1, #plist)], 1.0, "Parry", { a = a, v = blocker, avoid = { a, blocker } })
 	CartoonFX.soundLayer({ { "Parry", 1.1, 1.1 }, { "Ding", 0.7, 1.4 }, { "Clang", 0.5, 1.25 } }, front)
 	if involvesLocal(a) or involvesLocal(blocker) then
 		CartoonFX.freezeLocal(0.07)

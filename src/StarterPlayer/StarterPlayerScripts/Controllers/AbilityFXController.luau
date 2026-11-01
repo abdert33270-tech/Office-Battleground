@@ -1,7 +1,16 @@
 --[[
 	AbilityFXController — effets visuels des attaques de personnages et des transformations (client).
-	Écoute la remote FX : Ability (nom crié au-dessus de la tête), Transform, Cone, Grab, Flood, Lockdown, Reveal, ProjPop.
+	Écoute la remote FX : Ability (nom crié au-dessus de la tête), Telegraph, Transform, Cone, Grab, Flood, Lockdown, Reveal, ProjPop.
 	Passif du Security Guard (On Patrol) : contour à travers les murs des ennemis proches à faible PV.
+
+	Chaque handler (et donc chaque MoveFX de Content) est appelé dans CartoonFX.withContext(lanceur, victime) :
+	les onomatopées d'un lanceur qui ne me combat pas sont masquées (CartoonFX.isRelevant).
+
+	TÉLÉGRAPHES (payload { k="Telegraph", a, shape = "Circle"|"Box"|"Cone", dur, [p], r, size, offset, angle }) :
+	même langage visuel pour toutes les formes —
+		zone remplie translucide + contour néon (rouge = ennemi, jaune = moi),
+		jauge de temps (anneau qui se resserre / ligne qui balaie) qui atteint le bord AU MOMENT de l'impact,
+		contour qui clignote en blanc si MON personnage est dans la zone d'un ennemi, éclair blanc à l'impact.
 ]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -597,7 +606,12 @@ function handlers.Ability(data)
 	if not root then
 		return
 	end
-	CartoonFX.word(root.Position + Vector3.new(0, 3.5, 0), string.upper(data.name or "") .. "!", 0.55, "Light")
+	if mine(c) then
+		CartoonFX.noteLocalCast()
+	end
+	if data.name and data.name ~= "" then
+		CartoonFX.word(root.Position + Vector3.new(0, 3.5, 0), string.upper(data.name) .. "!", 0.55, "Light", { a = c, prefer = "up", avoid = { c } })
+	end
 	if data.snd then
 		CartoonFX.sound(data.snd, root.Position, 1)
 	end
@@ -633,41 +647,157 @@ function handlers.Ability(data)
 	end
 end
 
--- indicateurs au sol : on voit OÙ l'attaque va frapper
+-- indicateurs au sol : on voit OÙ et QUAND l'attaque va frapper (même langage pour toutes les formes)
+local TELE_ENEMY = Color3.fromRGB(255, 60, 50)
+local TELE_MINE = Color3.fromRGB(255, 215, 70)
+local TELE_DANGER = Color3.fromRGB(255, 255, 255)
+local NEON = Enum.Material.Neon
+local UPRIGHT = CFrame.Angles(0, 0, math.pi / 2)
+
+local function tw(obj, t, props, style, delay)
+	local tween = TweenService:Create(obj, TweenInfo.new(t, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, delay or 0), props)
+	tween:Play()
+	return tween
+end
+
+-- triangle plat au sol (moitié de cône) : sommet en apex, base à r devant, demi-largeur hw ; side = ±1
+local function halfCone(apexCF, r, hw, side, props)
+	local R, U, L = apexCF.RightVector, apexCF.UpVector, apexCF.LookVector
+	local center = apexCF.Position + R * side * (hw / 2) + L * (r / 2)
+	local w = Instance.new("WedgePart")
+	w.Anchored, w.CanCollide, w.CanQuery, w.CanTouch, w.CastShadow = true, false, false, false, false
+	w.Size = Vector3.new(props.thick or 0.1, math.max(hw, 0.05), math.max(r, 0.05))
+	-- X = épaisseur (vers le haut), Y = latéral, Z = vers l'avant (le côté droit du coin est la base du cône)
+	w.CFrame = CFrame.fromMatrix(center, U * side, R * side)
+	w.Color = props.Color
+	w.Material = props.Material or Enum.Material.SmoothPlastic
+	w.Transparency = props.Transparency or 0.6
+	w.Parent = workspace:FindFirstChild("FX") or workspace
+	return w
+end
+
+-- mon personnage est-il dans la zone ?
+local function insideZone(shape, cf, data)
+	local me = player.Character
+	local r = me and me:FindFirstChild("HumanoidRootPart")
+	if not r then
+		return false
+	end
+	local lp = cf:PointToObjectSpace(r.Position)
+	if math.abs(lp.Y) > 8 then
+		return false
+	end
+	if shape == "Circle" then
+		return Vector3.new(lp.X, 0, lp.Z).Magnitude <= (data.r or 0) + 1.5
+	elseif shape == "Box" then
+		return math.abs(lp.X) <= data.size.X / 2 + 1.2 and math.abs(lp.Z) <= data.size.Z / 2 + 1.2
+	elseif shape == "Cone" then
+		local fwd = -lp.Z
+		if fwd < 0 or fwd > (data.r or 0) + 1.5 then
+			return false
+		end
+		return math.deg(math.atan2(math.abs(lp.X), math.max(fwd, 0.01))) <= (data.angle or 30) + 6
+	end
+	return false
+end
+
 function handlers.Telegraph(data)
 	local c = data.a
 	local root = c and c:FindFirstChild("HumanoidRootPart")
 	if not root then
 		return
 	end
-	local col = mine(c) and Color3.fromRGB(255, 220, 80) or Color3.fromRGB(255, 70, 60)
-	local ground = root.Position - Vector3.new(0, 2.9, 0)
-	local p
-	if data.shape == "Circle" then
-		-- grand cercle : disque, bord et anneau blanc qui se resserre jusqu'à l'impact
-		CartoonFX.bigTelegraph(ground, data.r, math.max(data.dur or 0.2, 0.15), col)
-		return
-	elseif data.shape == "Box" then
-		p = part({ Size = Vector3.new(data.size.X, 0.12, data.size.Z), CFrame = (root.CFrame - root.Position + ground) * CFrame.new(0, 0, -data.offset), Color = col, Transparency = 0.55 })
-		-- bord + ligne qui balaie vers l'avant
-		local edge = part({ Size = Vector3.new(data.size.X + 0.6, 0.08, data.size.Z + 0.6), CFrame = p.CFrame * CFrame.new(0, -0.03, 0), Color = col, Transparency = 0.25 })
-		local sweep = part({ Size = Vector3.new(data.size.X, 0.16, 0.35), CFrame = p.CFrame * CFrame.new(0, 0.03, data.size.Z / 2), Color = Color3.new(1, 1, 1), Transparency = 0.3 })
-		local dd = math.max(data.dur or 0.2, 0.15)
-		TweenService:Create(sweep, TweenInfo.new(dd, Enum.EasingStyle.Linear), { CFrame = p.CFrame * CFrame.new(0, 0.03, -data.size.Z / 2) }):Play()
-		TweenService:Create(edge, TweenInfo.new(0.2, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, dd), { Transparency = 1 }):Play()
-		Debris:AddItem(edge, dd + 0.25)
-		Debris:AddItem(sweep, dd)
-	elseif data.shape == "Cone" then
-		local w = 2 * data.r * math.tan(math.rad(data.angle))
-		p = part({ Size = Vector3.new(w, 0.12, data.r), CFrame = (root.CFrame - root.Position + ground) * CFrame.new(0, 0, -data.r / 2), Color = col, Transparency = 0.6 })
+	local isMine = mine(c)
+	local col = isMine and TELE_MINE or TELE_ENEMY
+	local dur = math.max(tonumber(data.dur) or 0.2, 0.15)
+	local center = typeof(data.p) == "Vector3" and data.p or root.Position
+	local ground = CartoonFX.groundPos(center)
+	-- repère au sol orienté comme le lanceur
+	local look = root.CFrame.LookVector
+	local flat = Vector3.new(look.X, 0, look.Z)
+	flat = flat.Magnitude > 0.05 and flat.Unit or Vector3.new(0, 0, -1)
+	local baseCF = CFrame.lookAt(ground, ground + flat)
+	local parts = {}
+	local edges = {}
+	local function add(p, isEdge)
+		table.insert(parts, p)
+		if isEdge then
+			table.insert(edges, p)
+		end
+		return p
 	end
-	if p then
-		local dur = math.max(data.dur or 0.2, 0.15)
-		TweenService:Create(p, TweenInfo.new(dur), { Transparency = 0.3 }):Play()
-		task.delay(dur, function()
-			TweenService:Create(p, TweenInfo.new(0.2), { Transparency = 1 }):Play()
-		end)
-		Debris:AddItem(p, dur + 0.25)
+	local zoneCF = baseCF
+
+	if data.shape == "Circle" and type(data.r) == "number" then
+		local R = data.r
+		local disc = add(part({ Shape = CYL, Size = Vector3.new(0.06, R * 2, R * 2), CFrame = CFrame.new(ground + Vector3.new(0, 0.07, 0)) * UPRIGHT, Color = col, Transparency = 0.78 }))
+		add(part({ Shape = CYL, Size = Vector3.new(0.05, R * 2 + 0.5, R * 2 + 0.5), CFrame = CFrame.new(ground + Vector3.new(0, 0.05, 0)) * UPRIGHT, Color = col, Material = NEON, Transparency = 0.2 }), true)
+		-- jauge de temps : anneau blanc qui se resserre jusqu'au centre au moment de l'impact
+		local gauge = add(part({ Shape = CYL, Size = Vector3.new(0.08, R * 2.3, R * 2.3), CFrame = CFrame.new(ground + Vector3.new(0, 0.09, 0)) * UPRIGHT, Color = Color3.new(1, 1, 1), Transparency = 0.7 }))
+		tw(gauge, dur, { Size = Vector3.new(0.08, 0.3, 0.3), Transparency = 0.3 }, Enum.EasingStyle.Linear)
+		tw(disc, dur, { Transparency = 0.5 })
+		zoneCF = CFrame.new(ground)
+	elseif data.shape == "Box" and typeof(data.size) == "Vector3" then
+		local sx, sz = data.size.X, data.size.Z
+		local off = tonumber(data.offset) or 3
+		local cf = baseCF * CFrame.new(0, 0.07, -off)
+		zoneCF = cf
+		local fill = add(part({ Size = Vector3.new(sx, 0.06, sz), CFrame = cf, Color = col, Transparency = 0.75 }))
+		-- contour néon (4 bandes fines)
+		local th = 0.22
+		add(part({ Size = Vector3.new(sx + th, 0.07, th), CFrame = cf * CFrame.new(0, 0, sz / 2), Color = col, Material = NEON, Transparency = 0.15 }), true)
+		add(part({ Size = Vector3.new(sx + th, 0.07, th), CFrame = cf * CFrame.new(0, 0, -sz / 2), Color = col, Material = NEON, Transparency = 0.15 }), true)
+		add(part({ Size = Vector3.new(th, 0.07, sz), CFrame = cf * CFrame.new(sx / 2, 0, 0), Color = col, Material = NEON, Transparency = 0.15 }), true)
+		add(part({ Size = Vector3.new(th, 0.07, sz), CFrame = cf * CFrame.new(-sx / 2, 0, 0), Color = col, Material = NEON, Transparency = 0.15 }), true)
+		-- jauge : ligne blanche qui balaie de l'arrière vers l'avant + remplissage qui monte derrière elle
+		local sweep = add(part({ Size = Vector3.new(sx, 0.09, 0.3), CFrame = cf * CFrame.new(0, 0.02, sz / 2), Color = Color3.new(1, 1, 1), Material = NEON, Transparency = 0.25 }))
+		tw(sweep, dur, { CFrame = cf * CFrame.new(0, 0.02, -sz / 2) }, Enum.EasingStyle.Linear)
+		local prog = add(part({ Size = Vector3.new(sx, 0.07, 0.05), CFrame = cf * CFrame.new(0, 0.01, sz / 2), Color = col, Transparency = 0.55 }))
+		tw(prog, dur, { Size = Vector3.new(sx, 0.07, sz), CFrame = cf * CFrame.new(0, 0.01, 0) }, Enum.EasingStyle.Linear)
+		tw(fill, dur, { Transparency = 0.6 })
+	elseif data.shape == "Cone" and type(data.r) == "number" then
+		local R = data.r
+		local ang = math.clamp(tonumber(data.angle) or 30, 5, 70)
+		local hw = R * math.tan(math.rad(ang))
+		local apex = baseCF * CFrame.new(0, 0.07, 0)
+		zoneCF = apex
+		for _, side in ipairs({ 1, -1 }) do
+			add(halfCone(apex, R, hw, side, { Color = col, Transparency = 0.72 }))
+			-- bord latéral néon
+			local tip = (apex * CFrame.new(side * hw, 0, -R)).Position
+			local from = apex.Position
+			local len = (tip - from).Magnitude
+			add(part({ Size = Vector3.new(0.2, 0.08, len), CFrame = CFrame.lookAt(from, tip) * CFrame.new(0, 0, -len / 2), Color = col, Material = NEON, Transparency = 0.15 }), true)
+		end
+		add(part({ Size = Vector3.new(hw * 2, 0.08, 0.22), CFrame = apex * CFrame.new(0, 0, -R), Color = col, Material = NEON, Transparency = 0.15 }), true)
+		-- jauge : arc blanc qui part du lanceur et atteint le bout du cône à l'impact
+		local sweep = add(part({ Size = Vector3.new(0.3, 0.1, 0.25), CFrame = apex * CFrame.new(0, 0.02, -0.3), Color = Color3.new(1, 1, 1), Material = NEON, Transparency = 0.25 }))
+		tw(sweep, dur, { Size = Vector3.new(hw * 2, 0.1, 0.25), CFrame = apex * CFrame.new(0, 0.02, -R) }, Enum.EasingStyle.Linear)
+	else
+		return
+	end
+
+	-- danger : un ennemi me vise => contour qui clignote blanc
+	if not isMine and insideZone(data.shape, zoneCF, data) then
+		for _, p in ipairs(edges) do
+			TweenService:Create(p, TweenInfo.new(0.09, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, true), { Color = TELE_DANGER }):Play()
+		end
+	end
+
+	-- impact : éclair blanc des bords puis disparition
+	task.delay(dur, function()
+		for _, p in ipairs(parts) do
+			if p.Parent then
+				if table.find(edges, p) then
+					p.Color = Color3.new(1, 1, 1)
+					p.Transparency = 0
+				end
+				tw(p, 0.18, { Transparency = 1 })
+			end
+		end
+	end)
+	for _, p in ipairs(parts) do
+		Debris:AddItem(p, dur + 0.22)
 	end
 end
 
@@ -838,7 +968,8 @@ function handlers.Grab(data)
 	if data.v then
 		CartoonFX.alert(data.v)
 	end
-	CartoonFX.word(data.p + Vector3.new(0, 2, 0), "GOTCHA!", 0.6, "Light")
+	CartoonFX.noteEngage(data.a, data.v)
+	CartoonFX.word(data.p + Vector3.new(0, 2, 0), "GOTCHA!", 0.6, "Light", { a = data.a, v = data.v, avoid = { data.a, data.v } })
 end
 
 function handlers.Flood(data)
@@ -912,7 +1043,8 @@ function AbilityFXController.init()
 	Net.get("FX").OnClientEvent:Connect(function(data)
 		local h = type(data) == "table" and handlers[data.k]
 		if h then
-			h(data)
+			-- contexte (lanceur, victime) : filtre des onomatopées des MoveFX / handlers
+			CartoonFX.withContext(data.a, data.v, h, data)
 		end
 	end)
 	task.spawn(function()

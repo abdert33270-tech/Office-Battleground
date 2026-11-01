@@ -1,6 +1,8 @@
 --[[
 	Sounds — sons publics du Creator Store (vérifiés : ils se chargent).
 	Chaque clé = liste d'IDs ; on en tire un au hasard + hauteur/volume légèrement aléatoires.
+	Joués par CartoonFX.sound(key, pos, volume, pitch) dans le SoundGroup « SFX » de SoundService
+	(volume réglable : ClientSettings « SFXVolume »). Les coups superposent plusieurs clés (claque + corps + impact).
 ]]
 local Sounds = {
 	Punch = { "rbxassetid://139795256698131", "rbxassetid://109316755832781" },
@@ -19,7 +21,8 @@ local Sounds = {
 	Pickup = { "rbxassetid://9113263454", "rbxassetid://9118833449" },
 	Throw = { "rbxassetid://120706760824134", "rbxassetid://129467477219437" },
 	KO = { "rbxassetid://1093200386" },
-	Squeak = { "rbxassetid://9125994570", "rbxassetid://129088013422694" },	-- lot 2 (gros impacts, mécaniques de combat, ambiance)
+	Squeak = { "rbxassetid://9125994570", "rbxassetid://129088013422694" },
+	-- lot 2 (gros impacts, mécaniques de combat, ambiance)
 	Oof = { "rbxassetid://79348298352567", "rbxassetid://7672649705" },
 	BigImpact = { "rbxassetid://82235785832022", "rbxassetid://138232937818879" },
 	AnimeHit = { "rbxassetid://8789851536" },
@@ -53,6 +56,9 @@ Sounds.MaterialHit = { Wood = "Bonk", Metal = "MetalHit", Plastic = "PlasticHit"
 -- son de casse selon la matière
 Sounds.MaterialBreak = { Wood = "WoodBreak", Metal = "Crash", Plastic = "Crash", Ceramic = "Crash", Glass = "Crash", Rubber = "Boing", Food = "Splat" }
 -- son de base selon la catégorie de coup
-Sounds.Category = { Light = "Punch", Heavy = "PunchHeavy", Projectile = "Punch", Splat = "Splat", Parry = "Parry", Land = "Thud" }
+Sounds.Category = {
+	Light = "Punch", Heavy = "PunchHeavy", Projectile = "Punch", Splat = "Splat", Parry = "Parry", Land = "Thud",
+	Break = "Crash", Electric = "Electric", Air = "Whoosh", KO = "PunchHeavy", Funny = "Bonk",
+}
 
 return Sounds

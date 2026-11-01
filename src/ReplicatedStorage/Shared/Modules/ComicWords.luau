@@ -1,8 +1,9 @@
 --[[
 	ComicWords — onomatopées façon planche d'autocollants BD (client uniquement).
 
-	ComicWords.create(pos: Vector3, text: string, power: number?, category: string?)
-		pos      : point du monde où le mot apparaît
+	ComicWords.create(pos: Vector3, text: string, power: number?, category: string?, opts: table?)
+		pos      : point de l'impact ; le mot est PLACÉ AUTOUR (ComicWords.place), sauf opts.exact
+		opts     : { avoid = {Model…} (corps à ne pas recouvrir), prefer = "up"|"low", exact = true }
 		text     : mot affiché tel quel (choisi par l'appelant)
 		power    : 0..~1.5 (plus grand = plus gros coup = plus gros autocollant)
 		category : "Light", "Heavy", "Break", "Projectile", "Splat", "Parry", "Land", "KO",
@@ -18,6 +19,10 @@
 		Plain  mot seul, gros contour, petites étoiles autour
 	Chaque forme = couche de contour sombre (décalée, effet autocollant) + couche colorée en 2 tons + reflets,
 	trame de points (halftone) dans un coin, décorations (étoiles, traits de vitesse, bouffées).
+
+	ComicWords.place(pos, w, h, opts) -> (position, direction de dérive) : emplacement à côté des combattants,
+		côté caméra, qui ne recouvre ni les corps ni les mots/chiffres récents (alternance droite/gauche/haut).
+	6 mots maximum à l'écran : le plus ancien disparaît vite si un nouveau arrive.
 
 	Aucun effet de bord au require : rien n'est créé tant que create() n'est pas appelé.
 ]]
@@ -576,9 +581,204 @@ local function pixelsPerStud(worldPos)
 end
 
 ------------------------------------------------------------------------
+-- PLACEMENT AUTOUR DU COMBAT
+-- Le mot n'est plus posé SUR le personnage : on essaie plusieurs emplacements à côté des combattants
+-- (droite / gauche / au-dessus, côté caméra) et on garde celui qui, à l'écran, ne recouvre ni les corps
+-- ni les mots / chiffres récents. Le point de départ tourne à chaque appel => alternance droite / gauche / haut.
+------------------------------------------------------------------------
+local Players = game:GetService("Players")
+local recent = {} -- { pos, w, h, untilT }
+local slotCursor = 0
+-- { côté (-1 gauche, 0 centre, 1 droite), hauteur relative }
+local SLOTS = { { 1, 0.55 }, { -1, 0.55 }, { 0, 1.15 }, { 1, -0.1 }, { -1, -0.1 }, { 0.8, 1.05 }, { -0.8, 1.05 } }
+local LOW_SLOTS = { { 1, -0.3 }, { -1, -0.3 }, { 1, 0.2 }, { -1, 0.2 }, { 0, -0.75 } }
+
+local function rootPos(m)
+	if typeof(m) ~= "Instance" then
+		return nil
+	end
+	local r = m:FindFirstChild("HumanoidRootPart")
+	return r and r:IsA("BasePart") and r.Position or nil
+end
+
+-- positions (HumanoidRootPart) des combattants autour du point + ceux à éviter explicitement
+local function fightersNear(pos: Vector3, avoid)
+	local out, seen = {}, {}
+	local function add(m)
+		if seen[m] then
+			return
+		end
+		local p = rootPos(m)
+		if p then
+			local d = p - pos
+			if Vector3.new(d.X, 0, d.Z).Magnitude <= 9 and math.abs(d.Y) <= 12 then
+				seen[m] = true
+				table.insert(out, p)
+			end
+		end
+	end
+	if type(avoid) == "table" then
+		for _, m in pairs(avoid) do
+			add(m)
+		end
+	end
+	for _, pl in ipairs(Players:GetPlayers()) do
+		if pl.Character then
+			add(pl.Character)
+		end
+	end
+	local dummies = workspace:FindFirstChild("Dummies")
+	if dummies then
+		for _, m in ipairs(dummies:GetChildren()) do
+			add(m)
+		end
+	end
+	return out
+end
+
+-- renvoie (position monde, direction de dérive) pour un élément de w × h studs lié au point pos
+function ComicWords.place(pos: Vector3, w: number, h: number, opts)
+	opts = type(opts) == "table" and opts or {}
+	local cam = workspace.CurrentCamera
+	if not cam then
+		return pos + Vector3.new(0, 2.5, 0), Vector3.yAxis
+	end
+	local camCF = cam.CFrame
+	local toCam = camCF.Position - pos
+	local dist = toCam.Magnitude
+	if dist < 0.5 then
+		return pos + Vector3.new(0, 2.5, 0), Vector3.yAxis
+	end
+	local toCamU = toCam / dist
+	local right = camCF.RightVector
+	local rightH = Vector3.new(right.X, 0, right.Z)
+	rightH = rightH.Magnitude > 0.1 and rightH.Unit or Vector3.xAxis
+
+	-- étendue des combattants le long de l'axe droite/gauche de l'écran
+	local fighters = fightersNear(pos, opts.avoid)
+	local minX, maxX = 0, 0
+	for _, f in ipairs(fighters) do
+		local x = (f - pos):Dot(rightH)
+		minX = math.min(minX, x)
+		maxX = math.max(maxX, x)
+	end
+	-- trop éloignés (combat à distance) : on s'en tient au voisinage du point
+	minX = math.max(minX, -4)
+	maxX = math.min(maxX, 4)
+
+	local vp = cam.ViewportSize
+	local tanHalf = math.tan(math.rad(cam.FieldOfView) / 2)
+	local function pps(z)
+		return vp.Y / (2 * math.max(z, 1) * tanHalf)
+	end
+
+	local now = os.clock()
+	for i = #recent, 1, -1 do
+		if recent[i].untilT < now then
+			table.remove(recent, i)
+		end
+	end
+	local recentScreen = {}
+	for _, r in ipairs(recent) do
+		local sp = cam:WorldToViewportPoint(r.pos)
+		if sp.Z > 0 then
+			table.insert(recentScreen, { x = sp.X, y = sp.Y, k = pps(sp.Z), w = r.w, h = r.h })
+		end
+	end
+	local fighterScreen = {}
+	for _, f in ipairs(fighters) do
+		local sp = cam:WorldToViewportPoint(f)
+		if sp.Z > 0 then
+			table.insert(fighterScreen, { x = sp.X, y = sp.Y, k = pps(sp.Z) })
+		end
+	end
+
+	local slots = opts.prefer == "low" and LOW_SLOTS or SLOTS
+	slotCursor += 1
+	local best, bestScore = nil, -math.huge
+	local HALF_BODY = 1.7
+	for i, s in ipairs(slots) do
+		local sx, sy = s[1], s[2]
+		local lateral
+		if sx > 0 then
+			lateral = maxX + HALF_BODY + w * 0.5 * sx + 0.3
+		elseif sx < 0 then
+			lateral = minX - HALF_BODY + w * 0.5 * sx - 0.3
+		else
+			lateral = (minX + maxX) / 2
+		end
+		local vertical = sy * (2.6 + h * 0.5)
+		local cand = pos + rightH * lateral + Vector3.new(0, vertical, 0) + toCamU * 1.2
+		local score = 0
+		local sp = cam:WorldToViewportPoint(cand)
+		if sp.Z <= 0.5 then
+			score -= 100
+		else
+			local k = pps(sp.Z)
+			local hw, hh = w * 0.5 * k, h * 0.5 * k
+			-- reste à l'écran
+			if sp.X < hw or sp.X > vp.X - hw or sp.Y < hh or sp.Y > vp.Y - hh then
+				score -= 4
+			end
+			-- ne recouvre pas les corps (ellipse ~ 1,6 × 3 studs autour de chaque HumanoidRootPart)
+			for _, f in ipairs(fighterScreen) do
+				local ex = math.abs(sp.X - f.x) / (1.6 * f.k + hw)
+				local ey = math.abs(sp.Y - f.y) / (3 * f.k + hh)
+				local e = math.sqrt(ex * ex + ey * ey)
+				if e < 1 then
+					score -= (1 - e) * 8
+				end
+			end
+			-- ne recouvre pas les mots / chiffres récents
+			for _, r in ipairs(recentScreen) do
+				local ox = math.abs(sp.X - r.x) / (hw + r.w * 0.5 * r.k + 6)
+				local oy = math.abs(sp.Y - r.y) / (hh + r.h * 0.5 * r.k + 6)
+				local e = math.max(ox, oy)
+				if e < 1 then
+					score -= 2 + (1 - e) * 6
+				end
+			end
+		end
+		-- alternance : l'emplacement « préféré » tourne à chaque appel
+		score -= ((i - 1 - slotCursor) % #slots) * 0.12
+		if opts.prefer == "up" and sy >= 1 then
+			score += 1.5
+		end
+		if score > bestScore then
+			best, bestScore = cand, score
+		end
+	end
+	best = best or (pos + Vector3.new(0, 2.5, 0))
+	table.insert(recent, { pos = best, w = w, h = h, untilT = now + (opts.life or 0.9) })
+	if #recent > 14 then
+		table.remove(recent, 1)
+	end
+	local drift = best - pos
+	drift = drift.Magnitude > 0.1 and drift.Unit or Vector3.yAxis
+	return best, drift
+end
+
+------------------------------------------------------------------------
 -- API
 ------------------------------------------------------------------------
-function ComicWords.create(pos: Vector3, text: string, power: number?, category: string?)
+local MAX_WORDS = 6
+local alive = {} -- { bb, scale } du plus ancien au plus récent
+
+local function dismissOldest()
+	for i = #alive, 1, -1 do
+		if not alive[i].bb.Parent then
+			table.remove(alive, i)
+		end
+	end
+	while #alive >= MAX_WORDS do
+		local w = table.remove(alive, 1)
+		tween(w.scale, 0.1, { Scale = 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		Debris:AddItem(w.bb, 0.12)
+	end
+end
+
+function ComicWords.create(pos: Vector3, text: string, power: number?, category: string?, opts)
+	opts = type(opts) == "table" and opts or {}
 	text = tostring(text or "POW!")
 	local pw = math.clamp(tonumber(power) or 0.4, 0, 1.5)
 	local upper = string.upper(text)
@@ -596,7 +796,14 @@ function ComicWords.create(pos: Vector3, text: string, power: number?, category:
 	local Bh = Bw * 0.6 / math.sqrt(lenK)
 	local life = isKO and 1.2 or (0.6 + pw * 0.1)
 
-	local worldPos = pos + Vector3.new(rnd(-0.8, 0.8), 1.2 + rnd(0, 0.8), rnd(-0.8, 0.8))
+	-- autour du combat (pas sur le corps), sauf placement exact demandé
+	local worldPos, drift
+	if opts.exact or ComicWords.static then
+		worldPos, drift = pos + Vector3.new(0, 1.2, 0), Vector3.yAxis
+	else
+		worldPos, drift = ComicWords.place(pos, Bw * 1.1, Bh * 1.2, { avoid = opts.avoid, prefer = opts.prefer or (isKO and "up" or nil), life = life + 0.2 })
+	end
+	dismissOldest()
 	local att = Instance.new("Attachment")
 	att.Name = "ComicWord"
 	att.WorldPosition = worldPos
@@ -694,6 +901,16 @@ function ComicWords.create(pos: Vector3, text: string, power: number?, category:
 	if ComicWords.static then
 		return bb
 	end
+	table.insert(alive, { bb = bb, scale = scale })
+
+	-- jaillit du point d'impact vers son emplacement, puis dérive doucement vers l'extérieur
+	bb.StudsOffsetWorldSpace = (pos - worldPos) * 0.45
+	tween(bb, 0.13, { StudsOffsetWorldSpace = Vector3.zero }, Enum.EasingStyle.Back)
+	task.delay(0.13, function()
+		if bb.Parent then
+			tween(bb, life, { StudsOffsetWorldSpace = drift * 0.5 }, Enum.EasingStyle.Sine)
+		end
+	end)
 
 	-- animation : pop 0 → 1.35 → 0.95 → 1, tremblement si gros coup, dérive, puis sortie vers le haut
 	local rot0 = root.Rotation
@@ -728,7 +945,7 @@ function ComicWords.create(pos: Vector3, text: string, power: number?, category:
 			return
 		end
 		tween(scale, 0.2, { Scale = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-		tween(bb, 0.22, { StudsOffsetWorldSpace = Vector3.new(0, 1.1, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		tween(bb, 0.22, { StudsOffsetWorldSpace = drift * 1.4 + Vector3.new(0, 0.6, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 	end)
 	return bb
 end

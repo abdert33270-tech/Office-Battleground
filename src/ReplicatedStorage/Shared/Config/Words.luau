@@ -20,6 +20,10 @@ return {
 	Electric = { "ZAP!", "BZZT!", "ZZAP!", "KZZT!", "FZZT!" },
 	Air = { "WHOOSH!", "BOING!", "YEET!", "SWOOSH!", "ZOOM!", "FWOOSH!" },
 	Funny = { "OOPS!", "OMG!", "WOW!", "YEAH!", "NO!", "OK!", "COOL!", "YES!", "SUPER!", "HELLO!" },
+	-- mécaniques de garde (CartoonFX.block / perfectBlock / guardBreak)
+	Block = { "BLOCK!", "TINK!", "CLINK!", "GUARD!" },
+	Perfect = { "PERFECT!", "NICE!", "TING!" },
+	GuardBreak = { "GUARD BREAK!", "SHATTER!", "CRACK!" },
 
 	-- couleur du texte selon la puissance (0 = faible, 1 = fort) — ancien affichage (CartoonFX.wordLegacy)
 	TextColors = {
