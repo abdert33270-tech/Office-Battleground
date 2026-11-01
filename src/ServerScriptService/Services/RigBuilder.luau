@@ -95,4 +95,36 @@ function RigBuilder.r6(name: string, colors)
 	return model
 end
 
+-- étiquette au-dessus de la tête (mannequins d'entraînement, bots) ; rappeler pour changer le texte
+function RigBuilder.tag(model: Model, text: string, color: Color3?)
+	local head = model:FindFirstChild("Head")
+	if not head then
+		return nil
+	end
+	local gui = head:FindFirstChild("TrainingTag")
+	if not gui then
+		gui = Instance.new("BillboardGui")
+		gui.Name = "TrainingTag"
+		gui.Size = UDim2.fromOffset(200, 24)
+		gui.StudsOffset = Vector3.new(0, 2.3, 0)
+		gui.MaxDistance = 60
+		gui.LightInfluence = 0
+		gui.AlwaysOnTop = false
+		local label = Instance.new("TextLabel")
+		label.Name = "Label"
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.FontFace = Font.new("rbxasset://fonts/families/PressStart2P.json", Enum.FontWeight.Bold) -- police pixel (UITheme.Display)
+		label.TextScaled = true
+		label.Parent = gui
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = 2
+		stroke.Parent = label
+		gui.Parent = head
+	end
+	gui.Label.Text = text
+	gui.Label.TextColor3 = color or Color3.fromRGB(255, 230, 80)
+	return gui
+end
+
 return RigBuilder
