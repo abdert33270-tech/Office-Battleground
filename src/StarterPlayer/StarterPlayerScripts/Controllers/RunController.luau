@@ -2,9 +2,11 @@
 	RunController — courir.
 	PC : appuyer deux fois sur W (ou Z sur clavier AZERTY : c'est la même touche physique) -> on court
 	tant qu'on avance ; on s'arrête en lâchant les touches de déplacement, en bloquant ou si on est étourdi.
+	PC (en plus) : MAINTENIR Ctrl gauche = courir tant que la touche est tenue. (Shift gauche / droit est déjà pris par
+	le shift lock maison de ShiftLockController, d'où Ctrl.)
 	Manette : clic du stick gauche (L3) = basculer. Mobile : bouton « RUN » (bascule).
 	La vitesse est appliquée par le serveur (modificateur "Run", Config/Combat.Run) ; l'animation de course est
-	une pose dynamique de ProcAnim (attribut Running). Ici : entrées + petits nuages de poussière aux pieds.
+	le cycle de course procédural de ProcAnim (phasé par la vitesse réelle). Ici : entrées + nuages de poussière aux pieds.
 ]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -26,6 +28,8 @@ local wanted = false
 local lastTap = -10
 local stillSince = nil
 local button
+local holdKey = false -- course tenue par Ctrl gauche
+local HOLD_KEY = Enum.KeyCode.LeftControl
 
 local function character()
 	local c = player.Character
@@ -71,6 +75,15 @@ function RunController.init()
 			end
 		elseif input.KeyCode == Enum.KeyCode.ButtonL3 then
 			RunController.toggle()
+		elseif input.KeyCode == HOLD_KEY then
+			holdKey = true
+			RunController.set(true)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.KeyCode == HOLD_KEY and holdKey then
+			holdKey = false
+			RunController.set(false)
 		end
 	end)
 
@@ -104,6 +117,11 @@ function RunController.init()
 	RunService.Heartbeat:Connect(function()
 		local c, hum = character()
 		if not wanted then
+			-- Ctrl tenu : la course reprend dès qu'on bouge de nouveau (après un block / un arrêt)
+			if holdKey and c and hum.MoveDirection.Magnitude > 0.1 and not c:GetAttribute("Blocking")
+				and workspace:GetServerTimeNow() >= (c:GetAttribute("StunUntil") or 0) then
+				RunController.set(true)
+			end
 			return
 		end
 		if not c then
@@ -128,6 +146,7 @@ function RunController.init()
 	end)
 	player.CharacterAdded:Connect(function()
 		wanted = false
+		holdKey = false
 		if button then
 			button.BackgroundColor3 = Color3.fromRGB(45, 50, 70)
 		end

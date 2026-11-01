@@ -5,11 +5,17 @@
 	     Q = dash directionnel (avant / arrière / côté, relatif à la caméra) ; dash avant + clic = DASH STRIKE ;
 	     Q pendant un hitstun = EVASIVE ; F = block (maintenu) / PERFECT BLOCK (au bon moment) ;
 	     E = ramasser/lâcher, R = lancer, 1/2/3 = attaques, G = transformation / ultime.
+	Molette (clic du milieu) / R3 = LOCK-ON (caméra entre soi et la cible, décalée sur l'épaule ; relâché si la cible
+	meurt, s'éloigne à plus de 60 studs, ou pendant une cinématique d'ulti).
 	Manette : R2, X, Y, B (dash), L2 (block), L1 (transformation). Saut (A) = Espace.
 	Mobile : AUCUN bouton ici — le HUD crée les boutons et appelle l'API publique :
 	         attack(), pickup(), throw(), dash(), setBlock(on), ability(i), transform(). Bouton saut = Espace.
 	Réactivité : animation, pas en avant, whoosh et effets de coup (prédiction locale) sont joués tout de suite.
 	Le serveur reste seul juge des dégâts ; le client lui envoie seulement l'index du coup (vérifié côté serveur).
+	Anti « coup fantôme » : pas de prédiction sur une victime qui vient d'EVASIVE / de changer de block (0,25 s) ;
+	ping > 120 ms : seuls étincelle + son sont prédits, hit-stop / caméra / réaction attendent la confirmation.
+	Dash : avant = 0,06 s d'accroupi avant la poussée ; côté = orbite autour de la cible du soft-lock.
+	Endlag (attribut EndlagUntil, heure serveur) : ni dash ni block prédits tant qu'il dure (le serveur les refuse).
 ]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -33,6 +39,11 @@ local ClientSettings = require(Shared.Modules.ClientSettings)
 
 local CombatController = {}
 CombatController.Priority = 10
+
+local GHOST_WINDOW = 0.25 -- s : victime instable (evasive / block qui vient de changer) = pas de prédiction
+local LITE_PING = 0.12 -- s : au-delà, prédiction réduite à étincelle + son
+local LOCK_RANGE = 60
+local ctxRef = {}
 
 local player = Players.LocalPlayer
 local M1 = CombatConfig.M1
@@ -82,6 +93,11 @@ local function knockedDown(c)
 	return serverNow() < (c:GetAttribute("KnockdownUntil") or 0)
 end
 
+-- endlag serveur (attaques, coups lourds) : le serveur refuse dash et block pendant ce temps
+local function inEndlag(c)
+	return serverNow() < (tonumber(c:GetAttribute("EndlagUntil")) or 0)
+end
+
 local function inSafeZone(c)
 	return c:GetAttribute(CombatConfig.SafeZoneAttribute or "SafeZone") == true
 end
@@ -118,6 +134,12 @@ local function softTarget(c)
 		return nil
 	end
 	local L = CombatConfig.SoftLock
+	-- lock-on actif : la cible verrouillée est prioritaire si elle est à portée de coup
+	local locked = CombatController.lockTarget and CombatController.lockTarget()
+	local lr = locked and locked:FindFirstChild("HumanoidRootPart")
+	if lr and (Vector3.new(lr.Position.X - root.Position.X, 0, lr.Position.Z - root.Position.Z)).Magnitude <= L.Range * 1.2 then
+		return lr
+	end
 	local look = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
 	look = look.Magnitude > 0.05 and look.Unit or root.CFrame.LookVector
 	local best, bestScore = nil, math.huge
@@ -187,6 +209,67 @@ local function push(c, velocity: Vector3, duration: number)
 	Debris:AddItem(lv, duration)
 end
 
+-- DASH DE CÔTÉ autour de la cible : vitesse tangentielle recalculée à chaque image (trajectoire courbe) + rappel
+-- radial pour garder la distance de départ ; on reste tourné vers la cible. sign = 1 : vers la droite.
+local FORWARD_ANTIC = 0.06
+local function orbitDash(c, target: BasePart, sign: number, speed: number, duration: number)
+	local root = c:FindFirstChild("HumanoidRootPart")
+	if not root or root.Anchored then
+		return
+	end
+	local function flatTo()
+		return Vector3.new(target.Position.X - root.Position.X, 0, target.Position.Z - root.Position.Z)
+	end
+	local r0 = flatTo().Magnitude
+	if r0 < 1 or r0 > 18 then
+		local look = root.CFrame.RightVector * sign
+		push(c, look * speed, duration)
+		return
+	end
+	-- au plus ~100° de rotation sur la durée du dash (une cible collée ne fait pas tourner en toupie)
+	local tangential = math.min(speed, math.max(r0, 4) * 1.75 / duration)
+	local att = root:FindFirstChild("PushAtt") or Instance.new("Attachment")
+	att.Name = "PushAtt"
+	att.Parent = root
+	local lv = Instance.new("LinearVelocity")
+	lv.Name = "Push"
+	lv.Attachment0 = att
+	lv.MaxForce = 1e5
+	lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	lv.PrimaryTangentAxis = Vector3.xAxis
+	lv.SecondaryTangentAxis = Vector3.zAxis
+	lv.RelativeTo = Enum.ActuatorRelativeTo.World
+	local t0 = os.clock()
+	local function step()
+		local to = flatTo()
+		local d = to.Magnitude
+		if d < 0.5 then
+			return
+		end
+		local inward = to / d
+		local tangent = inward:Cross(Vector3.yAxis) * sign -- (vers la cible) x (haut) = droite
+		local v = tangent * tangential + inward * math.clamp((d - r0) * 8, -20, 20)
+		lv.PlaneVelocity = Vector2.new(v.X, v.Z)
+		if not root.Anchored then
+			root.CFrame = CFrame.lookAt(root.Position, root.Position + inward)
+		end
+	end
+	step()
+	lv.Parent = root
+	local conn
+	conn = RunService.Heartbeat:Connect(function()
+		if not lv.Parent or not root.Parent or not target.Parent or os.clock() - t0 >= duration then
+			conn:Disconnect()
+			if lv.Parent then
+				lv:Destroy()
+			end
+			return
+		end
+		step()
+	end)
+	Debris:AddItem(lv, duration + 0.05)
+end
+
 -- suspension locale en l'air (jongles)
 local function stallLocal(c, duration)
 	local root = c:FindFirstChild("HumanoidRootPart")
@@ -236,42 +319,10 @@ CombatController.releaseAir = releaseAir
 -- réaction de la victime, hit-stop, caméra) ; les MOTS, le CHIFFRE de dégâts et le K.O. attendent la confirmation
 -- du serveur (payload « Hit » de ce seq, voir confirmHit) : un coup parré / bloqué au dernier moment n'affiche
 -- donc jamais « POW! 3 » à tort. FXController saute le « Hit » serveur déjà prédit (CombatController.predicted).
-local function predictVisual(c, victim, pos: Vector3, spec, extra)
-	local category = spec.Category or "Light"
-	local power = tonumber(spec.Power) or 0.4
+-- « ressenti » d'un coup : réaction directionnelle de la victime, hit-stop, caméra (prédit, ou à la confirmation si ping élevé)
+local function hitFeel(c, victim, category: string, reaction: string?)
 	local heavy = category == "Heavy"
-	local vRoot = victim:FindFirstChild("HumanoidRootPart")
-	local aRoot = c:FindFirstChild("HumanoidRootPart")
-	local dir = (vRoot and aRoot) and (vRoot.Position - aRoot.Position) or nil
-	CartoonFX.noteEngage(c, victim)
-	CartoonFX.impact(pos, power)
-	CartoonFX.hitSpark(pos, dir, power + (heavy and 0.4 or 0))
-	CartoonFX.flash(victim, heavy and 0.12 or 0.07)
-	CartoonFX.sparks(pos, heavy and 18 or 8)
-	CartoonFX.shards(pos, heavy and 10 or 4, nil, heavy and 1.2 or 0.8)
-	if heavy then
-		CartoonFX.bigImpact(pos, dir, power)
-	end
-	local r = extra and extra.Reaction or "Light"
-	if r == "Launch" then
-		ProcAnim.play(victim, "Launch")
-	elseif r == "Heavy" or r == "Slam" then
-		ProcAnim.play(victim, "HitHeavy")
-	else
-		ProcAnim.play(victim, math.random() < 0.5 and "HitLight" or "HitLight2")
-	end
-	CartoonFX.sound(SoundsConfig.Category[category] or "Punch", pos, 0.9 + power * 0.5, heavy and 0.92 or 1.05)
-	CartoonFX.sound("Thud", pos, 0.45, heavy and 0.8 or 1.15)
-	if heavy then
-		CartoonFX.sound("BigImpact", pos, 1.1)
-		CartoonFX.sound("AnimeHit", pos, 0.7)
-	end
-	if extra and extra.Material and SoundsConfig.MaterialHit and SoundsConfig.MaterialHit[extra.Material] then
-		CartoonFX.sound(SoundsConfig.MaterialHit[extra.Material], pos, 1)
-	end
-	if r == "Launch" then
-		CartoonFX.sound("Boing", pos, 0.6)
-	end
+	CartoonFX.reaction(victim, c, reaction or "Light")
 	local HS, SH, FK = CombatConfig.HitStop, CombatConfig.Shake, CombatConfig.FOVKick
 	local hs = heavy and HS.Heavy or HS.Light
 	ProcAnim.freeze(c, hs)
@@ -285,8 +336,54 @@ local function predictVisual(c, victim, pos: Vector3, spec, extra)
 	end
 end
 
+-- lite = true (ping élevé) : seulement étincelle + son ; le reste attend la confirmation du serveur (confirmHit)
+local function predictVisual(c, victim, pos: Vector3, spec, extra, lite: boolean?)
+	local category = spec.Category or "Light"
+	local power = tonumber(spec.Power) or 0.4
+	local heavy = category == "Heavy"
+	local vRoot = victim:FindFirstChild("HumanoidRootPart")
+	local aRoot = c:FindFirstChild("HumanoidRootPart")
+	local dir = (vRoot and aRoot) and (vRoot.Position - aRoot.Position) or nil
+	CartoonFX.noteEngage(c, victim)
+	CartoonFX.hitSpark(pos, dir, power + (heavy and 0.4 or 0))
+	CartoonFX.sound(SoundsConfig.Category[category] or "Punch", pos, 0.9 + power * 0.5, heavy and 0.92 or 1.05)
+	if lite then
+		return
+	end
+	CartoonFX.impact(pos, power)
+	CartoonFX.flash(victim, heavy and 0.12 or 0.07)
+	CartoonFX.sparks(pos, heavy and 18 or 8)
+	CartoonFX.shards(pos, heavy and 10 or 4, nil, heavy and 1.2 or 0.8)
+	if heavy then
+		CartoonFX.bigImpact(pos, dir, power)
+	end
+	local r = extra and extra.Reaction or "Light"
+	CartoonFX.sound("Thud", pos, 0.45, heavy and 0.8 or 1.15)
+	if heavy then
+		CartoonFX.sound("BigImpact", pos, 1.1)
+		CartoonFX.sound("AnimeHit", pos, 0.7)
+	end
+	if extra and extra.Material and SoundsConfig.MaterialHit and SoundsConfig.MaterialHit[extra.Material] then
+		CartoonFX.sound(SoundsConfig.MaterialHit[extra.Material], pos, 1)
+	end
+	if r == "Launch" then
+		CartoonFX.sound("Boing", pos, 0.6)
+	end
+	hitFeel(c, victim, category, r)
+end
+
 -- confirmation serveur d'un coup prédit : mot + chiffre (+ K.O.), que FXController ne jouera pas (déjà prédit)
-local function confirmHit(data)
+local function confirmHit(data, lite)
+	if lite and data.a and data.v then
+		-- ping élevé : impact, réaction, hit-stop et caméra joués maintenant (le serveur a validé le coup)
+		local p = typeof(data.p) == "Vector3" and data.p or nil
+		if p then
+			CartoonFX.impact(p, tonumber(data.pw) or 0.4)
+			CartoonFX.sparks(p, data.c == "Heavy" and 18 or 8)
+		end
+		CartoonFX.flash(data.v, data.c == "Heavy" and 0.12 or 0.07)
+		hitFeel(data.a, data.v, data.c or "Light", data.r)
+	end
 	local pos = data.p
 	if typeof(pos) ~= "Vector3" then
 		local r = data.v and data.v:FindFirstChild("HumanoidRootPart")
@@ -310,6 +407,30 @@ local function confirmHit(data)
 	end
 end
 
+-- victimes « instables » : changement de block / EVASIVE dans les GHOST_WINDOW dernières secondes
+local blockChangedAt = setmetatable({}, { __mode = "k" })
+local watched = setmetatable({}, { __mode = "k" })
+local function watchVictim(v)
+	if watched[v] then
+		return
+	end
+	watched[v] = true
+	v:GetAttributeChangedSignal("Blocking"):Connect(function()
+		blockChangedAt[v] = os.clock()
+	end)
+end
+local function unstable(v): boolean
+	watchVictim(v)
+	if serverNow() - (tonumber(v:GetAttribute("EvasiveAt")) or -100) < GHOST_WINDOW then
+		return true
+	end
+	return os.clock() - (blockChangedAt[v] or -100) < GHOST_WINDOW
+end
+local function highPing(): boolean
+	local ok, ping = pcall(player.GetNetworkPing, player)
+	return ok and type(ping) == "number" and ping > LITE_PING
+end
+
 local function predictHits(c, spec, mySeq, extra)
 	task.delay(spec.Windup or 0.1, function()
 		if not character() then
@@ -320,15 +441,16 @@ local function predictHits(c, spec, mySeq, extra)
 		if not cf or not root then
 			return
 		end
+		local lite = highPing()
 		for _, victim in ipairs(Hitbox.box(cf, spec.HitboxSize, c, 3)) do
 			local vRoot = victim:FindFirstChild("HumanoidRootPart")
 			local hum = victim:FindFirstChildOfClass("Humanoid")
 			-- (cible qui bloque / renversée / protégée : rien de prédit, le serveur enverra Block / PerfectBlock)
 			if vRoot and hum and hum.Health > 0 and not victim:FindFirstChildOfClass("ForceField") and not victim:GetAttribute("Blocking")
-				and not victim:GetAttribute("PendingKO") and not knockedDown(victim) and not inSafeZone(victim) then
+				and not victim:GetAttribute("PendingKO") and not knockedDown(victim) and not inSafeZone(victim) and not unstable(victim) then
 				CombatController.predicted[mySeq] = CombatController.predicted[mySeq] or {}
-				CombatController.predicted[mySeq][victim] = true
-				predictVisual(c, victim, vRoot.Position:Lerp(root.Position, 0.3) + Vector3.new(0, 0.6, 0), spec, extra)
+				CombatController.predicted[mySeq][victim] = lite and "lite" or true
+				predictVisual(c, victim, vRoot.Position:Lerp(root.Position, 0.3) + Vector3.new(0, 0.6, 0), spec, extra, lite)
 			end
 		end
 		task.delay(2, function()
@@ -383,6 +505,9 @@ function CombatController.attack()
 	end
 	seq += 1
 	local target = faceCamera(c)
+	if target then
+		ProcAnim.setLookTarget(c, target, 0.8) -- la tête suit la cible pendant le coup
+	end
 	local look = root.CFrame.LookVector
 	local gap = target and (Vector3.new(target.Position.X, 0, target.Position.Z) - Vector3.new(root.Position.X, 0, root.Position.Z)).Magnitude or 0
 	local extraLunge = (gap > 4.5) and math.min((gap - 3.5) * 9, 40) or 0 -- on recolle à la cible si elle s'éloigne
@@ -571,7 +696,7 @@ end
 -- auto = true : block réactivé tout seul (F maintenu à la fin d'un hitstun / d'une récupération) : pas de perfect block
 function CombatController.tryBlock(auto: boolean)
 	local c = character()
-	if not c or blocking or isStunned(c) or guardBroken(c) or os.clock() < busyUntil then
+	if not c or blocking or isStunned(c) or guardBroken(c) or os.clock() < busyUntil or inEndlag(c) then
 		return
 	end
 	blocking = true
@@ -595,7 +720,7 @@ function CombatController.dash()
 		end
 		return
 	end
-	if inSafeZone(c) or t < nextDash or t < endlagUntil then
+	if inSafeZone(c) or t < nextDash or t < endlagUntil or inEndlag(c) then
 		return
 	end
 	local root = c:FindFirstChild("HumanoidRootPart")
@@ -629,7 +754,20 @@ function CombatController.dash()
 		end
 	end
 	local speed = kind == "F" and D.Speed or (kind == "B" and D.BackSpeed or D.SideSpeed)
-	push(c, dir * speed, D.Time)
+	local orbitTarget = (kind == "L" or kind == "R") and softTarget(c) or nil
+	if kind == "F" then
+		-- 0,06 s d'anticipation accroupie (anim « Dash »), puis la poussée ; le serveur est prévenu tout de suite
+		-- (fenêtre du DASH STRIKE et recharge inchangées côté serveur)
+		task.delay(FORWARD_ANTIC, function()
+			if root.Parent and hum.Health > 0 and not isStunned(c) then
+				push(c, dir * speed, D.Time)
+			end
+		end)
+	elseif orbitTarget then
+		orbitDash(c, orbitTarget, kind == "R" and 1 or -1, speed, D.Time)
+	else
+		push(c, dir * speed, D.Time)
+	end
 	CartoonFX.dash(c) -- poussière + son (joue l'anim « Dash »)
 	ProcAnim.play(c, DASH_ANIMS[kind]) -- puis l'anim directionnelle
 	if kind == "F" then
@@ -676,6 +814,177 @@ local function ultTarget(c)
 		end
 	end
 	return best
+end
+
+------------------------------------------------------------------------
+-- LOCK-ON (molette / R3) : caméra au milieu de soi et de la cible, décalée sur l'épaule droite ; le perso fait face
+-- à la cible, la tête la suit. Relâché : cible morte / partie, > LOCK_RANGE studs, ma mort, ulti (plan cinématique
+-- UltKit, UltActive / UltAnchor / UltHeld), zone AFK.
+------------------------------------------------------------------------
+local lock = { target = nil, cf = nil, marker = nil }
+local lockRay = RaycastParams.new()
+lockRay.FilterType = Enum.RaycastFilterType.Exclude
+local UltKitMod
+local function ultCameraBusy(c): boolean
+	if c and (c:GetAttribute("UltActive") or c:GetAttribute("UltAnchor") or c:GetAttribute("UltHeld")) then
+		return true
+	end
+	if UltKitMod == nil then
+		local ok, m = pcall(require, Shared.Modules.UltKit)
+		UltKitMod = ok and m or false
+	end
+	return UltKitMod and type(UltKitMod.cameraBusy) == "function" and UltKitMod.cameraBusy() or false
+end
+
+function CombatController.lockTarget(): Model?
+	return lock.target
+end
+
+local function lockCandidate(c)
+	local root = c:FindFirstChild("HumanoidRootPart")
+	local cam = workspace.CurrentCamera
+	if not root or not cam then
+		return nil
+	end
+	local look = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+	look = look.Magnitude > 0.05 and look.Unit or root.CFrame.LookVector
+	local best, bestScore = nil, math.huge
+	for _, other in ipairs(Hitbox.characters()) do
+		local r = other ~= c and other:FindFirstChild("HumanoidRootPart")
+		if r then
+			local to = Vector3.new(r.Position.X - root.Position.X, 0, r.Position.Z - root.Position.Z)
+			local d = to.Magnitude
+			if d > 0.1 and d <= LOCK_RANGE then
+				local ang = math.deg(math.acos(math.clamp(to.Unit:Dot(look), -1, 1)))
+				if ang <= 60 and d * 0.5 + ang < bestScore then
+					best, bestScore = other, d * 0.5 + ang
+				end
+			end
+		end
+	end
+	return best
+end
+
+local function setMarker(target)
+	if lock.marker then
+		lock.marker:Destroy()
+		lock.marker = nil
+	end
+	local head = target and (target:FindFirstChild("Head") or target:FindFirstChild("HumanoidRootPart"))
+	if not head then
+		return
+	end
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "OB_LockMarker"
+	bb.AlwaysOnTop = true
+	bb.Size = UDim2.fromOffset(18, 18)
+	bb.StudsOffsetWorldSpace = Vector3.new(0, 2.4, 0)
+	bb.Adornee = head
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromScale(0.5, 0.5)
+	f.Size = UDim2.fromOffset(10, 10)
+	f.Rotation = 45
+	f.BackgroundColor3 = Color3.fromRGB(255, 70, 60)
+	f.BorderSizePixel = 0
+	f.Parent = bb
+	local st = Instance.new("UIStroke")
+	st.Thickness = 2
+	st.Color = UITheme.Colors.Ink
+	st.Parent = f
+	bb.Parent = player:FindFirstChildOfClass("PlayerGui")
+	lock.marker = bb
+end
+
+local function releaseLock()
+	if not lock.target and not lock.cf then
+		return
+	end
+	lock.target, lock.cf = nil, nil
+	setMarker(nil)
+	local c = player.Character
+	local hum = c and c:FindFirstChildOfClass("Humanoid")
+	local cam = workspace.CurrentCamera
+	if cam and cam.CameraType == Enum.CameraType.Scriptable and not ultCameraBusy(nil) then
+		cam.CameraType = Enum.CameraType.Custom
+		if hum then
+			cam.CameraSubject = hum
+		end
+	end
+	local sl = ctxRef.ShiftLockController
+	if hum and hum.Health > 0 then
+		hum.AutoRotate = not (sl and sl.isEnabled and sl.isEnabled())
+	end
+end
+CombatController.releaseLock = releaseLock
+
+function CombatController.toggleLock()
+	if lock.target then
+		releaseLock()
+		return
+	end
+	local c = character()
+	if not c or inSafeZone(c) or ultCameraBusy(c) then
+		return
+	end
+	local target = lockCandidate(c)
+	local cam = workspace.CurrentCamera
+	if not target or not cam then
+		return
+	end
+	lock.target = target
+	lock.cf = cam.CFrame
+	cam.CameraType = Enum.CameraType.Scriptable
+	setMarker(target)
+	CartoonFX.sound("Whoosh", nil, 0.25, 1.4)
+end
+
+local function lockStep(dt)
+	local target = lock.target
+	if not target then
+		return
+	end
+	local c = player.Character
+	local hum = c and c:FindFirstChildOfClass("Humanoid")
+	local root = c and c:FindFirstChild("HumanoidRootPart")
+	local tHum = target:FindFirstChildOfClass("Humanoid")
+	local tRoot = target:FindFirstChild("HumanoidRootPart")
+	local cam = workspace.CurrentCamera
+	if not (hum and root and tHum and tRoot and cam) or hum.Health <= 0 or tHum.Health <= 0 or not target.Parent
+		or (tRoot.Position - root.Position).Magnitude > LOCK_RANGE or inSafeZone(c) or ultCameraBusy(c) then
+		releaseLock()
+		return
+	end
+	local myP, tP = root.Position, tRoot.Position
+	local away = Vector3.new(myP.X - tP.X, 0, myP.Z - tP.Z)
+	local sep = away.Magnitude
+	away = sep > 0.1 and away / sep or -Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z).Unit
+	local fwd = -away
+	local right = fwd:Cross(Vector3.yAxis)
+	local dist = math.clamp(10 + sep * 0.35, 10, 22)
+	local pivot = myP + Vector3.new(0, 2, 0)
+	local wanted = pivot + away * dist + Vector3.new(0, 2 + sep * 0.08, 0) + right * 2.2
+	-- anti-traversée des murs : la caméra s'arrête devant l'obstacle
+	lockRay.FilterDescendantsInstances = { c, target }
+	local hit = workspace:Raycast(pivot, wanted - pivot, lockRay)
+	if hit then
+		wanted = hit.Position + (pivot - wanted).Unit * 0.6
+	end
+	local focus = myP:Lerp(tP, 0.5) + Vector3.new(0, 1.5, 0)
+	local goal = CFrame.lookAt(wanted, focus)
+	lock.cf = (lock.cf or cam.CFrame):Lerp(goal, 1 - math.exp(-dt * 10))
+	if cam.CameraType ~= Enum.CameraType.Scriptable then
+		cam.CameraType = Enum.CameraType.Scriptable
+	end
+	cam.CFrame = lock.cf
+	-- le perso fait face à la cible (sauf ancré / renversé / shift lock qui s'en charge déjà)
+	local sl = ctxRef.ShiftLockController
+	local shift = sl and sl.isEnabled and sl.isEnabled()
+	if not shift and not root.Anchored and not hum.PlatformStand and sep > 0.5 then
+		hum.AutoRotate = false
+		root.CFrame = CFrame.lookAt(myP, myP + fwd)
+	end
+	ProcAnim.setLookTarget(c, tRoot, 0.3)
 end
 
 -- G (ou le bouton ULT / OVERTIME sur mobile) : transformation, puis pendant l'Overtime l'ULTIME (une fois, quand UltReady)
@@ -792,7 +1101,8 @@ local function buildGuardMeter()
 	end)
 end
 
-function CombatController.init()
+function CombatController.init(ctx)
+	ctxRef = type(ctx) == "table" and ctx or {}
 	local function bind(name, fn, ...)
 		ContextActionService:BindAction(name, function(_, state, input)
 			if state == Enum.UserInputState.Begin then
@@ -821,6 +1131,17 @@ function CombatController.init()
 	bind("OB_Ability1", function(d) if d then CombatController.ability(1) end end, Enum.KeyCode.One)
 	bind("OB_Ability2", function(d) if d then CombatController.ability(2) end end, Enum.KeyCode.Two)
 	bind("OB_Ability3", function(d) if d then CombatController.ability(3) end end, Enum.KeyCode.Three)
+	bind("OB_LockOn", function(d) if d then CombatController.toggleLock() end end, Enum.UserInputType.MouseButton3, Enum.KeyCode.ButtonR3)
+	RunService:BindToRenderStep("OB_LockOn", Enum.RenderPriority.Camera.Value - 2, lockStep)
+	-- surveillance des changements de block de tous les combattants (anti coup fantôme)
+	task.spawn(function()
+		while true do
+			for _, ch in ipairs(Hitbox.characters()) do
+				watchVictim(ch)
+			end
+			task.wait(0.5)
+		end
+	end)
 
 	-- verrou de saut : fin de chaîne au sol et armé de l'uppercut (Espace maintenu ne doit pas faire sauter)
 	local jumpLocked, jumpLockHum = false, nil
@@ -881,7 +1202,14 @@ function CombatController.init()
 			-- coup prédit confirmé par le serveur : mot + chiffre maintenant
 			local set = CombatController.predicted[data.seq]
 			if type(set) == "table" and set[data.v] then
-				confirmHit(data)
+				confirmHit(data, set[data.v] == "lite")
+			end
+		elseif kind == "BlockHit" and data.a == c then
+			-- avantage au bloqueur (même règle que le serveur) : notre prochain coup part après le délai ; le clic est
+			-- gardé en mémoire tampon et envoyé UNE fois, au lieu d'être joué en local puis tenu / rejoué par le serveur
+			local adv = CombatConfig.Block.BlockAdvantage or 0
+			if adv > 0 then
+				nextAttack = math.max(nextAttack, os.clock()) + adv
 			end
 		elseif (kind == "PerfectBlock" or kind == "Parry") and blocker == c then
 			ProcAnim.play(c, "PerfectBlock")
@@ -958,6 +1286,7 @@ function CombatController.init()
 	end
 
 	local function hookCharacter(c)
+		releaseLock()
 		combo, lastM1, airCombo, airChainUntil = 0, -10, 0, 0
 		nextAttack, busyUntil, endlagUntil, riseLockUntil = 0, 0, 0, 0
 		nextDash, nextDashStrike, lastDash, lastDashKind = 0, 0, -10, "F" -- l'état serveur repart à zéro au respawn
