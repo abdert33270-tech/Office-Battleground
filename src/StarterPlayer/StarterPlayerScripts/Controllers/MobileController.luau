@@ -2,7 +2,9 @@
 	MobileController — boutons tactiles (uniquement sur écran tactile), placés pour le pouce droit.
 	M1 (gros, devient USE avec un objet), attaques 1/2/3 (icône du type d'attaque), OT (transformation, jauge en %),
 	ULT (apparaît quand l'attribut UltReady du perso est vrai : même action que G -> CombatController.transform()),
-	DASH, BLOCK (maintenu), et UN bouton contextuel : PICK UP (objet proche) / THROW (objet en main) ; appui long = DROP.
+	DASH (direction = joystick ; pendant un combo subi : EVASIVE, le bouton affiche « EVADE! »), BLOCK (maintenu ;
+	appui juste avant le coup = PERFECT BLOCK), et UN bouton contextuel : PICK UP (objet proche) / THROW (objet en main) ;
+	appui long = DROP. Combat ABA : HIT x5 ; maintenir SAUT + 5e HIT = UPPERCUT ; DASH avant + HIT = DASH STRIKE.
 	Appelle ctx.CombatController : attack, pickup, throw, dash, setBlock, ability, transform.
 	Les boutons n'existent que si l'appareil est tactile (test PC : ReplicatedStorage.DebugTouch = true).
 	Taille : échelle bornée pour que le plus petit bouton fasse toujours >= 44 px à l'écran.
@@ -350,6 +352,12 @@ function Mobile.init(ctx)
 			ot.Label.Text = transformed and "ON!" or (otv >= 100 and "OT!" or (math.floor(otv) .. "%"))
 			local blocking = c and c:GetAttribute("Blocking")
 			block.BackgroundColor3 = blocking and Color3.fromRGB(120, 200, 255) or Color3.fromRGB(160, 160, 175)
+			-- pendant un combo subi, DASH = EVASIVE (si rechargée, pas en guard break ni au sol)
+			local sn = workspace:GetServerTimeNow()
+			local evade = c ~= nil and sn < (c:GetAttribute("StunUntil") or 0) and sn >= (c:GetAttribute("CDEvasive") or 0)
+				and sn >= (c:GetAttribute("GuardBrokenUntil") or 0) and sn >= (c:GetAttribute("KnockdownUntil") or 0)
+			dash.Label.Text = evade and "EVADE!" or "DASH"
+			dash.BackgroundColor3 = evade and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(120, 210, 255)
 			task.wait(0.15)
 		end
 	end)

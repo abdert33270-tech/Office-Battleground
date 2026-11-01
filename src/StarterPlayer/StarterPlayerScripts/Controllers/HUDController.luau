@@ -6,7 +6,7 @@
 	LevelNeed), popup « LEVEL UP! » + son (remote LevelUp {level, from, cash, grade}).
 
 	API pour les autres contrôleurs :
-		HUD.bindCooldown(frame, key)  key = "1"|"2"|"3"|"Dash" (lit CD<key> / CDMax<key> sur le perso)
+		HUD.bindCooldown(frame, key)  key = "1"|"2"|"3"|"Dash"|"DashStrike"|"Evasive" (lit CD<key> / CDMax<key> sur le perso)
 		HUD.toast(text, color?, duration?)
 		HUD.banner({text, sub, color, duration, style})
 		HUD.addMenuButton(text, color, callback, order) -> bouton
@@ -24,6 +24,7 @@ local Config = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config")
 local Characters = require(Config.Characters)
 local Grades = require(Config.Grades)
 local Shop = require(Config.Shop)
+local CombatConfig = require(Config.Combat)
 -- icônes d'attaque illustrées (une par attaque / ultime / action) ; repli = icônes génériques UIKit.icon
 local AttackIcon
 do
@@ -1379,9 +1380,9 @@ local COMBO_LIST = {
 	{ "HOLD F", "BLOCK", "Blocks hits from the front. The guard bar drains: empty = GUARD BREAK!" },
 	{ "F (just before a hit)", "PERFECT BLOCK", "Tap F right as they swing: THEY are stunned and disarmed. Even stops heavy hits." },
 	{ "HEAVY HITS", "GUARD BREAK", "5th hit, uppercut, slam, dash strike and heavy moves break a normal block." },
-	{ "Q + W/A/S/D", "DASH", "Dash forward, back or SIDEWAYS (2s cooldown). Cancels a combo you stopped." },
-	{ "Q (forward) + CLICK", "DASH STRIKE", "Dash forward then click: flying kick, knocks down (7s cooldown)." },
-	{ "Q while combo'd", "EVASIVE", "Burst free and push them away (18s cooldown). Not while guard-broken." },
+	{ "Q + W/A/S/D", "DASH", "Dash forward, back or SIDEWAYS (" .. CombatConfig.Dash.Cooldown .. "s cooldown). Cancels a combo you stopped." },
+	{ "Q (forward) + CLICK", "DASH STRIKE", "Dash forward then click: flying kick, knocks down (" .. CombatConfig.DashStrike.Cooldown .. "s cooldown)." },
+	{ "Q while combo'd", "EVASIVE", "Burst free and push them away (" .. CombatConfig.Evasive.Cooldown .. "s cooldown). Not while guard-broken." },
 	{ "COMBO + ITEM", "ITEM FINISHER", "Punch twice then hit with an item: huge damage (\"CHAIR COMBO!\")." },
 }
 local function buildCombos()
