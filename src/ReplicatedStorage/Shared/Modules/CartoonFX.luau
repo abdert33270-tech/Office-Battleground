@@ -190,7 +190,7 @@ local function rootOf(model)
 end
 
 ------------------------------------------------------------------------
--- Sons (SoundGroups « SFX » / « Music » réglables depuis le menu)
+-- Sons (SoundGroup « SFX » réglable depuis le menu)
 ------------------------------------------------------------------------
 local groups = {}
 local function soundGroup(name: string, settingKey: string): SoundGroup
