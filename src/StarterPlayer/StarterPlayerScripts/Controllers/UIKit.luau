@@ -4,6 +4,15 @@
 	UIKit.Font / UIKit.Body restent utilisables partout : ils sont convertis en FontFace du thème
 	(Display = Press Start 2P, Body = Silkscreen) par UIKit.new / UIKit.label et par le crochet de UIKit.screen.
 	(Pas d'init : simple bibliothèque.)
+
+	REGISTRE DES PANNEAUX (« un seul panneau ouvert ») :
+		UIKit.registerPanel(obj, opts?) -> entrée   obj = GuiObject ; opts = { name, close = fn, noClose = bool }
+			Dès que obj devient visible (quel que soit le code qui l'ouvre), tous les autres panneaux enregistrés se ferment.
+			close = fermeture spéciale (ex. CharacterSelectController.close) ; noClose = jamais fermé par le registre
+			(il ferme seulement les autres en s'ouvrant : boutique de caisses plein écran).
+		UIKit.openPanel(obj) | UIKit.closePanel(obj) | UIKit.togglePanel(obj) | UIKit.closeAllPanels(except?)
+		UIKit.anyPanelOpen() -> bool, nom   (ShiftLockController : souris libre)
+		UIKit.isPanel(obj) -> bool
 ]]
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -157,6 +166,105 @@ function UIKit.icon(kind, parent, color, z)
 	return UITheme.icon(kind, parent, color, z)
 end
 
+------------------------------------------------------------------------
+-- Registre des panneaux : un seul ouvert à la fois (HUD + Meta + sélection de perso)
+------------------------------------------------------------------------
+local registry = {} -- liste de { obj, name, close, noClose }
+
+local function entryOf(obj)
+	for _, e in ipairs(registry) do
+		if e.obj == obj then
+			return e
+		end
+	end
+	return nil
+end
+
+local function closeEntry(e)
+	if e.noClose or not e.obj.Parent or not e.obj.Visible then
+		return
+	end
+	if e.close then
+		local ok, err = pcall(e.close)
+		if not ok then
+			warn("[UIKit] fermeture de " .. tostring(e.name) .. " : " .. tostring(err))
+			e.obj.Visible = false
+		end
+	else
+		UITheme.close(e.obj)
+	end
+end
+
+function UIKit.closeAllPanels(except)
+	for _, e in ipairs(registry) do
+		if e.obj ~= except then
+			closeEntry(e)
+		end
+	end
+end
+
+function UIKit.registerPanel(obj: GuiObject, opts)
+	local old = entryOf(obj)
+	if old then
+		return old
+	end
+	opts = opts or {}
+	local e = { obj = obj, name = opts.name or obj.Name, close = opts.close, noClose = opts.noClose == true }
+	table.insert(registry, e)
+	obj:GetPropertyChangedSignal("Visible"):Connect(function()
+		if obj.Visible then
+			UIKit.closeAllPanels(obj)
+		end
+	end)
+	obj.Destroying:Connect(function()
+		local i = table.find(registry, e)
+		if i then
+			table.remove(registry, i)
+		end
+	end)
+	return e
+end
+
+function UIKit.isPanel(obj): boolean
+	return entryOf(obj) ~= nil
+end
+
+function UIKit.openPanel(obj)
+	if not entryOf(obj) then
+		UIKit.registerPanel(obj)
+	end
+	UIKit.closeAllPanels(obj)
+	return UITheme.open(obj)
+end
+
+function UIKit.closePanel(obj)
+	local e = entryOf(obj)
+	if e and e.close then
+		closeEntry(e)
+		return false
+	end
+	return UITheme.close(obj)
+end
+
+function UIKit.togglePanel(obj)
+	if obj.Visible then
+		return UIKit.closePanel(obj)
+	end
+	return UIKit.openPanel(obj)
+end
+
+function UIKit.anyPanelOpen(): (boolean, string?)
+	for _, e in ipairs(registry) do
+		if e.obj.Parent and e.obj.Visible then
+			local g = e.obj:FindFirstAncestorWhichIsA("LayerCollector")
+			if not g or g.Enabled then
+				return true, e.name
+			end
+		end
+	end
+	return false, nil
+end
+
 function UIKit.fmtTime(sec: number): string
 	sec = math.max(0, math.floor(sec + 0.5))
 	return string.format("%d:%02d", sec // 60, sec % 60)
@@ -171,6 +279,14 @@ end
 
 function UIKit.hex(c: Color3): string
 	return string.format("#%02X%02X%02X", math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
+end
+
+-- durée longue : "2d 05:12:09" / "05:12:09"
+function UIKit.fmtLong(sec: number): string
+	sec = math.max(0, math.floor(sec))
+	local d = sec // 86400
+	local hms = string.format("%02d:%02d:%02d", (sec % 86400) // 3600, (sec % 3600) // 60, sec % 60)
+	return d > 0 and (d .. "d " .. hms) or hms
 end
 
 function UIKit.escape(s: string): string

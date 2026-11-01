@@ -1,7 +1,7 @@
 --[[
 	The Office Cat — personnage PREMIUM (format : voir Modules/ContentLoader).
 	Le chat du patron dans un costume de chat intégral (oreilles, queue, pattes, moustaches).
-	Passif « Nine Lives » : chaque 9e coup subi est esquivé (0 dégât, pas de recul, il retombe sur ses pattes).
+	Passif « Nine Lives » : chaque 12e coup subi est esquivé (jamais un coup imparable) (0 dégât, pas de recul, il retombe sur ses pattes).
 	Attaques : Pounce (bond ciblé qui PLAQUE au sol), Hairball (boule de poils lobée + flaque gluante qui ralentit),
 	           Claw Fury (6 coups de griffes en X, le dernier repousse).
 	Transformation Midnight Zoomies : Laser Chase (ruée en zigzag derrière le point laser), Off The Desk (il fait tomber
@@ -37,7 +37,7 @@ local SND = {
 	Hiss = "rbxassetid://71522230632243",
 }
 
-local LIVES = 9
+local LIVES = 12 -- docs/Equilibrage.md (ex-9)
 
 local M = { Id = "OfficeCat", Order = 19 }
 
@@ -46,7 +46,7 @@ M.Character = {
 	Role = "Agile prankster",
 	Color = GINGER,
 	Shirt = GINGER, Pants = STRIPE, Tie = CREAM,
-	Passive = { Name = "Nine Lives", Desc = "Every 9th hit he takes simply misses: no damage, no knockback. He always lands on his feet." },
+	Passive = { Name = "Nine Lives", Desc = "Every 12th hit he takes simply misses (never an unblockable one): no damage, no knockback. He always lands on his feet." },
 	Attacks = { "CatPounce", "Hairball", "ClawFury" },
 	Transformation = { Name = "Midnight Zoomies", Desc = "Glowing eyes, puffed-up fur, a tiny boss crown and a laser dot that never stops moving.", Duration = 20, SpeedMultiplier = 1.2 },
 	TransAttacks = { "LaserChase", "OffTheDesk", "BoxAmbush" },
@@ -54,7 +54,7 @@ M.Character = {
 
 M.Attacks = {
 	CatPounce = { Name = "Pounce", Kind = "CatPounce", Desc = "Wiggle your butt, then pounce on the first coworker ahead and PIN them to the floor.", Cooldown = 8, Anim = "CatPounce", Sound = "Whoosh",
-		Windup = 0.42, Flight = 0.4, JumpUp = 40, Range = 22, Radius = 5.5, Damage = 11, Knockback = 0, Stun = 1.2, Category = "Heavy", Power = 1.0,
+		Windup = 0.42, Flight = 0.4, JumpUp = 40, Range = 22, Radius = 5.5, Damage = 11, Knockback = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.0,
 		Words = { "POUNCE!", "GOTCHA!" }, Effects = { Pin = true } },
 	Hairball = { Name = "Hairball", Kind = "CatHairball", Desc = "Hack up a gross hairball: it lobs, splats and leaves a sticky puddle that slows.", Cooldown = 7, Anim = "CatHairball", Sound = "Splat",
 		Windup = 0.36, Speed = 72, Range = 60, Gravity = 0.55, Up = 15, GooRadius = 6, GooTime = 3.5, GooSlow = 0.55,
@@ -69,7 +69,7 @@ M.Attacks = {
 		Final = { Damage = 5, Knockback = 36, KnockUp = 12, Stun = 0.8, Category = "Heavy", Power = 0.8, Words = { "GOT IT!" } } },
 	OffTheDesk = { Name = "Off The Desk", Kind = "CatDesk", Desc = "Summon a floating desk and knock everything off it, one item at a time. The monitor falls last and PINS.", Cooldown = 13, Anim = "CatDesk", Sound = "Pickup",
 		Windup = 0.32, Offset = 13, Radius = 8, Gap = 0.18, Fall = 0.36, SmallRadius = 4, SmallDamage = 3, MaxSmallHits = 2, BigRadius = 6.5,
-		Damage = 9, Knockback = 0, Stun = 1.2, Category = "Heavy", Power = 1.1, Words = { "CRASH!", "OOPS!" }, Effects = { Pin = true } },
+		Damage = 9, Knockback = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.1, Words = { "CRASH!", "OOPS!" }, Effects = { Pin = true } },
 	BoxAmbush = { Name = "Box Ambush", Kind = "CatBox", Desc = "If I fits, I sits: hide in a box for 1.2s. If anyone hits you, you burst out and pounce on them.", Cooldown = 10, Anim = "CatBox", Sound = "Pickup",
 		Windup = 0, Window = 1.2, Damage = 11, Knockback = 8, Launch = Vector3.new(6, 50, 0), Stun = 1.0, Category = "Heavy", Power = 1.0,
 		Unblockable = true, Words = { "SURPRISE!", "MRRAOW!" } },
@@ -546,7 +546,7 @@ function M.ServerInit(api)
 	task.delay(1, function()
 		table.insert(CS.damageMods, function(p)
 			local v = p.victim
-			if not v or v:GetAttribute("CharacterName") ~= "OfficeCat" or (p.damage or 0) <= 0 or p.trayGuard or p.category == "Ultimate" then
+			if not v or v:GetAttribute("CharacterName") ~= "OfficeCat" or (p.damage or 0) <= 0 or p.trayGuard or p.category == "Ultimate" or p.unblockable then
 				return
 			end
 			local n = (v:GetAttribute("CatHits") or 0) + 1

@@ -43,7 +43,7 @@ M.Attacks = {
 		Count = 3, Interval = 0.1, Spread = 7, Speed = 135, Range = 70, Damage = 4, Knockback = 6, Stun = 0.4, Category = "Projectile", Power = 0.35,
 		Words = { "STAPLED!", "THUNK!", "SHING!" }, Effects = { Slow = { 0.6, 1.5 } } },
 	ClockOut = { Name = "Clock Out", Kind = "TPVanishDash", Desc = "Vanish in a puff of paperwork and dash invisibly THROUGH everyone in a line, paper-cutting them all.", Cooldown = 8, Anim = "TPClockOut", Sound = "Dash",
-		Windup = 0.14, Speed = 100, Time = 0.3, Width = 7, Damage = 8, Knockback = 24, KnockUp = 12, Stun = 0.8, Category = "Heavy", Power = 0.75, Words = { "CLOCKED OUT!", "SNIKT!" } },
+		Windup = 0.25, Speed = 100, Time = 0.3, Width = 7, Damage = 8, Knockback = 24, KnockUp = 12, Stun = 0.8, Category = "Heavy", Power = 0.75, Words = { "CLOCKED OUT!", "SNIKT!" } },
 	StickyClones = { Name = "Sticky-Note Clones", Kind = "TPClones", Desc = "Peel off 2 sticky-note clones that sprint at the closest coworkers and burst into a blizzard of notes: damage and Blind.", Prop = "TPNotePad", Cooldown = 11, Anim = "TPClones", Sound = "Whoosh",
 		Count = 2, Range = 34, Speed = 46, Life = 1.4, Radius = 6, Damage = 5, Knockback = 14, KnockUp = 6, Stun = 0.6, Category = "Light", Power = 0.5,
 		Words = { "POST-IT!", "STICKY!", "WHICH ONE?!" }, Effects = { Blind = 1.2 } },

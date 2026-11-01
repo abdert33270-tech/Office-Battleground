@@ -1,6 +1,6 @@
 --[[
 	The IT Guy — personnage complet (format : voir Modules/ContentLoader).
-	Passif : immunisé contre l'aveuglement ; +25 % de dégâts avec l'électronique (clavier, écran, câble, baie serveur).
+	Passif : immunisé contre l'aveuglement ; +15 % de dégâts avec l'électronique (clavier, écran, câble, baie serveur).
 	Attaques : Ctrl+Alt+Del (téléportation dans le dos), Cable Whip (lasso qui attire), Firewall (mur de feu qui bloque les projectiles).
 	Transformation Blue Screen of Death : Blue Screen (gel sur place), DDoS (rafale de pixels), Virus Upload (virus à retardement qui explose).
 	Cable Whip plaque la cible au sol (Pin) après l'avoir tirée.
@@ -26,7 +26,7 @@ M.Character = {
 	Role = "Tricky hacker",
 	Color = TEAL,
 	Shirt = Color3.fromRGB(60, 190, 175), Pants = Color3.fromRGB(55, 58, 70), Tie = Color3.fromRGB(30, 30, 40),
-	Passive = { Name = "Have You Tried Turning It Off?", Desc = "Immune to Blind. Keyboards, Monitors, Cables and Server Racks deal +25% damage in his hands." },
+	Passive = { Name = "Have You Tried Turning It Off?", Desc = "Immune to Blind. Keyboards, Monitors, Cables and Server Racks deal +15% damage in his hands." },
 	Attacks = { "CtrlAltDel", "CableWhip", "Firewall" },
 	Transformation = { Name = "Blue Screen of Death", Desc = "Glowing blue visor and floating error screens.", Duration = 20, SpeedMultiplier = 1.15 },
 	TransAttacks = { "BlueScreen", "DDoS", "VirusUpload" },
@@ -34,14 +34,14 @@ M.Character = {
 
 M.Attacks = {
 	CtrlAltDel = { Name = "Ctrl+Alt+Del", Kind = "ITTeleport", Desc = "Glitch-teleport behind the closest coworker in front of you and smack them from behind.", Cooldown = 8, Anim = "CtrlAltDel", Sound = "Electric",
-		Range = 34, Windup = 0.18, Damage = 9, Knockback = 38, KnockUp = 12, Stun = 0.9, Category = "Heavy", Power = 0.8, Words = { "CTRL+ALT+DEL!", "REBOOTED!" } },
+		Range = 34, Windup = 0.25, Damage = 9, Knockback = 38, KnockUp = 12, Stun = 0.9, Category = "Heavy", Power = 0.8, Words = { "CTRL+ALT+DEL!", "REBOOTED!" } },
 	CableWhip = { Name = "Cable Whip", Kind = "ITLasso", Desc = "Lasso the first coworker in a long line with an ethernet cable, yank them to you and slam them into the floor (PIN).", Prop = "ITCable", Cooldown = 9, Anim = "CableWhip", Sound = "Whoosh",
-		Windup = 0.24, Range = 34, Width = 5, PullSpeed = 95, Damage = 9, Knockback = 0, KnockUp = 0, Stun = 1.0, Category = "Heavy", Power = 0.9, Words = { "CABLE WHIP!", "YOINK!" }, Effects = { Pin = true } },
+		Windup = 0.25, Range = 34, Width = 5, PullSpeed = 95, Damage = 9, Knockback = 0, KnockUp = 0, Stun = 1.0, Category = "Heavy", Power = 0.9, Words = { "CABLE WHIP!", "YOINK!" }, Effects = { Pin = true } },
 	Firewall = { Name = "Firewall", Kind = "ITFirewall", Desc = "Raise a wall of fire blocks in front of you: it stops projectiles and burns whoever crosses it.", Cooldown = 13, Anim = "Firewall", Sound = "Electric",
 		Windup = 0.28, Width = 14, Height = 7, Offset = 6, WallTime = 6, Damage = 4, Knockback = 28, KnockUp = 12, Stun = 0.5, Category = "Light", Power = 0.5,
 		Words = { "FIREWALL!", "ACCESS DENIED!" }, Effects = { Burn = { Ticks = 2, Damage = 2, Interval = 0.5 } } },
 	BlueScreen = { Name = "Blue Screen", Kind = "ITBlueScreen", Desc = "A giant Blue Screen of Death crashes down in front of you and freezes everyone under it.", Cooldown = 12, Anim = "BlueScreen", Sound = "Electric",
-		Windup = 0.38, Radius = 12, Offset = 7, Freeze = 1.6, Damage = 7, Knockback = 0, KnockUp = 0, Stun = 1.6, Category = "Heavy", Power = 0.8, Words = { "BLUE SCREEN!", "NOT RESPONDING!" } },
+		Windup = 0.38, Radius = 12, Offset = 7, Freeze = 1.6, Damage = 7, Knockback = 0, KnockUp = 0, Stun = 1.6, Category = "Heavy", GuardBreak = true, Power = 0.8, Words = { "BLUE SCREEN!", "NOT RESPONDING!" } },
 	DDoS = { Name = "DDoS", Kind = "ITBarrage", Desc = "Type furiously and flood the target with a barrage of data pixels.", Prop = "ITLaptop", Cooldown = 8, Anim = "DDoS", Sound = "Electric",
 		Shots = 14, Interval = 0.07, Spread = 9, Speed = 125, Range = 70, Size = Vector3.new(0.7, 0.7, 0.7), Colors = { Color3.fromRGB(0, 255, 170), Color3.fromRGB(40, 140, 255), Color3.fromRGB(255, 255, 255) },
 		Damage = 1.3, Knockback = 4, Stun = 0.4, Category = "Light", Power = 0.25, Words = { "PING!", "LAG!", "404!", "BZZT!" } },
@@ -416,7 +416,7 @@ function M.ServerInit(api)
 	table.insert(api.CombatService.damageMods, function(p)
 		local a = p.attacker
 		if a and a:GetAttribute("CharacterName") == "ITGuy" and p.itemId and ELECTRONICS[p.itemId] then
-			p.damage *= 1.25
+			p.damage *= 1.15
 			p.power = (p.power or 0.5) + 0.15
 		end
 	end)

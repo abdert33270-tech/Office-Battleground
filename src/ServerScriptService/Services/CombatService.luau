@@ -4,7 +4,12 @@
 	  Variantes du 5e coup : Espace maintenu = UPPERCUT (+ saut automatique, 3 M1 en l'air, le 3e = DOWNSLAM),
 	  en l'air = DOWNSLAM. Dash avant + M1 = DASH STRIKE (lourd, recharge).
 	- Dash directionnel (avant / arrière / côté), EVASIVE (Q pendant un hitstun, longue recharge).
-	- Block avec jauge de garde, PERFECT BLOCK (parade), GUARD BREAK (coup lourd sur un block normal ou jauge vide).
+	- Block avec jauge de garde, PERFECT BLOCK (parade, bat tout), GUARD BREAK (coup CASSE-GARDE p.guardBreak sur un
+	  block normal, ou jauge vide ; les coups lourds sans guardBreak vident la jauge Block.HeavyGuardMult fois plus vite).
+	- Seules les ULTIMES (category "Ultimate" / p.ultimate) ignorent le renversé et l'anti-infini (ComboCap).
+	- Compensation de latence : les hitboxes de swing() testent aussi la position des victimes rembobinée de la
+	  latence de l'attaquant (Hitbox.startHistory / Hitbox.box(..., rewind), au plus LagComp.MaxRewind).
+	- Points d'entrée PNJ (bot d'entraînement, sans Player) : performM1 / performBlock / performDash.
 	- Renversé (knockdown) après les gros coups : intouchable puis relevé invulnérable (pas de jongle infini).
 	- applyHit() = point d'entrée UNIQUE de tous les dégâts du jeu (M1, objets, lancers, attaques, événements).
 	  Ignore les coups quand la victime ou l'attaquant est en zone sûre (attribut SafeZone).
@@ -421,9 +426,12 @@ end
 	p = {
 		attacker: Model?, victim: Model, damage, dir: Vector3 (horizontal, de l'attaquant vers la victime),
 		knockback, up, stun, category, power, words?, material?, hitPos?, weapon?, cause?, seq?,
-		unblockable?, air? (suspension aérienne), launch? (Vector3 : vitesse imposée), slam? (spec Downslam),
-		itemId?, kitchen?, finisher?, noFlinch?, pin?,
-		heavy? (casse le block ; sinon déduit de category == "Heavy"), knockdown? (renverse la victime)
+		unblockable? (traverse le block, PAS le renversé), air? (suspension aérienne), launch? (Vector3 : vitesse imposée),
+		slam? (spec Downslam), itemId?, kitchen?, finisher?, pin?,
+		heavy? (lourd : vide la garde HeavyGuardMult fois plus vite ; sinon déduit de category == "Heavy"),
+		guardBreak? (casse directement un block normal), knockdown? (renverse la victime),
+		ultimate? (ou category == "Ultimate" : ignore le renversé et l'anti-infini),
+		linkWeight? (poids dans l'anti-infini, 1 par défaut ; les coups « tether » comptent toujours 1)
 	}
 	Retourne "Hit" | "Blocked" | "Parried" | "GuardBreak" | nil
 ]]
@@ -448,8 +456,11 @@ function CombatService.applyHit(p)
 	if CharacterState.inSafeZone(victim) or CharacterState.inSafeZone(attacker) then
 		return nil
 	end
-	-- renversé : intouchable (sauf coups imparables = ultimes) -> pas de jongle infini
-	if not p.unblockable and CharacterState.isKnockedDown(victim) then
+	-- ULTIME : seule exception au renversé et à l'anti-infini (lu AVANT les damageMods, qui peuvent changer category)
+	local ultimate = p.ultimate == true or p.category == "Ultimate"
+	p.ultimate = ultimate
+	-- renversé : intouchable (sauf ultimes ; les prises « imparables » comme Detain n'y passent PAS) -> pas de jongle infini
+	if not ultimate and CharacterState.isKnockedDown(victim) then
 		return nil
 	end
 	-- laisse de combo : seul un coup « collant » du même attaquant la garde, tout autre coup la relâche
@@ -463,7 +474,7 @@ function CombatService.applyHit(p)
 		mod(p)
 	end
 	local B = CombatConfig.Block
-	local heavy = p.heavy == true or p.category == "Heavy"
+	local heavy = p.heavy == true or p.category == "Heavy" or p.guardBreak == true
 
 	-- garde : seulement contre un coup de face
 	if vs.blocking and not p.unblockable then
@@ -498,13 +509,15 @@ function CombatService.applyHit(p)
 				CombatService.addOvertime(victim, CombatConfig.Overtime.Parry or 5)
 				return "Parried"
 			end
-			-- GUARD BREAK : un coup lourd casse un block normal (sauf garde spéciale type Tray Guard)
-			if heavy and B.HeavyBreaks and not p.trayGuard then
+			-- GUARD BREAK : un coup CASSE-GARDE (finisher, uppercut, downslam, dash strike, GuardBreak = true) casse un
+			-- block normal (sauf garde spéciale type Tray Guard)
+			if p.guardBreak == true and B.HeavyBreaks and not p.trayGuard then
 				guardBreak(victim, attacker, p, root, hum)
 				return "GuardBreak"
 			end
-			-- BLOCK : dégâts réduits, la jauge de garde s'use
-			local left = p.trayGuard and CharacterState.guardNow(victim) or CharacterState.drainGuard(victim, p.damage)
+			-- BLOCK : dégâts réduits, la jauge de garde s'use (un coup lourd l'use HeavyGuardMult fois plus vite)
+			local drain = p.damage * (heavy and (B.HeavyGuardMult or 1) or 1)
+			local left = p.trayGuard and CharacterState.guardNow(victim) or CharacterState.drainGuard(victim, drain)
 			if left <= 0 then
 				guardBreak(victim, attacker, p, root, hum)
 				return "GuardBreak"
@@ -517,6 +530,12 @@ function CombatService.applyHit(p)
 				hum:TakeDamage(chip)
 			end
 			knockback(victim, p.dir * 6, false, 0.1, attacker)
+			-- avantage au bloqueur : le prochain coup de l'attaquant est retardé (performM1 met le clic en attente)
+			if attacker and (B.BlockAdvantage or 0) > 0 then
+				local as = CharacterState.get(attacker)
+				as.nextAttack = math.max(as.nextAttack, os.clock()) + B.BlockAdvantage
+				as.blockAdvUntil = as.nextAttack
+			end
 			if Signals.Blocked then
 				Signals.Blocked:Fire(attacker, victim)
 			end
@@ -524,16 +543,25 @@ function CombatService.applyHit(p)
 		end
 	end
 
-	-- ANTI-INFINI (CombatConfig.ComboCap) : combo vrai trop long -> ce coup renverse de force
+	-- SUPER ARMURE (windup d'une attaque Armor = true) : dégâts encaissés sans hitstun, recul, laisse ni renversé ;
+	-- ne protège ni des ultimes ni des coups casse-garde
+	local armored = not ultimate and p.guardBreak ~= true and CharacterState.hasArmor(victim)
+	if armored then
+		p.knockdown, p.tether, p.air, p.launch, p.slam, p.pin = nil, nil, nil, nil, nil, nil
+		p.knockback, p.up = 0, 0
+	end
+
+	-- ANTI-INFINI (CombatConfig.ComboCap) : combo vrai trop long -> ce coup renverse de force.
+	-- TOUS les coups comptent (M1, jongle, objets, attaques : 1 lien, ou p.linkWeight) ; seules les ultimes y échappent.
 	local C = CombatConfig.ComboCap
 	local tNow = now()
 	if not (vs.chainStart and tNow < vs.stunUntil + C.Grace) then
 		vs.chainStart, vs.chainLinks = tNow, 0 -- la victime avait récupéré : nouveau combo
 	end
-	if p.tether then
-		vs.chainLinks += 1
+	if not ultimate and not armored then
+		vs.chainLinks += (p.tether and 1 or (tonumber(p.linkWeight) or 1))
 	end
-	if not p.unblockable and not p.knockdown and (vs.chainLinks >= C.MaxLinks or tNow - vs.chainStart >= C.MaxTime) then
+	if not ultimate and not armored and not p.knockdown and (vs.chainLinks >= C.MaxLinks or tNow - vs.chainStart >= C.MaxTime) then
 		p.knockdown, p.tether, p.air, p.launch = true, nil, nil, nil
 		if p.pin and not p.slam then
 			p.slam = { SlamSpeed = 150, Stun = CombatConfig.PinStun, BounceUp = 0, Pin = true }
@@ -606,6 +634,9 @@ function CombatService.applyHit(p)
 		return "Hit"
 	end
 	hum:TakeDamage(damage)
+	if armored then
+		return "Hit" -- super armure : ni hitstun ni physique
+	end
 	CharacterState.stun(victim, p.stun or 0.3)
 	if p.knockdown then
 		releaseTether(victim)
@@ -683,10 +714,25 @@ function CombatService.burn(victim: Model, attacker: Model?, burn)
 	end)
 end
 
+-- Latence à compenser pour les hitboxes de cet attaquant (s) : ping du joueur, au plus LagComp.MaxRewind ; 0 pour un PNJ
+function CombatService.rewindFor(attacker: Model?): number
+	local pl = attacker and Players:GetPlayerFromCharacter(attacker)
+	if not pl then
+		return 0
+	end
+	local ok, ping = pcall(pl.GetNetworkPing, pl)
+	if not ok or type(ping) ~= "number" or ping ~= ping then
+		return 0
+	end
+	local LC = CombatConfig.LagComp
+	return math.clamp(ping, 0, LC and LC.MaxRewind or 0.15)
+end
+
 -- Hitbox devant un personnage -> applique les coups. Utilisé par le M1, les objets et les attaques.
 -- spec : HitboxOffset, HitboxSize, MaxTargets, Damage, Knockback, KnockUp, Stun, Category, Power, Words, Material,
 --        Launch (Vector3 relatif : X = recul, Y = hauteur), Air, Slam, Unblockable, Weapon, ItemId, Kitchen, FinisherName,
---        Heavy, Knockdown, Tether, ComboTarget
+--        Heavy, GuardBreak, Knockdown, Tether, LinkWeight, ComboTarget
+-- Les victimes sont aussi testées à leur position d'il y a rewindFor(attacker) s (compensation de latence).
 -- Retourne : landed (touchés + bloqués + gardes cassées), hits (vraiment touchés)
 function CombatService.swing(attacker: Model, spec, seq)
 	local cf = Hitbox.frontCFrame(attacker, spec.HitboxOffset)
@@ -694,7 +740,7 @@ function CombatService.swing(attacker: Model, spec, seq)
 		return {}, {}
 	end
 	local size = spec.HitboxSize + Vector3.one * CombatConfig.LatencyTolerance
-	local hits = Hitbox.box(cf, size, attacker, spec.MaxTargets or 3)
+	local hits = Hitbox.box(cf, size, attacker, spec.MaxTargets or 3, CombatService.rewindFor(attacker))
 	-- victime tenue en laisse par CE combo : le coup suivant la touche toujours si elle est à portée
 	-- (l'attaquant peut tourner / marcher, la laisse a un léger retard réseau)
 	if spec.ComboTarget and tethers[spec.ComboTarget] and tethers[spec.ComboTarget].a == attacker
@@ -715,7 +761,8 @@ function CombatService.swing(attacker: Model, spec, seq)
 				knockback = spec.Knockback, up = spec.KnockUp, stun = spec.Stun,
 				category = spec.Category, power = spec.Power, words = spec.Words, material = spec.Material,
 				seq = seq, unblockable = spec.Unblockable, weapon = spec.Weapon, itemId = spec.ItemId, kitchen = spec.Kitchen,
-				tether = spec.Tether, heavy = spec.Heavy, knockdown = spec.Knockdown,
+				tether = spec.Tether, heavy = spec.Heavy, knockdown = spec.Knockdown, guardBreak = spec.GuardBreak,
+				linkWeight = spec.LinkWeight,
 				hitPos = vRoot.Position:Lerp(aRoot.Position, 0.3) + Vector3.new(0, 0.6, 0),
 			}
 			if spec.Launch then
@@ -809,7 +856,7 @@ local function downslamSpec()
 	return {
 		HitboxOffset = A.HitboxOffset, HitboxSize = A.HitboxSize, MaxTargets = 2, Damage = S.Damage,
 		Knockback = 0, Stun = S.Stun, Category = "Heavy", Power = S.Power, Words = S.Words, Slam = S, Weapon = "Downslam",
-		Knockdown = S.Knockdown, Heavy = true,
+		Knockdown = S.Knockdown, Heavy = true, GuardBreak = true,
 	}
 end
 
@@ -822,7 +869,7 @@ local function airSpec(i: number)
 	}
 end
 
-local function doM1(player: Player, character: Model, seq: number, mods)
+local function doM1(character: Model, seq: number?, mods)
 	local s = CharacterState.get(character)
 	local t = os.clock()
 	if t < s.nextAttack - TOL or s.blocking or CharacterState.inSafeZone(character) then
@@ -848,7 +895,7 @@ local function doM1(player: Player, character: Model, seq: number, mods)
 		spec = {
 			HitboxOffset = DS.HitboxOffset, HitboxSize = DS.HitboxSize, MaxTargets = 3, Damage = DS.Damage,
 			Knockback = DS.Knockback, KnockUp = DS.KnockUp, Stun = DS.Stun, Category = "Heavy", Power = DS.Power,
-			Words = DS.Words, Weapon = "Dash Strike", Heavy = true, Knockdown = true,
+			Words = DS.Words, Weapon = "Dash Strike", Heavy = true, GuardBreak = true, Knockdown = true,
 		}
 	elseif airborne and t < s.airChainUntil then
 		-- jongle après un uppercut : AirHits coups, le dernier = DOWNSLAM
@@ -884,7 +931,7 @@ local function doM1(player: Player, character: Model, seq: number, mods)
 			spec = {
 				HitboxOffset = M1.HitboxOffset, HitboxSize = M1.HitboxSize, MaxTargets = 2, Damage = U.Damage,
 				Knockback = 0, Stun = U.Stun, Category = "Heavy", Power = U.Power, Words = U.Words, Weapon = "Uppercut",
-				Launch = Vector3.new(U.LaunchForward, U.LaunchUp, 0), Heavy = true,
+				Launch = Vector3.new(U.LaunchForward, U.LaunchUp, 0), Heavy = true, GuardBreak = true,
 			}
 			onLanded = function(_, hits)
 				if #hits == 0 then
@@ -915,6 +962,7 @@ local function doM1(player: Player, character: Model, seq: number, mods)
 			if i >= M1.Hits then
 				spec.Words = M1.FinisherWords
 				spec.Heavy = true
+				spec.GuardBreak = true -- le FINISHER casse le block (sauf perfect block)
 				spec.Knockdown = true
 			end
 			onLanded = function(_, hits)

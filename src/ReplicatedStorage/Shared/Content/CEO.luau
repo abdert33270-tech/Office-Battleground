@@ -33,15 +33,15 @@ M.Character = {
 
 M.Attacks = {
 	BriefcaseSwing = { Name = "Briefcase Swing", Kind = "Melee", Desc = "A heavy two-handed briefcase golf swing that sends coworkers flying.", Prop = "CEOCase", Cooldown = 7, Anim = "BriefcaseSwing", Sound = "Whoosh",
-		Windup = 0.28, HitboxOffset = 3.5, HitboxSize = Vector3.new(8, 6, 7), Damage = 13, Knockback = 52, KnockUp = 20, Stun = 1.0, Category = "Heavy", Power = 1.0, Material = "Metal",
+		Windup = 0.28, HitboxOffset = 3.5, HitboxSize = Vector3.new(8, 6, 7), Damage = 13, Knockback = 52, KnockUp = 20, Stun = 1.0, Category = "Heavy", GuardBreak = true, Power = 1.0, Material = "Metal",
 		Words = { "BRIEFCASE!", "WHAM!", "CHA-CHING!" } },
 	MoneyRain = { Name = "Money Rain", Kind = "CEOMoneyRain", Desc = "Make it rain on the area ahead: falling cash slows and stings everyone under it.", Prop = "CEOCash", Cooldown = 11, Anim = "MoneyRain", Sound = "Ding",
 		Offset = 12, Radius = 9, RainTime = 3.5, Tick = 0.4, SlowMult = 0.55, Damage = 1.2, Knockback = 2, Stun = 0.25, Category = "Light", Power = 0.2, Words = { "$$$!", "CHA-CHING!", "$!" } },
 	HostileTakeover = { Name = "Hostile Takeover", Kind = "Grab", Desc = "Grab a coworker by the collar, lift them up and toss them away.", Cooldown = 9, Anim = "HostileTakeover", Sound = "Whoosh",
-		HitboxOffset = 3.5, HitboxSize = Vector3.new(5, 6, 6), HoldTime = 0.6, Damage = 11, ThrowKnockback = 62, ThrowUp = 24, Stun = 1.0, Category = "Heavy", Power = 0.95,
+		HitboxOffset = 3.5, HitboxSize = Vector3.new(5, 6, 6), HoldTime = 0.6, Windup = 0.25, Damage = 11, ThrowKnockback = 62, ThrowUp = 24, Stun = 1.0, Category = "Heavy", Power = 0.95,
 		Words = { "HOSTILE TAKEOVER!", "ACQUIRED!" } },
 	StockCrash = { Name = "Stock Crash", Kind = "CEOStockCrash", Desc = "Point at the floor ahead: a giant red stock arrow crashes down from the sky and PINS everyone under it.", Cooldown = 12, Anim = "StockCrash", Sound = "Whoosh",
-		Offset = 13, Radius = 10, Windup = 0.55, Damage = 15, Knockback = 0, KnockUp = 0, Stun = 1.2, Category = "Heavy", Power = 1.2, Words = { "STOCK CRASH!", "-99%!" }, Effects = { Pin = true } },
+		Offset = 13, Radius = 10, Windup = 0.55, Damage = 15, Knockback = 0, KnockUp = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.2, Words = { "STOCK CRASH!", "-99%!" }, Effects = { Pin = true } },
 	Buyout = { Name = "Buyout", Kind = "CEOBuyout", Desc = "Buy everyone out: pulls every nearby coworker to you, then knocks them down.", Cooldown = 12, Anim = "Buyout", Sound = "Ding",
 		Windup = 0.25, Radius = 22, PullSpeed = 80, Damage = 7, Knockback = 14, KnockUp = 18, Stun = 1.0, Category = "Heavy", Power = 0.8, Words = { "BUYOUT!", "SOLD!" } },
 	YoureFired = { Name = "You're Fired", Kind = "CEOPinkSlip", Desc = "Hurl a pink slip like a dart: whoever it hits is FIRED out of the building (huge launch).", Prop = "CEOSlip", Cooldown = 14, Anim = "YoureFired", Sound = "Whoosh",

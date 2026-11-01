@@ -34,14 +34,14 @@ M.Character = {
 
 M.Attacks = {
 	GavelSlam = { Name = "Order in the Court", Kind = "LWGavel", Desc = "Leap forward and bring your giant gavel down: pins everyone where you land.", Prop = "LWGavelBig", Cooldown = 8, Anim = "LWGavelSlam", Sound = "Whoosh",
-		Windup = 0.4, Forward = 13, JumpUp = 30, Radius = 8, Damage = 12, Knockback = 0, Stun = 1.2, Category = "Heavy", Power = 1.0, Material = "Wood", Words = { "ORDER!", "ORDER IN THE COURT!" }, Effects = { Pin = true } },
+		Windup = 0.4, Forward = 13, JumpUp = 30, Radius = 8, Damage = 12, Knockback = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.0, Material = "Wood", Words = { "ORDER!", "ORDER IN THE COURT!" }, Effects = { Pin = true } },
 	LawBooks = { Name = "Law Book Barrage", Kind = "LWBooks", Desc = "Hurl 3 heavy law books in a row. Read the fine print!", Prop = "LWBook", Cooldown = 7, Anim = "LWBooks", Sound = "Throw",
 		Count = 3, Interval = 0.18, Spread = 5, Speed = 85, Range = 65, Gravity = 0.3, Up = 8, Size = Vector3.new(1.7, 0.55, 2.1), Colors = BOOKS,
 		Damage = 4, Knockback = 12, KnockUp = 4, Stun = 0.5, Category = "Projectile", Power = 0.45, Words = { "THWACK!", "PAGE 1!", "AMENDED!" } },
 	Objection = { Name = "OBJECTION!", Kind = "LWObjection", Desc = "Point and object for 1 s: the first attack that hits you is parried, and you counter with a blast that launches the attacker.", Cooldown = 10, Anim = "LWObjection", Sound = "Ding",
 		Duration = 1.0, CounterDamage = 8, Words = { "OBJECTION!" } },
 	SignHere = { Name = "Sign Here", Kind = "LWContract", Desc = "A giant contract unrolls under the closest coworker in front: whoever is on it gets chained in place for 2 s.", Prop = "LWScroll", Cooldown = 12, Anim = "LWSignHere", Sound = "Clang",
-		Windup = 0.45, Range = 30, Offset = 12, Radius = 6, Root = 2.0, Damage = 7, Knockback = 0, Stun = 2.0, Category = "Heavy", Power = 0.7, Words = { "SIGNED!", "BINDING!" } },
+		Windup = 0.45, Range = 30, Offset = 12, Radius = 6, Root = 2.0, Damage = 7, Knockback = 0, Stun = 2.0, Category = "Heavy", GuardBreak = true, Power = 0.7, Words = { "SIGNED!", "BINDING!" } },
 	ClassAction = { Name = "Class Action", Kind = "LWLawsuit", Desc = "Throw a storm of subpoenas around you: everyone hit is SUED and keeps losing health to legal fees.", Prop = "LWPapers", Cooldown = 13, Anim = "LWClassAction", Sound = "Whoosh",
 		Windup = 0.3, Radius = 14, Ticks = 5, TickInterval = 0.6, TickDamage = 2, Damage = 4, Knockback = 20, KnockUp = 8, Stun = 0.6, Category = "Light", Power = 0.5, Words = { "SERVED!", "SUED!" } },
 	CrossExamination = { Name = "Cross-Examination", Kind = "LWCross", Desc = "Grab the coworker in front, grill them with 4 gavel bonks, then slam a GUILTY! verdict that launches them.", Prop = "LWGavel", Cooldown = 12, Anim = "LWCross", Sound = "Punch",

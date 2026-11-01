@@ -9,8 +9,14 @@
 		F maintenu         BLOCK (jauge de garde) ; F juste avant le coup (PerfectWindow) = PERFECT BLOCK (parade)
 		Q + direction      DASH avant / arrière / CÔTÉ (relatif à la caméra) ; dash avant + clic = DASH STRIKE (lourd)
 		Q pendant un combo EVASIVE : on se libère (longue recharge)
-	LOURD = Category "Heavy" (5e M1, uppercut, downslam, dash strike, attaques de perso / objets / lancers « Heavy »,
-	finisher d'objet) ou p.heavy = true : casse un block normal (GUARD BREAK) sauf PERFECT BLOCK.
+	GARDE (Block) : un PERFECT BLOCK bat tout (même les coups qui cassent la garde).
+	  - CASSE-GARDE (p.guardBreak) : 5e M1 (finisher), uppercut, downslam, dash strike, attaques de perso avec
+	    GuardBreak = true -> cassent DIRECTEMENT un block normal (GUARD BREAK).
+	  - LOURD (Category "Heavy" ou p.heavy, sans guardBreak : attaques de perso / objets / lancers lourds) -> vident la
+	    jauge de garde Block.HeavyGuardMult (x2,5) plus vite ; jauge vide = GUARD BREAK.
+	  - Chaque coup bloqué repousse le prochain coup de l'attaquant de Block.BlockAdvantage (avantage au bloqueur).
+	ULTIMES (category "Ultimate" ou p.ultimate) : seules à ignorer le renversé (knockdown) et l'anti-infini (ComboCap).
+	ENDLAG des attaques de perso : AbilityEndlag (ou cfg.Endlag) après la fin de l'attaque : ni attaque, ni dash, ni block.
 
 	ZONES SÛRES : un personnage avec l'attribut SafeZone = true (zone AFK) ne peut ni frapper ni être frappé
 	(CombatService.applyHit ignore le coup) et ne peut pas lancer de M1 / dash / attaque.
@@ -74,6 +80,12 @@ return {
 
 	AttackSlow = 0.55,         -- l'attaquant ralentit pendant ses M1 (multiplicateur de vitesse)
 	AbilityGCD = 0.6,          -- délai minimum entre deux attaques de personnage
+	-- endlag des attaques de perso (après la fin du Kind, ou au plus tard après son temps actif estimé) selon la
+	-- Category de la fiche ; une fiche peut forcer cfg.Endlag = secondes (0 = aucun). Pose EndlagUntil (pose « Winded »).
+	AbilityEndlag = { Heavy = 0.45, Light = 0.25 },
+	TelegraphMin = 0.12,       -- toute anticipation (windup) d'attaque de perso >= ce délai envoie un télégraphe
+	-- compensation de latence des hitboxes : positions des victimes « rembobinées » de la latence de l'attaquant
+	LagComp = { MaxRewind = 0.15, History = 1.0, Rate = 20 },
 	PinStun = 1.4,             -- durée au sol des attaques qui plaquent (Effects.Pin)
 	SoftLock = { Range = 11, Angle = 75 }, -- les M1 et les attaques se tournent vers l'ennemi le plus proche devant soi
 	InputBuffer = 0.25,        -- un clic trop tôt est gardé en mémoire et joué dès que possible
@@ -90,17 +102,21 @@ return {
 		GuardRegen = 12,      -- points par seconde
 		GuardRegenDelay = 1.2, -- la jauge ne remonte qu'après ce délai sans coup bloqué
 		GuardBreakStun = 1.6, -- étourdi (et sans block) après un guard break
-		HeavyBreaks = true,   -- un coup lourd casse directement un block normal
+		HeavyBreaks = true,   -- un coup CASSE-GARDE (p.guardBreak : finisher, uppercut, downslam, dash strike, GuardBreak = true) casse direct
+		HeavyGuardMult = 2.5, -- un coup lourd (Heavy) sans guardBreak vide la jauge 2,5x plus vite (au lieu de casser)
+		BlockAdvantage = 0.12, -- chaque coup bloqué retarde le prochain coup de l'attaquant (s)
+		PingAllowance = 0.1,  -- perfect block : l'appui est daté de min(ping/2, PingAllowance) plus tôt (latence du bloqueur)
 		PerfectWindow = 0.22, -- PERFECT BLOCK : F appuyé dans ce délai avant le coup (marche aussi contre les lourds)
 		ParryWindow = 0.22,   -- (ancien nom, gardé pour compatibilité)
 		ParryStun = 1.4, ParryRearm = 0.5, ParryKnockback = 22,
 		ParryFailRearm = 1.0, -- perfect block RATÉ (fenêtre écoulée sans coup) : pas de nouvelle fenêtre pendant ce délai
 	},
-	-- ANTI-INFINI : combo vrai subi (chaque coup arrive pendant le hitstun du précédent). Au-delà de MaxLinks coups
-	-- « collants » (M1 1-4 + jongle) OU de MaxTime secondes, le coup suivant RENVERSE de force la victime
-	-- (knockdown = intouchable puis relevé invulnérable). Le combo complet légitime (4 M1 + uppercut + 2 en l'air +
-	-- downslam) = 6 coups collants en ~3,5 s : il passe. Les ultimes (unblockable) ne sont pas concernées.
-	ComboCap = { MaxLinks = 7, MaxTime = 4.8, Grace = 0.05, Knockback = 30, Up = 14, Words = { "BREAK AWAY!", "TOO LONG!" } },
+	-- ANTI-INFINI : combo vrai subi (chaque coup arrive pendant le hitstun du précédent). TOUS les coups comptent
+	-- (M1, jongle, objets, attaques de perso : 1 lien chacun, ou p.linkWeight ; multi-coups / cônes ≈ 2 liens au total).
+	-- Dès MaxLinks liens OU MaxTime secondes, le coup suivant RENVERSE de force la victime (knockdown = intouchable
+	-- puis relevé invulnérable). Le combo complet légitime (4 M1 + uppercut + 2 en l'air = 7 liens, downslam qui
+	-- renverse) passe, avec la place pour 1 attaque / objet. Seules les ULTIMES ne sont pas concernées.
+	ComboCap = { MaxLinks = 9, MaxTime = 4.8, Grace = 0.05, Knockback = 30, Up = 14, Words = { "BREAK AWAY!", "TOO LONG!" } },
 	-- EVASIVE (combo breaker) : Q pendant un hitstun -> on se libère, invulnérable un instant, les attaquants proches
 	-- sont repoussés. Interdit pendant un guard break (punition du block) et quand on est renversé (déjà intouchable).
 	Evasive = { Cooldown = 18, IFrames = 0.5, Radius = 10, Knockback = 46, AttackerStun = 0.45, Hop = 22,

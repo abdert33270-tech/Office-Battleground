@@ -1,6 +1,6 @@
 --[[
 	The Delivery Guy — personnage complet (format : voir Modules/ContentLoader).
-	Passif Express Shipping : +10 % de vitesse en permanence ; les objets qu'il frappe ou lance font +20 % de dégâts.
+	Passif Express Shipping : +10 % de vitesse en permanence ; les objets qu'il frappe ou lance font +15 % de dégâts.
 	Attaques : Hand Truck Rush (ruée au diable : ramasse la 1re victime et l'emporte), Express Parcel (colis lobé qui
 	           explose en chips de calage), Bubble Wrap (piège au sol : POP + chute).
 	Transformation Same-Day Delivery : Tape Gun (scotch qui attire + SIGNED), Fragile Crate (caisse larguée du ciel qui
@@ -30,7 +30,7 @@ M.Character = {
 	Role = "Rushdown courier",
 	Color = RED,
 	Shirt = Color3.fromRGB(215, 50, 45), Pants = Color3.fromRGB(75, 58, 45), Tie = YELLOW,
-	Passive = { Name = "Express Shipping", Desc = "+10% move speed. Items he swings or throws deal +20% damage." },
+	Passive = { Name = "Express Shipping", Desc = "+10% move speed. Items he swings or throws deal +15% damage." },
 	Attacks = { "HandTruckRush", "ExpressParcel", "BubbleWrap" },
 	Transformation = { Name = "Same-Day Delivery", Desc = "Winged cap and a tower of parcels strapped to his back.", Duration = 20, SpeedMultiplier = 1.2 },
 	TransAttacks = { "TapeGun", "FragileCrate", "ReturnToSender" },
@@ -38,7 +38,7 @@ M.Character = {
 
 M.Attacks = {
 	HandTruckRush = { Name = "Hand Truck Rush", Kind = "DelDolly", Desc = "Charge with your hand truck: scoop up the first coworker and ram them into whatever is ahead.", Prop = "DelDolly", Cooldown = 9, Anim = "DelDolly", Sound = "Dash",
-		Windup = 0.15, Speed = 70, Time = 0.6, HitboxSize = Vector3.new(6, 6, 6), Damage = 10, Knockback = 48, KnockUp = 16, Stun = 1.0, Category = "Heavy", Power = 0.9,
+		Windup = 0.25, Speed = 70, Time = 0.6, HitboxSize = Vector3.new(6, 6, 6), Damage = 10, Knockback = 48, KnockUp = 16, Stun = 1.0, Category = "Heavy", Power = 0.9,
 		Words = { "SPECIAL DELIVERY!", "BEEP BEEP!" } },
 	ExpressParcel = { Name = "Express Parcel", Kind = "DelParcel", Desc = "Lob a heavy parcel: it bursts into packing peanuts and hits everyone around.", Prop = "DelParcelProp", Cooldown = 7, Anim = "DelParcel", Sound = "Throw",
 		Speed = 70, Up = 14, Gravity = 0.8, Range = 70, Radius = 7, Damage = 9, Knockback = 26, KnockUp = 14, Stun = 0.8, Category = "Heavy", Power = 0.7, Words = { "PARCEL!", "THUD!" } },
@@ -46,9 +46,9 @@ M.Attacks = {
 		Offset = 2, Width = 9, Length = 16, WrapTime = 7, Damage = 4, Knockback = 6, KnockUp = 12, Stun = 0.9, Category = "Light", Power = 0.45,
 		Words = { "POP!", "POP POP!", "SNAP!" }, Effects = { Trip = true } },
 	TapeGun = { Name = "Tape Gun", Kind = "DelTape", Desc = "Fire a roll of packing tape: the first coworker hit is taped up in place, then stamped SIGNED.", Prop = "DelTapeGun", Cooldown = 9, Anim = "DelTape", Sound = "Whoosh",
-		Windup = 0.22, Speed = 110, Range = 60, WrapTime = 1.4, Damage = 4, StampDamage = 7, Knockback = 32, KnockUp = 14, Stun = 0.9, Category = "Heavy", Power = 0.7, Words = { "SIGN HERE!", "SIGNED!" } },
+		Windup = 0.25, Speed = 110, Range = 60, WrapTime = 1.4, Damage = 4, StampDamage = 7, Knockback = 32, KnockUp = 14, Stun = 0.9, Category = "Heavy", Power = 0.7, Words = { "SIGN HERE!", "SIGNED!" } },
 	FragileCrate = { Name = "Fragile Crate", Kind = "DelCrate", Desc = "Call an air drop: a giant FRAGILE crate crashes down ahead and PINS everyone under it.", Prop = "DelScanner", Cooldown = 13, Anim = "DelCrate", Sound = "Whistle",
-		Offset = 13, Radius = 9, Windup = 0.62, Damage = 15, Knockback = 0, Stun = 1.4, Category = "Heavy", Power = 1.25,
+		Offset = 13, Radius = 9, Windup = 0.62, Damage = 15, Knockback = 0, Stun = 1.4, Category = "Heavy", GuardBreak = true, Power = 1.25,
 		Words = { "FRAGILE!", "HANDLE WITH CARE!" }, Effects = { Pin = true } },
 	ReturnToSender = { Name = "Return to Sender", Kind = "DelReturn", Desc = "Hold an open box (1.5s): projectiles bounce back, and whoever hits you gets boxed and shipped.", Prop = "DelOpenBox", Cooldown = 12, Anim = "DelReturn", Sound = "Clang",
 		Duration = 1.5, Damage = 9, Knockback = 44, KnockUp = 18, Stun = 1.3, Category = "Heavy", Power = 0.9, Words = { "RETURN TO SENDER!", "NO REFUNDS!" } },
@@ -386,11 +386,11 @@ function M.ServerInit(api)
 		return workspace:GetServerTimeNow()
 	end
 	local ret = M.Attacks.ReturnToSender
-	-- Express Shipping : objets +20 %
+	-- Express Shipping : objets +15 %
 	table.insert(CS.damageMods, function(p)
 		local a = p.attacker
 		if a and p.itemId and a:GetAttribute("CharacterName") == "DeliveryGuy" then
-			p.damage *= 1.2
+			p.damage *= 1.15
 		end
 	end)
 	-- Return to Sender : le coup est annulé, l'attaquant est emballé puis expédié

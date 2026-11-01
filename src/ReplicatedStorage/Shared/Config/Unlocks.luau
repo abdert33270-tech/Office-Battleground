@@ -5,8 +5,8 @@
 	- Robux : achat permanent via Game Pass (GamePassId ; 0 = pas encore créé sur le site => « COMING SOON »).
 	          Robux = prix affiché seulement (le vrai prix se règle sur le site Roblox).
 	Un perso absent de cette liste est GRATUIT (aucun perso ne devient injouable par oubli).
-	Les persos Robux restent équilibrés comme les autres (jamais plus forts), SAUF The Bacon : perso phare voulu
-	par le propriétaire comme le plus cher ET le plus fort du jeu (passif Main Character), sans aucun skin.
+	Les persos Robux restent équilibrés comme les autres (jamais plus forts), The Bacon compris : perso phare /
+	légendaire, le plus cher du jeu, sans aucun skin — il se distingue par son style et son humour, pas ses chiffres.
 	TODO PROPRIÉTAIRE (Game Pass) — tant que GamePassId = 0, le menu affiche le prix (« R$ 499 » pour The Bacon)
 	mais le bouton reste « COMING SOON ». Pour ouvrir la vente :
 	  1) create.roblox.com > l'expérience > Monetization > Passes > Create a Pass (ex. « The Bacon », image du perso) ;
@@ -42,7 +42,7 @@ Unlocks.List = {
 	Consultant = { Tier = "Cash", Price = 5000 },
 
 	-- Robux (5) : Game Pass permanent (mettre l'id du Game Pass créé sur le site à la place de 0)
-	Bacon = { Tier = "Robux", GamePassId = 0, Robux = 499 }, -- perso phare : le plus cher et le plus fort (TODO propriétaire : id du Game Pass, voir en-tête)
+	Bacon = { Tier = "Robux", GamePassId = 0, Robux = 499 }, -- perso phare / légendaire : le plus cher (TODO propriétaire : id du Game Pass, voir en-tête)
 	OfficeCat = { Tier = "Robux", GamePassId = 0, Robux = 299 },
 	AIAssistant = { Tier = "Robux", GamePassId = 0, Robux = 299 },
 	CEO = { Tier = "Robux", GamePassId = 0, Robux = 249 },

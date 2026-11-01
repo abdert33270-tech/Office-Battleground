@@ -7,6 +7,8 @@
 	GIVE CHARACTER : choix du joueur (joueurs du serveur, moi par défaut) + grille de tous les persos (OWNED / prix)
 	  + GIVE / REMOVE / GIVE ALL -> "/givechar <joueur> <perso|all>" / "/takechar ..." (UnlockService côté serveur).
 	  AdminInfo { ownedUpdate = true, players, owned } ne rafraîchit que cette section.
+	SERVER : SHUTDOWN (2e appui dans les 3 s pour confirmer) -> "/shutdown" (sauve tout puis expulse).
+	  /kick <name> [reason] et /announce <text> : au chat (texte libre, filtré côté serveur).
 ]]
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -403,6 +405,20 @@ local function build(info)
 	for _, name in ipairs(lastInfo.grades or {}) do
 		btn(grades, name, Color3.fromRGB(170, 110, 255), "/grade " .. name)
 	end
+	-- SERVER : arrêt propre, confirmation par un 2e appui (évite le clic accidentel)
+	local server = section("SERVER", 8, "Slam", RED)
+	local armedAt = -math.huge
+	local shut = UIKit.button({ Text = "SHUTDOWN", Color = RED, TextSize = UDim2.fromScale(0.86, 0.4), Parent = server })
+	shut.Activated:Connect(function()
+		if os.clock() - armedAt <= 3 then
+			armedAt = -math.huge
+			run("/shutdown")
+		else
+			armedAt = os.clock()
+			toast("Press SHUTDOWN again to save everyone and close the server", RED)
+		end
+	end)
+	btn(server, "HELP", Color3.fromRGB(140, 220, 255), "/help")
 end
 
 local function toggle()

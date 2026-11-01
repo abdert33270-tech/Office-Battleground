@@ -37,7 +37,7 @@ M.Attacks = {
 		Windup = 0.14, Speed = 105, Range = 70, Damage = 5, Knockback = 6, Stun = 0.7, Category = "Projectile", Power = 0.45, Words = { "WRITTEN UP!", "NOTED!" },
 		Bonus = 6, MarkTime = 7 },
 	TeamBuilding = { Name = "Team Building", Kind = "HRTeamBuilding", Desc = "Pull everyone in front of you into a group hug, then shove the whole team away.", Cooldown = 9, Anim = "TeamBuilding", Sound = "Whoosh",
-		Windup = 0.2, HitboxOffset = 5, HitboxSize = Vector3.new(14, 6, 10), PullSpeed = 60, GroupBonus = 3,
+		Windup = 0.25, HitboxOffset = 5, HitboxSize = Vector3.new(14, 6, 10), PullSpeed = 60, GroupBonus = 3,
 		Damage = 8, Knockback = 46, KnockUp = 14, Stun = 0.9, Category = "Heavy", Power = 0.85, Words = { "TEAM BUILDING!", "TRUST FALL!" } },
 	PolicyUpdate = { Name = "Policy Update", Kind = "Cone", Desc = "Blast a cone of flying memos that pushes coworkers back and blinds them briefly.", Prop = "HRMemos", Cooldown = 9, Anim = "PolicyUpdate", Sound = "Whoosh",
 		Windup = 0.12, Range = 18, Angle = 32, Duration = 0.6, Tick = 0.2, Color = PAPER,
@@ -46,10 +46,10 @@ M.Attacks = {
 		Offset = 12, Radius = 10, Stars = 8, StarRadius = 4.5, Interval = 0.14, Fall = 0.35, MaxHits = 3,
 		Damage = 4, Knockback = 10, KnockUp = 16, Stun = 0.6, Category = "Light", Power = 0.5, Words = { "1 STAR!", "NEEDS WORK!", "MEH!" } },
 	Layoffs = { Name = "Layoffs", Kind = "Lunge", Desc = "Power-walk through the office: everyone in your path gets laid off into the air.", Prop = "HRClip", Cooldown = 9, Pierce = true, Anim = "Layoffs", Sound = "Dash",
-		Speed = 84, Time = 0.5, HitboxSize = Vector3.new(7, 6, 7), Damage = 10, Knockback = 10, Launch = Vector3.new(8, 52, 0), Stun = 1.1, Category = "Heavy", Power = 0.85,
+		Speed = 84, Time = 0.5, HitboxSize = Vector3.new(7, 6, 7), Windup = 0.25, Damage = 10, Knockback = 10, Launch = Vector3.new(8, 52, 0), Stun = 1.1, Category = "Heavy", Power = 0.85,
 		Words = { "LAID OFF!", "DOWNSIZED!" } },
 	TerminationLetter = { Name = "Termination Letter", Kind = "AoE", Desc = "Slam a giant termination letter on the floor: a shockwave that PINS everyone around you to the ground.", Prop = "HRLetter", Cooldown = 15, Anim = "TerminationLetter", Sound = "Whoosh",
-		Windup = 0.45, Radius = 14, Shockwave = true, Damage = 11, Knockback = 0, KnockUp = 0, Stun = 1.4, Category = "Heavy", Power = 1.1, Effects = { Pin = true },
+		Windup = 0.45, Radius = 14, Shockwave = true, Damage = 11, Knockback = 0, KnockUp = 0, Stun = 1.4, Category = "Heavy", GuardBreak = true, Power = 1.1, Effects = { Pin = true },
 		Words = { "TERMINATED!", "EFFECTIVE IMMEDIATELY!" } },
 }
 

@@ -65,7 +65,7 @@ M.Attacks = {
 		Damage = 1.6, Knockback = 5, Stun = 0.3, Category = "Light", Power = 0.3, Words = { "LEARNING...", "BZZZT!", "TRAINING!" } },
 	Captcha = { Name = "CAPTCHA", Kind = "AICaptcha", Desc = "Select all squares with ENEMIES: a 3x3 grid appears ahead and every square with someone in it gets struck from the sky.", Prop = "AIStylus", Cooldown = 14, Anim = "AICaptcha", Sound = "PowerUp",
 		Offset = 12, Cell = 4, Windup = 0.7,
-		Damage = 13, Knockback = 6, Launch = Vector3.new(4, 48, 0), Stun = 1.0, Category = "Heavy", Power = 1.1, Words = { "VERIFIED!", "NOT A ROBOT?" } },
+		Damage = 13, Knockback = 6, Launch = Vector3.new(4, 48, 0), Stun = 1.0, Category = "Heavy", GuardBreak = true, Power = 1.1, Words = { "VERIFIED!", "NOT A ROBOT?" } },
 }
 
 ------------------------------------------------------------------------

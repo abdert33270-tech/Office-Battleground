@@ -38,6 +38,7 @@ function CharacterState.get(character: Model)
 			pendingKO = false,              -- coup fatal engagé (hit-stop K.O.) : plus aucun coup, mort assurée
 			recentAttackers = {},           -- [attaquant] = os.clock() du dernier coup reçu (EVASIVE)
 			chainStart = nil, chainLinks = 0, -- combo vrai subi (server time) : plafond anti-infini (CombatConfig.ComboCap)
+			armorUntil = 0,                 -- super armure (server time) : windup d'une attaque Armor = true (AbilityService)
 			guard = CombatConfig.Block.MaxGuard, guardT = 0, guardHitT = -100,
 			held = nil,
 		}
@@ -207,6 +208,32 @@ function CharacterState.clearStun(character: Model)
 	CharacterState.refreshSpeed(character)
 end
 
+-- ENDLAG (attaques lourdes, attaques de perso) : ni attaque, ni dash, ni block pendant `duration` ; le block en cours
+-- est lâché. Attribut EndlagUntil (server time) -> ProcAnim tient la pose « Winded ».
+function CharacterState.endlag(character: Model, duration: number?)
+	if not duration or duration <= 0 then
+		return
+	end
+	local s = CharacterState.get(character)
+	local t = os.clock()
+	s.busyUntil = math.max(s.busyUntil, t + duration)
+	s.endlagUntil = math.max(s.endlagUntil, t + duration)
+	s.nextAttack = math.max(s.nextAttack, t + duration)
+	character:SetAttribute("EndlagUntil", math.max(character:GetAttribute("EndlagUntil") or 0, now() + duration))
+	if s.blocking then
+		CharacterState.setBlocking(character, false)
+	end
+end
+
+function CharacterState.inEndlag(character: Model): boolean
+	return os.clock() < CharacterState.get(character).endlagUntil
+end
+
+-- super armure : encaisse les coups sans hitstun ni recul (sauf ultimes et casse-garde)
+function CharacterState.hasArmor(character: Model): boolean
+	return now() < (CharacterState.get(character).armorUntil or 0)
+end
+
 function CharacterState.isStunned(character: Model): boolean
 	return now() < CharacterState.get(character).stunUntil
 end
@@ -260,7 +287,17 @@ function CharacterState.setBlocking(character: Model, on: boolean, noParry: bool
 			s.parryAttempt = nil
 		end
 		local can = not noParry and t - s.lastBlockPress >= B.ParryRearm and t >= s.parryLockUntil and not s.parryAttempt
-		s.blockStart = can and t or -10
+		-- latence du bloqueur : l'appui est daté de son vrai moment (arrivée - ping/2, au plus PingAllowance),
+		-- la fenêtre de PERFECT BLOCK est mesurée depuis ce moment-là (PNJ / mannequins : pas de correction)
+		local lag = 0
+		local pl = Players:GetPlayerFromCharacter(character)
+		if pl then
+			local ok, ping = pcall(pl.GetNetworkPing, pl)
+			if ok and type(ping) == "number" and ping == ping then
+				lag = math.clamp(ping / 2, 0, B.PingAllowance or 0.1)
+			end
+		end
+		s.blockStart = can and (t - lag) or -10
 		if can then
 			s.parryAttempt = t
 		end

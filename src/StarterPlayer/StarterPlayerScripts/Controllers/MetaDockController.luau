@@ -1,19 +1,25 @@
 --[[
-	MetaDockController — colonne de boutons des méta-systèmes (DAILY, CODES, SETTINGS, AFK) + fabrique de panneaux.
-	Ne touche pas au HUD : ses propres ScreenGui.
-		"MetaDock" (DisplayOrder 4, sous le HUD : les menus du HUD passent par-dessus)
-			PC : colonne en bas à gauche (zone libre : le menu du HUD est au milieu à gauche, les attaques au centre)
-			Mobile : 3e colonne de tuiles juste à droite des tuiles du menu du HUD (le bas-gauche = joystick)
-		"Meta" (DisplayOrder 7) : panneaux centrés (un seul ouvert à la fois), sous la sélection de perso (8).
+	MetaDockController — LE dock unique du jeu (un seul dock, un seul panneau ouvert) + fabrique de panneaux.
+	Tous les boutons de menu y vivent : CHARACTER / TASKS / SHOP / COMBOS (HUD.addMenuButton délègue ici),
+	PLAYERS, RANKS, DAILY, CODES, SETTINGS, AFK, ADMIN.
+		ScreenGui "MetaDock" (DisplayOrder 4, sous le HUD) :
+			PC : colonne en bas à gauche (sous la carte de statut du HUD, à gauche des attaques).
+			Mobile : grille de 2 RANGÉES de tuiles en haut à gauche, juste sous la carte de statut (le bas-gauche = joystick).
+			Tuiles mobiles : libellé court (≤ 6 lettres, police Body, taille mini 14 px).
+		ScreenGui "Meta" (DisplayOrder 7) : panneaux centrés, sous la sélection de perso (8).
+	Un seul panneau ouvert : chaque panneau est inscrit dans le registre d'UIKit (UIKit.registerPanel) ;
+	la sélection de perso (CharacterSelect.Root) y est aussi inscrite (fermée par CharacterSelectController.close).
 	API :
-		MetaDock.addButton(id, text, color, icon, callback, order) -> bouton
+		MetaDock.addButton(id, text, color, icon, callback, order) -> bouton (même id = bouton existant réutilisé)
 			icon = type d'icône UITheme ("Crate", "Admin"...) ou "glyph:Zz" (texte dessiné)
+			Ordre conseillé : 1-9 jeu (CHARACTER 2, TASKS 4, COMBOS 5, SHOP 6, PLAYERS 7, RANKS 8), 10-40 méta, 95 admin
 		MetaDock.setBadge(id, on, text?)   pastille rouge « ! » (ou text)
-		MetaDock.setText(id, text) | MetaDock.setColor(id, color)
+		MetaDock.setText(id, text) | MetaDock.setColor(id, color) | MetaDock.button(id) -> bouton?
 		MetaDock.panel(name, title, color, size, icon?) -> panel, body   (panel.Visible = false au départ)
-		MetaDock.open(panel) | MetaDock.close(panel) | MetaDock.toggle(panel) | MetaDock.isOpen(panel)
+		MetaDock.open(panel) | MetaDock.close(panel) | MetaDock.toggle(panel) | MetaDock.isOpen(panel) | MetaDock.closeAll()
 	Panneau ouvert => souris libérée même en shift-lock (TextButton Modal + RenderStep après celui du shift-lock).
 ]]
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -23,14 +29,40 @@ local UITheme = UIKit.Theme
 local MetaDock = {}
 MetaDock.Priority = 45
 
-local dockGui, panelGui, dock
+local dockGui, panelGui, dock, grid
 local buttons = {}
-local panels = {}
+local order = {} -- ids dans l'ordre d'ajout
 local touch = false
 local ready = false
 
-local TILE = 62
-local PC_W, PC_H = 150, 42
+local TILE, TILE_PAD = 72, 6
+local PC_W, PC_H, PC_PAD = 150, 40, 5
+
+-- libellés courts des tuiles mobiles (1er mot du texte -> libellé)
+local TOUCH_TEXT = {
+	CHARACTER = "JOBS", SETTINGS = "SETUP", COMBOS = "MOVES", PLAYERS = "LIST", LEADERBOARD = "RANKS", ADMIN = "ADMIN",
+}
+local function touchText(text: string): string
+	local first = string.upper(string.match(text or "", "^(%S+)") or "")
+	local t = TOUCH_TEXT[first] or first
+	return string.sub(t, 1, 6)
+end
+
+local function layoutDock()
+	if not dock then
+		return
+	end
+	local n = #order
+	if touch then
+		local cols = math.max(1, math.ceil(n / 2))
+		if grid then
+			grid.FillDirectionMaxCells = cols
+		end
+		dock.Size = UDim2.fromOffset(cols * TILE + (cols - 1) * TILE_PAD, 2 * TILE + TILE_PAD)
+	else
+		dock.Size = UDim2.fromOffset(PC_W + 8, math.max(1, n) * (PC_H + PC_PAD) + 4)
+	end
+end
 
 local function ensure()
 	if ready then
@@ -48,9 +80,8 @@ local function ensure()
 		Parent = dockGui,
 	})
 	if touch then
-		-- même échelle que les tuiles du menu du HUD (HUDController.buildMenu) ; on se place à leur droite
-		dock.AnchorPoint = Vector2.new(0, 0.5)
-		dock.Size = UDim2.fromOffset(TILE, 4 * TILE + 3 * 8)
+		-- 2 rangées en haut à gauche, sous la carte de statut du HUD (même calcul d'échelle que UIKit.autoScale)
+		dock.AnchorPoint = Vector2.new(0, 0)
 		local s = UIKit.new("UIScale", { Name = "AutoScale", Parent = dock })
 		local function upd()
 			local cam = workspace.CurrentCamera
@@ -58,20 +89,29 @@ local function ensure()
 			local v = math.clamp(math.min(vp.Y / 480, vp.X / 900), 0.8, 1.15)
 			s:SetAttribute("Base", v)
 			s.Scale = v
-			dock.Position = UDim2.new(0, math.floor(14 + 146 * v), 0.5, 30)
+			-- bas de la carte de statut (62 + 148 px) + ruban de l'ultime (40 px), à l'échelle du HUD
+			local hv = math.clamp(math.min(vp.Y / 900, vp.X / 1440), 0.6, 1.15)
+			dock.Position = UDim2.fromOffset(14, math.floor(62 + 196 * hv + 8))
 		end
 		upd()
 		if workspace.CurrentCamera then
 			workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(upd)
 		end
-		UIKit.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Center, Parent = dock })
+		grid = UIKit.new("UIGridLayout", {
+			CellSize = UDim2.fromOffset(TILE, TILE),
+			CellPadding = UDim2.fromOffset(TILE_PAD, TILE_PAD),
+			FillDirection = Enum.FillDirection.Horizontal,
+			FillDirectionMaxCells = 1,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = dock,
+		})
 	else
 		dock.AnchorPoint = Vector2.new(0, 1)
 		dock.Position = UDim2.new(0, 14, 1, -16)
-		dock.Size = UDim2.fromOffset(PC_W + 8, 4 * PC_H + 3 * 6 + 8)
 		UIKit.autoScale(dock)
-		UIKit.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Bottom, Parent = dock })
+		UIKit.new("UIListLayout", { Padding = UDim.new(0, PC_PAD), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Bottom, Parent = dock })
 	end
+	layoutDock()
 end
 
 local function drawIcon(icon, holder, z)
@@ -80,17 +120,22 @@ local function drawIcon(icon, holder, z)
 		l.Parent = holder
 		return l
 	end
-	return UIKit.icon(icon or "Ult", holder, Color3.new(1, 1, 1), z)
+	return UIKit.icon(icon or "Ult", holder, UIKit.White, z)
 end
 
-function MetaDock.addButton(id: string, text: string, color: Color3, icon: string?, callback, order: number?)
+function MetaDock.addButton(id: string, text: string, color: Color3, icon: string?, callback, layoutOrder: number?)
 	ensure()
+	local existing = buttons[id]
+	if existing and existing.button.Parent then
+		existing.callback = callback
+		return existing.button
+	end
 	local b = UIKit.button({
 		Name = id,
-		Text = text,
+		Text = touch and touchText(text) or text,
 		Color = color,
 		Size = touch and UDim2.fromOffset(TILE, TILE) or UDim2.fromOffset(PC_W, PC_H),
-		LayoutOrder = order or 50,
+		LayoutOrder = layoutOrder or 50,
 		Parent = dock,
 	})
 	local box = UIKit.new("Frame", { Name = "IconBox", BackgroundColor3 = UITheme.darken(color, 0.4), ZIndex = b.ZIndex + 1, Parent = b })
@@ -98,18 +143,22 @@ function MetaDock.addButton(id: string, text: string, color: Color3, icon: strin
 	if touch then
 		box.AnchorPoint = Vector2.new(0.5, 0)
 		box.Position = UDim2.new(0.5, 0, 0, 6)
-		box.Size = UDim2.fromOffset(32, 30)
+		box.Size = UDim2.fromOffset(36, 34)
 		box.BackgroundTransparency = 1
-		b.Label.Position = UDim2.new(0.5, 0, 1, -11)
-		b.Label.Size = UDim2.new(1, -6, 0, 11)
+		-- libellé lisible au doigt : police Body, 14 px minimum
+		b.Label.FontFace = UITheme.Body
+		b.Label.AnchorPoint = Vector2.new(0.5, 1)
+		b.Label.Position = UDim2.new(0.5, 0, 1, -5)
+		b.Label.Size = UDim2.new(1, -4, 0, 18)
+		UITheme.sizeLimit(b.Label, 18, 14)
 	else
 		UIKit.stroke(box, 2, UIKit.Black, true)
 		box.AnchorPoint = Vector2.new(0, 0.5)
 		box.Position = UDim2.new(0, 6, 0.46, 0)
-		box.Size = UDim2.fromOffset(30, 30)
+		box.Size = UDim2.fromOffset(28, 28)
 		b.Label.AnchorPoint = Vector2.new(0, 0.5)
-		b.Label.Position = UDim2.new(0, 44, 0.45, 0)
-		b.Label.Size = UDim2.new(1, -52, 0.4, 0)
+		b.Label.Position = UDim2.new(0, 42, 0.45, 0)
+		b.Label.Size = UDim2.new(1, -50, 0.4, 0)
 		b.Label.TextXAlignment = Enum.TextXAlignment.Left
 	end
 	local inner = UIKit.new("Frame", { Name = "Inner", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.8, 0.8), BackgroundTransparency = 1, ZIndex = b.ZIndex + 2, Parent = box })
@@ -129,14 +178,32 @@ function MetaDock.addButton(id: string, text: string, color: Color3, icon: strin
 	UIKit.stroke(badge, 2, UIKit.Black, true)
 	local bl = UIKit.label({ Name = "Text", Text = "!", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.6, 0.6), Stroke = 1.5, ZIndex = b.ZIndex + 6 })
 	bl.Parent = badge
+	local e = { button = b, badge = badge, badgeText = bl, color = color, box = box, callback = callback }
 	b.Activated:Connect(function()
-		local ok, err = pcall(callback)
+		local ok, err = pcall(e.callback)
 		if not ok then
 			warn("[MetaDock] " .. id .. " : " .. tostring(err))
 		end
 	end)
-	buttons[id] = { button = b, badge = badge, badgeText = bl, color = color, box = box }
+	buttons[id] = e
+	table.insert(order, id)
+	b.Destroying:Connect(function()
+		local i = table.find(order, id)
+		if i then
+			table.remove(order, i)
+		end
+		if buttons[id] == e then
+			buttons[id] = nil
+		end
+		layoutDock()
+	end)
+	layoutDock()
 	return b
+end
+
+function MetaDock.button(id: string)
+	local e = buttons[id]
+	return e and e.button or nil
 end
 
 function MetaDock.setBadge(id: string, on: boolean, text: string?)
@@ -155,7 +222,7 @@ end
 function MetaDock.setText(id: string, text: string)
 	local e = buttons[id]
 	if e then
-		e.button.Label.Text = text
+		e.button.Label.Text = touch and touchText(text) or text
 	end
 end
 
@@ -201,10 +268,10 @@ function MetaDock.panel(name: string, title: string, color: Color3, size: Vector
 	close.Activated:Connect(function()
 		MetaDock.close(f)
 	end)
-	-- souris libre même en shift-lock (ShiftLockController ne connaît pas ces panneaux)
+	-- souris libre même en shift-lock
 	UIKit.new("TextButton", { Name = "ModalMouse", Modal = true, Text = "", BackgroundTransparency = 1, Size = UDim2.fromOffset(1, 1), ZIndex = 20, Parent = f })
 	local body = UIKit.new("Frame", { Name = "Body", BackgroundTransparency = 1, Position = UDim2.fromOffset(16, 64), Size = UDim2.new(1, -32, 1, -78), ZIndex = 21, Parent = f })
-	table.insert(panels, f)
+	UIKit.registerPanel(f, { name = name })
 	return f, body
 end
 
@@ -213,36 +280,61 @@ function MetaDock.isOpen(panel): boolean
 end
 
 function MetaDock.open(panel)
-	for _, p in ipairs(panels) do
-		if p ~= panel and p.Visible then
-			UIKit.close(p)
-		end
-	end
-	UIKit.open(panel)
+	UIKit.openPanel(panel)
 end
 
 function MetaDock.close(panel)
-	UIKit.close(panel)
+	UIKit.closePanel(panel)
 end
 
 function MetaDock.toggle(panel)
-	if panel.Visible then
-		MetaDock.close(panel)
-	else
-		MetaDock.open(panel)
-	end
+	UIKit.togglePanel(panel)
 end
 
-function MetaDock.init()
-	ensure()
-	-- panneau ouvert : souris libre (passe après le shift-lock maison, qui la bloque à chaque image)
-	RunService:BindToRenderStep("OB_MetaMouse", Enum.RenderPriority.Camera.Value + 4, function()
-		for _, p in ipairs(panels) do
-			if p.Visible then
-				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-				UserInputService.MouseIconEnabled = true
+function MetaDock.closeAll()
+	UIKit.closeAllPanels()
+end
+
+-- inscrit un écran d'un autre contrôleur dans le registre dès qu'il existe (sans modifier ce contrôleur)
+local function adopt(guiName: string, childName: string, opts)
+	task.spawn(function()
+		local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+		local function try(g)
+			if g.Name ~= guiName then
 				return
 			end
+			local f = g:WaitForChild(childName, 30)
+			if f and f:IsA("GuiObject") then
+				UIKit.registerPanel(f, opts)
+			end
+		end
+		pg.ChildAdded:Connect(try) -- UIKit.screen recrée l'écran : on suit les nouvelles instances
+		local g = pg:FindFirstChild(guiName)
+		if g then
+			try(g)
+		end
+	end)
+end
+
+function MetaDock.init(ctx)
+	ensure()
+	-- sélection de perso : fermée par son API (cache aussi le voile) ; la boutique de caisses plein écran
+	-- ferme les autres en s'ouvrant mais n'est jamais fermée par le registre (tirage en cours)
+	adopt("CharacterSelect", "Root", {
+		name = "CharacterSelect",
+		close = function()
+			local cs = ctx and ctx.CharacterSelectController
+			if cs and cs.close then
+				cs.close()
+			end
+		end,
+	})
+	adopt("CharacterSelect", "CrateShop", { name = "CrateShop", noClose = true })
+	-- panneau ouvert : souris libre (passe après le shift-lock maison, qui la bloque à chaque image)
+	RunService:BindToRenderStep("OB_MetaMouse", Enum.RenderPriority.Camera.Value + 4, function()
+		if UIKit.anyPanelOpen() then
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			UserInputService.MouseIconEnabled = true
 		end
 	end)
 end

@@ -1,7 +1,11 @@
 --[[
-	AdminService — commandes de test réservées à xiregxyt (UserId 1676557658), et à tout le monde en Studio.
+	AdminService — commandes réservées aux admins, et à tout le monde en Studio.
+	Admins : ensemble ADMINS (UserId : xiregxyt 1676557658 + liste) OU rang >= ADMIN_GROUP.MinRank dans le groupe
+	ADMIN_GROUP.Id (0 = désactivé ; rang lu une fois à l'arrivée, en pcall).
 	Sources : chat (TextChatService ou Player.Chatted) + panneau admin (remote "AdminCommand").
-	Vérification de l'UserId TOUJOURS côté serveur.
+	Vérification TOUJOURS côté serveur ; un non-admin n'obtient AUCUNE réaction (ni toast, ni erreur).
+	Chaque commande d'admin exécutée => ligne d'audit warn("[AdminAudit] ...") (journal serveur / Developer Console).
+	Modération : /kick <name> [reason]   /announce <text> (filtré TextService)   /shutdown (sauve tout puis expulse)
 
 	/spawn <Item> [n]     /event <Name>     /events     /collapse [Floor]     /nextfloor <Floor>     /skip
 	/overtime     /char <Name>     /god     /heal     /dummy     /xp <n>     /grade <Name>     /help
@@ -16,6 +20,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local TextChatService = game:GetService("TextChatService")
+local TextService = game:GetService("TextService")
 
 local Net = require(ReplicatedStorage.Shared.Modules.Net)
 local Announce = require(script.Parent.Announce)
@@ -23,12 +28,36 @@ local Announce = require(script.Parent.Announce)
 local AdminService = {}
 AdminService.Priority = 70
 
-local ADMIN_ID = 1676557658
+-- UserId des admins (ajouter une ligne par admin)
+local ADMINS = {
+	[1676557658] = true, -- xiregxyt
+}
+-- groupe optionnel : Id = 0 => désactivé
+local ADMIN_GROUP = { Id = 0, MinRank = 254 }
 local Services = script.Parent
 local Config = ReplicatedStorage.Shared.Config
 
+local groupAdmin = setmetatable({}, { __mode = "k" }) -- [player] = true (rang suffisant, lu à l'arrivée)
+local shuttingDown = false
+
 function AdminService.isAdmin(player: Player): boolean
-	return player.UserId == ADMIN_ID or RunService:IsStudio()
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then
+		return false
+	end
+	return ADMINS[player.UserId] == true or groupAdmin[player] == true or RunService:IsStudio()
+end
+
+local function checkGroup(player: Player)
+	if ADMIN_GROUP.Id == 0 then
+		return
+	end
+	local ok, rank = pcall(function()
+		return player:GetRankInGroup(ADMIN_GROUP.Id)
+	end)
+	if ok and type(rank) == "number" and rank >= ADMIN_GROUP.MinRank then
+		groupAdmin[player] = true
+		player:SetAttribute("IsAdmin", true)
+	end
 end
 
 local function service(name)
@@ -182,7 +211,99 @@ end
 local COMMANDS = {}
 
 COMMANDS.help = function(player)
-	reply(player, "/spawn /event /events /collapse /nextfloor /skip /overtime /char /god /heal /dummy /xp /grade /level /cash /crate /allskins /givechar /takechar /resetdaily /afkpay")
+	reply(player, "/spawn /event /events /collapse /nextfloor /skip /overtime /char /god /heal /dummy /xp /grade /level /cash /crate /allskins /givechar /takechar /resetdaily /afkpay /kick /announce /shutdown")
+end
+
+-- joueur exact (nom ou nom affiché), sinon début de nom UNIQUE (jamais « me » implicite : modération)
+local function findExact(name)
+	if not name or name == "" then
+		return nil
+	end
+	local n = string.lower(name)
+	for _, p in ipairs(Players:GetPlayers()) do
+		if string.lower(p.Name) == n then
+			return p
+		end
+	end
+	local found
+	for _, p in ipairs(Players:GetPlayers()) do
+		if string.find(string.lower(p.Name), n, 1, true) == 1 or string.find(string.lower(p.DisplayName), n, 1, true) == 1 then
+			if found and found ~= p then
+				return nil -- ambigu
+			end
+			found = p
+		end
+	end
+	return found
+end
+
+-- texte libre diffusé à tout le serveur : filtré par Roblox (obligatoire), sinon rien n'est envoyé
+local function filterBroadcast(player, text)
+	local ok, res = pcall(function()
+		local r = TextService:FilterStringAsync(text, player.UserId, Enum.TextFilterContext.PublicChat)
+		return r:GetNonChatStringForBroadcastAsync()
+	end)
+	if ok and type(res) == "string" then
+		return res
+	end
+	warn("[AdminService] filtre de texte indisponible :", res)
+	return nil
+end
+
+COMMANDS.kick = function(player, args)
+	local target = findExact(args[1])
+	if not target then
+		return reply(player, "Usage: /kick <name> [reason] (unknown or ambiguous name)", false)
+	end
+	if target ~= player and AdminService.isAdmin(target) and not RunService:IsStudio() then
+		return reply(player, "Cannot kick another admin", false)
+	end
+	local reason = table.concat(args, " ", 2)
+	if reason ~= "" then
+		reason = filterBroadcast(player, reason) or ""
+	end
+	local name = target.Name
+	target:Kick(reason ~= "" and ("Kicked by an admin: " .. reason) or "Kicked by an admin.")
+	reply(player, "Kicked " .. name)
+end
+
+COMMANDS.announce = function(player, _args, raw)
+	local text = raw and string.gsub(raw, "^%s+", "") or ""
+	text = string.sub((string.gsub(text, "%s+$", "")), 1, 100)
+	if text == "" then
+		return reply(player, "Usage: /announce <text>", false)
+	end
+	local clean = filterBroadcast(player, text)
+	if not clean then
+		return reply(player, "Text filter unavailable, try again", false)
+	end
+	Announce.banner("ANNOUNCEMENT", clean, Color3.fromRGB(255, 200, 40), 6)
+	reply(player, "Announced")
+end
+
+local SHUTDOWN_MSG = "The server is restarting for an update. Your progress was saved, please rejoin!"
+COMMANDS.shutdown = function(player)
+	if shuttingDown then
+		return reply(player, "Shutdown already in progress", false)
+	end
+	shuttingDown = true
+	Announce.banner("SERVER RESTARTING", "Saving everyone's progress...", Color3.fromRGB(255, 110, 90), 5)
+	reply(player, "Saving all players, then kicking...")
+	task.spawn(function()
+		local okCount, total = 0, 0
+		local ds = service("DataService")
+		if ds and type(ds.saveAll) == "function" then
+			local ok, a, b = pcall(ds.saveAll, false, 20)
+			if ok then
+				okCount, total = a, b
+			end
+		end
+		warn(("[AdminAudit] /shutdown : %d/%d profils sauvés, expulsion de tous les joueurs"):format(okCount, total))
+		task.wait(1)
+		for _, p in ipairs(Players:GetPlayers()) do
+			p:Kick(SHUTDOWN_MSG) -- PlayerRemoving refait une sauvegarde finale (libère le verrou)
+		end
+	end)
 end
 
 COMMANDS.spawn = function(player, args)
@@ -417,8 +538,10 @@ function AdminService.run(player: Player, text: string)
 		return
 	end
 	recent[stamp] = os.clock()
-	local parts = string.split(string.sub(text, 2), " ")
+	local body = string.sub(text, 2)
+	local parts = string.split(body, " ")
 	local cmd = string.lower(table.remove(parts, 1) or "")
+	local raw = string.sub(body, #cmd + 2) -- texte brut après la commande (/announce)
 	local args = {}
 	for _, a in ipairs(parts) do
 		if a ~= "" then
@@ -427,7 +550,8 @@ function AdminService.run(player: Player, text: string)
 	end
 	local fn = COMMANDS[cmd]
 	if fn then
-		local ok, err = pcall(fn, player, args)
+		warn(("[AdminAudit] %s (%d) : %s"):format(player.Name, player.UserId, text))
+		local ok, err = pcall(fn, player, args, raw)
 		if not ok then
 			reply(player, "Error: " .. tostring(err), false)
 		end
@@ -438,7 +562,7 @@ function AdminService.init()
 	local cmdRemote = Net.get("AdminCommand")
 	local infoRemote = Net.get("AdminInfo")
 	cmdRemote.OnServerEvent:Connect(function(player, text)
-		if Net.allow(player, "AdminCommand", 8) then
+		if AdminService.isAdmin(player) and Net.allow(player, "AdminCommand", 8) then
 			AdminService.run(player, text)
 		end
 	end)
@@ -449,9 +573,14 @@ function AdminService.init()
 	end)
 
 	local function onPlayer(player)
+		if shuttingDown then
+			player:Kick(SHUTDOWN_MSG)
+			return
+		end
 		if AdminService.isAdmin(player) then
 			player:SetAttribute("IsAdmin", true)
 		end
+		task.spawn(checkGroup, player)
 		player.Chatted:Connect(function(msg)
 			AdminService.run(player, msg)
 		end)

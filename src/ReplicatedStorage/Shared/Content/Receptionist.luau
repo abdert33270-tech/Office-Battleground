@@ -1,6 +1,6 @@
 --[[
 	The Receptionist — personnage complet (format : voir Modules/ContentLoader).
-	Passif Visitor Badge : tout ennemi qu'elle touche porte un badge VISITOR 5 s et subit +15 % de dégâts de tout le monde.
+	Passif Visitor Badge : tout ennemi qu'elle touche porte un badge VISITOR 5 s et subit +10 % de dégâts de tout le monde.
 	Attaques : Hold the Line (fil de téléphone : attrape, ramène, fait tournoyer et projette), Service Bell (sonnette géante :
 	           DING qui étourdit autour d'elle), Visitor Badge (badge en boomerang : touche à l'aller ET au retour).
 	Transformation Customer Service Meltdown : Hold Music (zone de musique d'attente : ralentit), Hang Up! (combiné géant
@@ -29,7 +29,7 @@ M.Character = {
 	Role = "Crowd control",
 	Color = FUCHSIA,
 	Shirt = Color3.fromRGB(230, 85, 175), Pants = Color3.fromRGB(60, 50, 78), Tie = Color3.fromRGB(255, 230, 120),
-	Passive = { Name = "Visitor Badge", Desc = "Enemies she hits wear a VISITOR badge for 5s: +15% damage taken." },
+	Passive = { Name = "Visitor Badge", Desc = "Enemies she hits wear a VISITOR badge for 5s: +10% damage taken." },
 	Attacks = { "HoldTheLine", "ServiceBell", "VisitorBadge" },
 	Transformation = { Name = "Customer Service Meltdown", Desc = "Flashing CLOSED sign, headset and ringing phones.", Duration = 20, SpeedMultiplier = 1.15 },
 	TransAttacks = { "HoldMusic", "HangUp", "TransferCall" },
@@ -40,16 +40,16 @@ M.Attacks = {
 		Windup = 0.26, Range = 32, Width = 5, PullSpeed = 90, TwirlTime = 0.4, Damage = 8, Knockback = 46, KnockUp = 18, Stun = 1.0, Category = "Heavy", Power = 0.85,
 		Words = { "PLEASE HOLD!", "CONNECTED!" } },
 	ServiceBell = { Name = "Service Bell", Kind = "RecBell", Desc = "Slam a giant service bell: the DING shockwave dazes everyone around you.", Prop = "RecBellProp", Cooldown = 10, Anim = "RecBell", Sound = "Ding",
-		Windup = 0.34, Radius = 13, Damage = 6, Knockback = 16, KnockUp = 8, Stun = 1.6, Category = "Heavy", Power = 0.7, Words = { "DING!", "DING DING!" } },
+		Windup = 0.34, Radius = 13, Damage = 6, Knockback = 16, KnockUp = 8, Stun = 1.6, Category = "Heavy", GuardBreak = true, Power = 0.7, Words = { "DING!", "DING DING!" } },
 	VisitorBadge = { Name = "Visitor Badge", Kind = "RecBadge", Desc = "Fling a badge on a lanyard: it boomerangs back, hitting on the way out AND back.", Prop = "RecBadgeProp", Cooldown = 6, Anim = "RecBadge", Sound = "Throw",
 		Range = 34, Speed = 85, Damage = 5, Knockback = 8, Stun = 0.6, Category = "Projectile", Power = 0.4, Words = { "CHECKED IN!", "VISITOR!" } },
 	HoldMusic = { Name = "Hold Music", Kind = "RecMusic", Desc = "Drop a speakerphone blasting hold music: enemies around it are slowed and stung.", Prop = "RecSpeaker", Cooldown = 14, Anim = "RecMusic", Sound = "Ding",
 		Radius = 13, MusicTime = 6, Tick = 0.6, SlowMult = 0.45, Damage = 1.3, Knockback = 3, Stun = 0.2, Category = "Light", Power = 0.2, Words = { "SMOOTH JAZZ!", "LA LA LA!" } },
 	HangUp = { Name = "Hang Up!", Kind = "RecHangUp", Desc = "A giant phone handset SLAMS down in a long line ahead and PINS everyone under it.", Cooldown = 12, Anim = "RecHangUp", Sound = "Whoosh",
-		Windup = 0.5, Width = 8, Length = 22, Damage = 14, Knockback = 0, Stun = 1.4, Category = "Heavy", Power = 1.2,
+		Windup = 0.5, Width = 8, Length = 22, Damage = 14, Knockback = 0, Stun = 1.4, Category = "Heavy", GuardBreak = true, Power = 1.2,
 		Words = { "HANG UP!", "CLICK!" }, Effects = { Pin = true } },
 	TransferCall = { Name = "Transfer Call", Kind = "RecTransfer", Desc = "Transfer the call: swap places with the first coworker ahead, leaving them dazed. No one? Blink forward.", Prop = "RecPhone", Cooldown = 9, Anim = "RecTransfer", Sound = "Electric",
-		Windup = 0.2, Range = 40, Width = 6, Blink = 14, Damage = 6, Knockback = 6, KnockUp = 6, Stun = 1.5, Category = "Heavy", Power = 0.6, Words = { "TRANSFERRED!", "WRONG NUMBER!" } },
+		Windup = 0.25, Range = 40, Width = 6, Blink = 14, Damage = 6, Knockback = 6, KnockUp = 6, Stun = 1.5, Category = "Heavy", Power = 0.6, Words = { "TRANSFERRED!", "WRONG NUMBER!" } },
 }
 
 ------------------------------------------------------------------------
@@ -433,7 +433,7 @@ M.Kinds = {
 }
 
 ------------------------------------------------------------------------
--- Passif (serveur) : badge VISITOR (+15 % de dégâts subis pendant 5 s)
+-- Passif (serveur) : badge VISITOR (+10 % de dégâts subis pendant 5 s)
 ------------------------------------------------------------------------
 function M.ServerInit(api)
 	local function now()
@@ -442,7 +442,7 @@ function M.ServerInit(api)
 	-- bonus d'abord (le 1er coup qui pose le badge n'en profite pas)
 	table.insert(api.CombatService.damageMods, function(p)
 		if (p.damage or 0) > 0 and (p.victim:GetAttribute("RecVisitorUntil") or 0) > now() then
-			p.damage *= 1.15
+			p.damage *= 1.1
 		end
 	end)
 	table.insert(api.CombatService.damageMods, function(p)

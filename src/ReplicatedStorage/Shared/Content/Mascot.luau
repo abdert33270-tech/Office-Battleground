@@ -31,7 +31,7 @@ M.Character = {
 
 M.Attacks = {
 	FoamFinger = { Name = "We're #1!", Kind = "Melee", Desc = "Crouch and uppercut with your giant foam finger, launching the coworker in front sky-high.", Prop = "MSFoamFinger", Cooldown = 6, Anim = "MSFoamFinger", Sound = "Uppercut",
-		Windup = 0.22, HitboxOffset = 3, HitboxSize = Vector3.new(5.5, 7, 6), Material = "Plastic",
+		Windup = 0.25, HitboxOffset = 3, HitboxSize = Vector3.new(5.5, 7, 6), Material = "Plastic",
 		Damage = 9, Knockback = 6, Launch = Vector3.new(4, 55, 0), Stun = 1.0, Category = "Heavy", Power = 0.85, Words = { "WE'RE #1!", "BOOP!" } },
 	TShirtCannon = { Name = "T-Shirt Cannon", Kind = "MSTShirt", Desc = "Fire 3 rolled-up T-shirts into the crowd, one after another.", Prop = "MSCannon", Cooldown = 7, Anim = "MSTShirt", Sound = "Throw",
 		Count = 3, Interval = 0.15, Spread = 3, Speed = 120, Range = 75, Size = Vector3.new(1.0, 1.0, 1.8), Colors = { RED, WHITE, YELLOW },
@@ -42,7 +42,7 @@ M.Attacks = {
 	DanceOff = { Name = "Dance-Off", Kind = "MSDanceOff", Desc = "Drop a disco floor around you: everyone on it is forced to dance (stunned) for 2 s.", Cooldown = 13, Anim = "MSDanceOff", Sound = "PowerUp",
 		Windup = 0.4, Radius = 12, DanceTime = 2.0, Damage = 5, Knockback = 0, Stun = 2.0, Category = "Light", Power = 0.5, Words = { "DANCE-OFF!", "BOOGIE!" } },
 	HeadBounce = { Name = "Big Head Bounce", Kind = "MSHeadBounce", Desc = "Front-flip high into the air and land head-first: your giant foam head pins everyone around.", Cooldown = 11, Anim = "MSHeadBounce", Sound = "Boing",
-		Windup = 0.55, Forward = 10, JumpUp = 45, Radius = 9, Damage = 13, Knockback = 0, Stun = 1.2, Category = "Heavy", Power = 1.1, Words = { "BOING!", "HEADS UP!" }, Effects = { Pin = true } },
+		Windup = 0.55, Forward = 10, JumpUp = 45, Radius = 9, Damage = 13, Knockback = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.1, Words = { "BOING!", "HEADS UP!" }, Effects = { Pin = true } },
 	GrandFinale = { Name = "Grand Finale", Kind = "MSFireworks", Desc = "Light the fuse: 8 fireworks shoot up and rain down on the area in front of you.", Cooldown = 14, Anim = "MSFireworks", Sound = "Explosion",
 		Windup = 0.35, Offset = 14, Radius = 9, Rockets = 8, Gap = 0.12, Fall = 0.35, Blast = 5, MaxHitsPerTarget = 3,
 		Damage = 4, Knockback = 16, KnockUp = 10, Stun = 0.5, Category = "Light", Power = 0.5, Words = { "BOOM!", "TA-DA!", "OOOH!" }, Effects = { Burn = { Ticks = 2, Damage = 1, Interval = 0.5 } } },

@@ -61,13 +61,69 @@ UITheme.Colors = {
 	Purple = rgb(165, 95, 255),
 	Gold = rgb(255, 196, 40),
 	Cash = rgb(110, 235, 120),
+	Black = rgb(0, 0, 0), -- noir pur (ombres, dégradés) ; contours = Ink
 }
+
+-- Palette sémantique du HUD (HUDController n'écrit plus de Color3 en dur : il lit ces jetons)
+UITheme.HUD = {
+	Gold = rgb(255, 210, 50), -- pastille LV, LEVEL UP, Cash
+	Glow = rgb(255, 240, 120), -- éclats, anneaux « prêt »
+	Cream = rgb(255, 246, 205), -- haut des dégradés dorés
+	Amber = rgb(255, 178, 45), -- bas des dégradés dorés, OVERTIME prêt
+	Fire = rgb(255, 80, 40), -- ultime, danger chaud
+	Blood = rgb(120, 0, 0), -- contours PV bas, fond K.O.
+	Vignette = rgb(215, 20, 20),
+	HP = rgb(90, 220, 90),
+	HPMid = rgb(255, 210, 40),
+	HPLow = rgb(255, 65, 55),
+	Peach = rgb(255, 225, 200), -- segment « PV perdus », flash
+	Heal = rgb(150, 255, 150),
+	XP = rgb(170, 110, 255),
+	Lilac = rgb(215, 190, 255),
+	DeepPurple = rgb(65, 40, 135),
+	Violet = rgb(150, 90, 210), -- HR
+	Sky = rgb(170, 220, 255), -- textes de phase, info
+	Mint = rgb(150, 255, 160), -- succès
+	CashGreen = rgb(45, 160, 70), -- boutons / pastilles d'argent
+	DeepGreen = rgb(30, 100, 48), -- ligne « mon K.O. »
+	DeepRed = rgb(125, 24, 30), -- ligne « je suis K.O. »
+	Bronze = rgb(110, 78, 10), -- série
+	Coffee = rgb(70, 40, 20), -- case G
+	Brick = rgb(130, 55, 55), -- DASH STRIKE
+	Mustard = rgb(150, 120, 30), -- EVASIVE
+	SlotBlue = rgb(62, 74, 108), -- cases d'attaque
+	SlotGrey = rgb(100, 104, 122), -- désactivé
+	Silver = rgb(205, 205, 215), -- reflets, dégradés clairs
+	Steel = rgb(150, 150, 165), -- bas des dégradés
+	Dusk = rgb(90, 90, 110),
+}
+
+-- Couleurs de rareté : lues dans Config/Skins.Rarities (source unique), repli local si le module manque
 UITheme.Rarity = {
 	Base = rgb(165, 165, 178),
 	Rare = rgb(60, 150, 255),
 	Epic = rgb(170, 85, 255),
 	Legendary = rgb(255, 192, 30),
 }
+UITheme.RarityLabel = { Base = "BASE", Rare = "RARE", Epic = "EPIC", Legendary = "LEGENDARY" }
+-- seulement en partie lancée (Config/Skins tire Config/Characters : jamais en Edit) ; table modifiée sur place
+if RunService:IsRunning() then
+	local cfg = script.Parent.Parent:FindFirstChild("Config")
+	local m = cfg and cfg:FindFirstChild("Skins")
+	if m then
+		local ok, Skins = pcall(require, m)
+		local R = ok and type(Skins) == "table" and Skins.Rarities or nil
+		if type(R) == "table" then
+			for _, id in ipairs(R.Order or { "Base", "Rare", "Epic", "Legendary" }) do
+				local e = R[id]
+				if type(e) == "table" and typeof(e.Color) == "Color3" then
+					UITheme.Rarity[id] = e.Color
+					UITheme.RarityLabel[id] = e.Label or string.upper(id)
+				end
+			end
+		end
+	end
+end
 
 function UITheme.darken(c: Color3, k: number?): Color3
 	return c:Lerp(Color3.new(0, 0, 0), k or 0.35)

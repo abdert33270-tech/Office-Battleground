@@ -16,7 +16,10 @@
 	API serveur : SkinService.applyTo(character, player?, charName) | addCash(player, n, reason?) | addCrates(player, n)
 	              grantAll(player) | getState(player) | equip(player, charId, skinId) | openCrate(player, crateId?)
 	              rollSkin(crateId?, rng?) (debug, ne donne rien) | crateList()
-	Gains : jamais sur les mannequins (Hit / Died ne comptent que des victimes joueurs).
+	Gains : jamais sur les mannequins (Hit / Died ne comptent que des victimes joueurs) ; FarmGuard : 0 contre une
+victime passive (aucun dégât depuis 60 s) et pour une paire tueur -> victime au-delà de 3 K.O. / 10 min.
+Robux : ProcessReceipt n'octroie que si les données sont sauvables et SAUVÉES (sinon annulation + NotProcessedYet),
+PurchaseId gardés dans data.Receipts (anti double octroi). Voir docs/Serveur-securite.md.
 	Persos sans skins (Skins.hasSkins(charId) == false, ex. Bacon) : look fixe (avatar d'origine + accessoires de
 	métier), Equip refusé sauf "Avatar", jamais dans les caisses.
 ]]
@@ -31,6 +34,7 @@ local SkinBuilder = require(Shared.Modules.SkinBuilder)
 local Net = require(Shared.Modules.Net)
 local Signals = require(script.Parent.Signals)
 local DataService = require(script.Parent.DataService)
+local FarmGuard = require(script.Parent.FarmGuard)
 
 local SkinService = {}
 SkinService.Priority = 62 -- après DataService (60) et TaskService (61)
@@ -374,38 +378,64 @@ local function buy(player, key)
 	return true
 end
 
+-- ProcessReceipt : Roblox rappelle tant qu'on ne renvoie pas PurchaseGranted (même après un rejoin).
+-- On ne renvoie PurchaseGranted QUE si l'achat est écrit dans le DataStore (DataService.save -> true) ;
+-- sinon on annule l'octroi en mémoire et on renvoie NotProcessedYet (Roblox réessaiera plus tard).
+-- data.Receipts = PurchaseId déjà octroyés (50 derniers) : jamais deux fois le même achat.
+local RECEIPTS_KEPT = 50
+local processing = {} -- [PurchaseId] = true pendant le traitement (deux appels simultanés)
+
 local function processReceipt(info)
+	local NOT_YET = Enum.ProductPurchaseDecision.NotProcessedYet
 	local player = Players:GetPlayerByUserId(info.PlayerId)
 	local d = player and data(player)
-	if not d then
-		return Enum.ProductPurchaseDecision.NotProcessedYet
+	if not player or not d then
+		return NOT_YET -- pas là / données pas encore chargées
+	end
+	if DataService.loadFailed(player) or (DataService.canSave and not DataService.canSave(player)) then
+		return NOT_YET -- session non sauvable : on n'octroie rien qui serait perdu
 	end
 	local product = Skins.productById(info.ProductId)
 	if not product then
 		warn("[SkinService] produit inconnu", info.ProductId)
-		return Enum.ProductPurchaseDecision.NotProcessedYet
+		return NOT_YET
+	end
+	local pid = tostring(info.PurchaseId)
+	if processing[pid] then
+		return NOT_YET
 	end
 	d.Receipts = type(d.Receipts) == "table" and d.Receipts or {}
-	if table.find(d.Receipts, info.PurchaseId) then
-		return Enum.ProductPurchaseDecision.PurchaseGranted
+	if table.find(d.Receipts, pid) or table.find(d.Receipts, info.PurchaseId) then
+		return Enum.ProductPurchaseDecision.PurchaseGranted -- déjà octroyé ET sauvé
 	end
-	if product.Cash then
-		d.Cash += product.Cash
-		if popupRemote then
-			popupRemote:FireClient(player, { amount = product.Cash, reason = "PURCHASE" })
-		end
-	end
-	if product.Crates then
-		d.Crates += product.Crates
-	end
-	table.insert(d.Receipts, info.PurchaseId)
-	while #d.Receipts > 30 do
+	processing[pid] = true
+	local cash = math.max(0, math.floor(tonumber(product.Cash) or 0))
+	local crates = math.max(0, math.floor(tonumber(product.Crates) or 0))
+	d.Cash += cash
+	d.Crates += crates
+	table.insert(d.Receipts, pid)
+	while #d.Receipts > RECEIPTS_KEPT do
 		table.remove(d.Receipts, 1)
 	end
-	push(player)
-	if DataService.save then
-		DataService.save(player)
+	local ok, saved = pcall(DataService.save, player)
+	if not (ok and saved == true) then
+		-- annulation : rien n'a été écrit, Roblox nous rappellera
+		local i = table.find(d.Receipts, pid)
+		if i then
+			table.remove(d.Receipts, i)
+		end
+		d.Cash = math.max(0, d.Cash - cash)
+		d.Crates = math.max(0, d.Crates - crates)
+		processing[pid] = nil
+		push(player)
+		warn("[SkinService] achat " .. pid .. " de " .. player.Name .. " non sauvé : NotProcessedYet (" .. tostring(saved) .. ")")
+		return NOT_YET
 	end
+	processing[pid] = nil
+	if cash > 0 and popupRemote then
+		popupRemote:FireClient(player, { amount = cash, reason = "PURCHASE" })
+	end
+	push(player)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
@@ -475,8 +505,9 @@ function SkinService.init()
 		if not player or attacker == victim or type(damage) ~= "number" or damage <= 0 then
 			return
 		end
-		if not playerOf(victim) then
-			return
+		local vp = playerOf(victim)
+		if not vp or not FarmGuard.damageRewarded(player, vp) then
+			return -- mannequin / PNJ, ou victime passive (alt / AFK : aucun dégât infligé depuis 60 s)
 		end
 		local acc = (dmgAcc[player] or 0) + damage
 		local packs = math.floor(acc / 100)
@@ -487,7 +518,7 @@ function SkinService.init()
 	end)
 	Signals.Died:Connect(function(victim, killer)
 		local player = playerOf(killer)
-		if player and killer ~= victim and playerOf(victim) then
+		if player and killer ~= victim and playerOf(victim) and FarmGuard.koRewarded(killer, victim) then
 			SkinService.addCash(player, E.KO, "K.O.")
 		end
 	end)

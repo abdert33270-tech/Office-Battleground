@@ -1,7 +1,8 @@
 --[[
 	The Bacon — personnage PHARE (format : voir Modules/ContentLoader). Robux uniquement (Config/Unlocks), AUCUN skin.
 	Le célèbre « Bacon Hair » de Roblox (le débutant à l'avatar par défaut) devenu légende du bureau : il a l'air d'un
-	noob, mais c'est secrètement le GOAT. Voulu par le propriétaire comme le perso LE PLUS FORT du jeu (sans one-shot).
+	noob, mais c'est secrètement le GOAT. Perso phare / légendaire (le plus cher), mais ÉQUILIBRÉ comme les autres
+	(décision du propriétaire, docs/Equilibrage.md) : son style et son humour font la différence, pas ses chiffres.
 
 	Look signature (Character.Look) : un skin complet au format SkinBuilder, porté de force en jeu quel que soit le
 	skin équipé (SkinService.applyTo -> M.Identity ; puis surveillance ÉVÉNEMENTIELLE : accessoires / vêtements de
@@ -11,8 +12,8 @@
 	lunettes pixel « Deal With It », blouson noir à revers bacon, chaîne en or (médaillon R$), écharpe-bacon, baskets.
 	Transformation « Extra Crispy » (M.Transform) : cheveux en flammes, lunettes néon, poêle dans le dos, graisse qui grésille.
 
-	Passif « Main Character » : +10 % de dégâts infligés, -15 % de dégâts subis ; une fois par vie, un coup fatal le
-	laisse à 1 PV (« OOF! »), il est intouchable 1,8 s dès ce coup et reprend 25 PV. La sauvegarde n'est consommée que
+	Passif « Main Character » (Plot Armor) : une fois par vie, un coup fatal le laisse à 1 PV (« OOF! »), il est
+	intouchable 1 s dès ce coup et reprend 10 PV (plus aucun multiplicateur de dégâts infligés / subis). La sauvegarde n'est consommée que
 	si le coup va VRAIMENT le tuer (pas sur une parade / un block dont le chip n'est pas mortel).
 	Attaques : Oof (cri en cône qui repousse), Bacon Whip (fouet-bacon qui attrape, tire et claque),
 	           Free Robux? (panneau-appât qui ATTIRE tout le monde... puis explose : arnaque !).
@@ -52,10 +53,8 @@ local FLAME2 = C(255, 210, 60)
 local ROBUX = C(0, 176, 111)
 local BITS = { MEAT, FAT, GREASE }
 
-local DEAL_MULT = 1.1 -- dégâts infligés
-local TAKE_MULT = 0.85 -- dégâts subis
-local OOF_HEAL = 25
-local OOF_SHIELD = 1.5
+local OOF_HEAL = 10 -- PV rendus par la Plot Armor (une fois par vie)
+local OOF_SHIELD = 0.7 -- intouchable 0,3 + 0,7 = 1 s dès le coup fatal
 
 local M = { Id = "Bacon", Order = 0 }
 
@@ -154,9 +153,9 @@ M.Character = {
 	Featured = true, -- en tête du menu des persos + badge LEGENDARY (CharacterSelectController)
 	NoSkins = true, -- aucun skin : son look signature (Look) est toujours porté
 	Look = LOOK,
-	Passive = { Name = "Main Character", Desc = "Deals 10% more and takes 15% less damage. Once per life, a KO hit leaves him at 1 HP instead (OOF!): he heals 25 and is untouchable for 1.8s." },
+	Passive = { Name = "Main Character", Desc = "Plot armor: once per life, a KO hit leaves him at 1 HP instead (OOF!). He heals 10 and is untouchable for 1s." },
 	Attacks = { "BaconOof", "BaconWhip", "FreeRobux" },
-	Transformation = { Name = "Extra Crispy", Desc = "Hair on fire, neon shades, a frying pan on his back and sizzling grease everywhere. Faster and hotter.", Duration = 20, SpeedMultiplier = 1.25 },
+	Transformation = { Name = "Extra Crispy", Desc = "Hair on fire, neon shades, a frying pan on his back and sizzling grease everywhere. Faster and hotter.", Duration = 20, SpeedMultiplier = 1.2 },
 	TransAttacks = { "NoobRush", "SizzlingPan", "GreaseSlide" },
 }
 
@@ -190,24 +189,24 @@ end
 
 M.Attacks = {
 	BaconOof = { Name = "Oof", Kind = "BaconOof", Desc = "Take a deep breath and let out the legendary OOF: a sound blast that sends everyone in front flying.", Cooldown = 7, Anim = "BaconShout", Sound = "Whoosh",
-		Windup = 0.32, Range = 17, Angle = 38, Damage = 9, Knockback = 55, KnockUp = 16, Stun = 0.9, Category = "Heavy", Power = 0.9, Words = { "OOF!", "OOOOF!" } },
+		Windup = 0.32, Range = 17, Angle = 38, Damage = 9, Knockback = 55, KnockUp = 16, Stun = 0.9, Category = "Heavy", GuardBreak = true, Power = 0.9, Words = { "OOF!", "OOOOF!" } },
 	BaconWhip = { Name = "Bacon Whip", Kind = "BaconWhip", Desc = "Crack a crispy bacon strip: it grabs the first coworker in line, yanks them in and SMACKS them away.", Prop = "BaconStrip", Cooldown = 8, Anim = "BaconWhip", Sound = "Whoosh",
 		Windup = 0.2, Range = 22, Width = 5, LashSpeed = 140, PullSpeed = 90,
 		Damage = 5, Knockback = 0, Stun = 1.0, Category = "Light", Power = 0.5, Words = { "CRACK!", "SIZZLE SNAP!" },
 		Final = { Damage = 8, Knockback = 44, KnockUp = 12, Stun = 0.9, Category = "Heavy", Power = 0.95, Words = { "CRISPY!", "BACON'D!" } } },
 	FreeRobux = { Name = "Free Robux?", Kind = "BaconBait", Desc = "Drop a shiny FREE ROBUX sign: everyone nearby gets sucked in... then it explodes. It was a scam all along.", Cooldown = 12, Anim = "BaconBait", Sound = "Pickup",
-		Windup = 0.15, Drop = 0.35, Offset = 11, LureRadius = 16, LureTime = 0.8, PullSpeed = 40, BlastRadius = 8,
+		Windup = 0.25, Drop = 0.35, Offset = 11, LureRadius = 16, LureTime = 0.8, PullSpeed = 40, BlastRadius = 8,
 		Damage = 12, Knockback = 20, Launch = Vector3.new(8, 58, 0), Stun = 1.1, Category = "Heavy", Power = 1.0, Words = { "SCAMMED!", "NO REFUNDS!" } },
 	NoobRush = { Name = "Noob Rush", Kind = "BaconRush", Desc = "Arms out, full noob mode: bulldoze through everyone, then faceplant so hard the floor shakes.", Cooldown = 8, Anim = "BaconNoobRun", Sound = "Dash",
-		Windup = 0.15, Speed = 82, Time = 0.55, HitboxSize = Vector3.new(6.5, 6, 6), Radius = 7,
+		Windup = 0.25, Speed = 82, Time = 0.55, HitboxSize = Vector3.new(6.5, 6, 6), Radius = 7,
 		Damage = 8, Knockback = 36, KnockUp = 16, Stun = 0.9, Category = "Heavy", Power = 0.85, Words = { "NOOB RUSH!", "COMING THROUGH!" },
 		Final = { Damage = 6, Knockback = 30, KnockUp = 20, Stun = 0.8, Category = "Heavy", Power = 0.8, Words = { "FACEPLANT!", "OOF!" } } },
 	SizzlingPan = { Name = "Sizzling Pan", Kind = "BaconPan", Desc = "A GIANT frying pan drops from the sky and PINS them, leaving a pool of sizzling grease that burns and slows.", Cooldown = 12, Anim = "BaconPan", Sound = "Pickup",
 		Windup = 0.55, Range = 28, Offset = 12, Radius = 8, GreaseTime = 4, GreaseSlow = 0.6,
-		Damage = 12, Knockback = 0, Stun = 1.2, Category = "Heavy", Power = 1.2, Words = { "SIZZLE!", "PAN-DEMIC!" },
+		Damage = 12, Knockback = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.2, Words = { "SIZZLE!", "PAN-DEMIC!" },
 		Effects = { Pin = true, Burn = { Ticks = 3, Damage = 2, Interval = 0.6 } } },
 	GreaseSlide = { Name = "Grease Slide", Kind = "BaconSlide", Desc = "Belly-slide on a trail of bacon grease, tripping everyone in the way. Anyone who walks in the grease falls too.", Cooldown = 9, Anim = "BaconSlide", Sound = "Dash",
-		Windup = 0.12, Speed = 76, Time = 0.6, HitboxSize = Vector3.new(6, 5, 6), GreaseTime = 5, GreaseRadius = 3.5,
+		Windup = 0.25, Speed = 76, Time = 0.6, HitboxSize = Vector3.new(6, 5, 6), GreaseTime = 5, GreaseRadius = 3.5,
 		Damage = 9, Knockback = 18, KnockUp = 26, Stun = 1.0, Category = "Heavy", Power = 0.8, Words = { "WHEEE!", "GREASED!" },
 		Effects = { Trip = true },
 		Slip = { Damage = 3, Knockback = 22, KnockUp = 12, Stun = 0.8, Category = "Light", Power = 0.4, Words = { "SLIPPED!", "GREASY!" } } },
@@ -732,19 +731,7 @@ end
 
 function M.ServerInit(api)
 	local CS = api.CombatService
-	-- Main Character : +10 % infligés, -15 % subis
-	table.insert(CS.damageMods, function(p)
-		local a, v = p.attacker, p.victim
-		if (p.damage or 0) <= 0 then
-			return
-		end
-		if a and a ~= v and isBacon(a) then
-			p.damage *= DEAL_MULT
-		end
-		if v and v ~= a and isBacon(v) then
-			p.damage *= TAKE_MULT
-		end
-	end)
+	-- Main Character : plus de multiplicateurs de dégâts (équilibrage, docs/Equilibrage.md) ; seule reste la Plot Armor
 	-- Plot Armor (OOF!) : ajouté en DERNIER (après tous les autres bonus) pour juger du vrai coup fatal.
 	-- Les damageMods tournent AVANT la garde (CombatService.applyHit) : on prédit ici l'issue du coup pour ne
 	-- brûler la sauvegarde que si le coup va VRAIMENT le tuer (pas sur un coup paré / bloqué non mortel).

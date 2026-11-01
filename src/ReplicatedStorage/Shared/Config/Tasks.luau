@@ -1,11 +1,27 @@
 --[[
-	Tasks — modèles de Daily Tasks (3 tirées par jour UTC et par joueur).
-	Kind : "KO" (Weapon optionnel), "KOOnFloor" (Floor), "SurviveEvent" (Event), "Parry",
-	       "Combo" (Min), "BreakItem", "SurviveCollapse", "Damage", "Pickup" (Item), "Transform"
+	Tasks — Daily Tasks (3 tirées par jour UTC et par joueur) + Weekly Contracts (3 par semaine ISO, lundi 00:00 UTC).
+	Kind : "KO" (Weapon optionnel), "KOOnFloor" (Floor), "SurviveEvent" (Event optionnel), "Parry",
+	       "Combo" (Min), "BreakItem", "SurviveCollapse", "Damage", "Pickup" (Item optionnel), "Transform",
+	       "DailyDone" (tâches du jour terminées : contrats seulement)
+	Daily : XP (+ Cash via SkinService, Signals.TaskCompleted). Weekly : Cash + Briefcase (mallettes gratuites).
+	RerollsPerDay : relances GRATUITES d'une tâche du jour non finie (remises à zéro avec les tâches).
 	Ajouter une tâche = ajouter une ligne.
 ]]
 return {
 	PerDay = 3,
+	PerWeek = 3,
+	RerollsPerDay = 1,
+	Weekly = {
+		{ Id = "W_KO40", Text = "Fire 40 coworkers", Kind = "KO", Goal = 40, Cash = 600, Crates = 1 },
+		{ Id = "W_Damage8k", Text = "Deal 8,000 damage", Kind = "Damage", Goal = 8000, Cash = 500, Crates = 1 },
+		{ Id = "W_Parry40", Text = "Parry 40 attacks", Kind = "Parry", Goal = 40, Cash = 500, Crates = 1 },
+		{ Id = "W_Daily10", Text = "Finish 10 daily tasks", Kind = "DailyDone", Goal = 10, Cash = 700, Crates = 1 },
+		{ Id = "W_Collapse10", Text = "Survive 10 floor collapses", Kind = "SurviveCollapse", Goal = 10, Cash = 500, Crates = 1 },
+		{ Id = "W_Event8", Text = "Survive 8 office events", Kind = "SurviveEvent", Goal = 8, Cash = 500, Crates = 1 },
+		{ Id = "W_Combo5", Text = "Land five 10-hit combos", Kind = "Combo", Min = 10, Goal = 5, Cash = 600, Crates = 1 },
+		{ Id = "W_Overtime10", Text = "Work Overtime 10 times", Kind = "Transform", Goal = 10, Cash = 500, Crates = 1 },
+		{ Id = "W_Break25", Text = "Break 25 items", Kind = "BreakItem", Goal = 25, Cash = 450, Crates = 1 },
+	},
 	List = {
 		{ Id = "KOChair", Text = "Knock out 3 coworkers with a chair", Kind = "KO", Weapon = "Chair", Goal = 3, XP = 120 },
 		{ Id = "KO5", Text = "Fire 5 coworkers", Kind = "KO", Goal = 5, XP = 100 },

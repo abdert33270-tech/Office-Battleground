@@ -1,6 +1,6 @@
 --[[
 	The Accountant — personnage complet (format : voir Modules/ContentLoader).
-	Passif Compound Interest : chaque coup sur la même cible (moins de 2 s d'écart) ajoute +10 % de dégâts (max +50 %).
+	Passif Compound Interest : chaque coup sur la même cible (moins de 2 s d'écart) ajoute +5 % de dégâts (max +25 %, 5 paliers).
 	Attaques : Calculator Throw (rebondit sur les murs puis vers une 2e cible), Tax Audit (saisie + 3 coups de tampon : +4 sur les 3 prochains coups),
 	Spreadsheet Slam (grille au sol qui envoie en l'air).
 	Transformation Fiscal Year End : Number Crunch (rafale), Budget Cut (ruée ciseaux en avant qui traverse tout le monde),
@@ -28,7 +28,7 @@ M.Character = {
 	Role = "Combo stacker",
 	Color = GREEN,
 	Shirt = Color3.fromRGB(235, 225, 190), Pants = Color3.fromRGB(115, 95, 75), Tie = DGREEN,
-	Passive = { Name = "Compound Interest", Desc = "Each hit on the same target within 2s adds +10% damage (up to +50%)." },
+	Passive = { Name = "Compound Interest", Desc = "Each hit on the same target within 2s adds +5% damage (up to +25%)." },
 	Attacks = { "CalculatorThrow", "TaxAudit", "SpreadsheetSlam" },
 	Transformation = { Name = "Fiscal Year End", Desc = "LCD glasses, receipt tape and a storm of numbers.", Duration = 20, SpeedMultiplier = 1.15 },
 	TransAttacks = { "NumberCrunch", "BudgetCut", "Bankrupt" },
@@ -38,20 +38,20 @@ M.Attacks = {
 	CalculatorThrow = { Name = "Calculator Throw", Kind = "AcctCalc", Desc = "Hurl a calculator that ricochets off walls and bounces into a second coworker.", Prop = "AcctCalc", Cooldown = 6, Anim = "CalcThrow", Sound = "Throw",
 		Windup = 0.14, Speed = 95, Range = 60, Bounces = 2, Damage = 6, Knockback = 12, KnockUp = 5, Stun = 0.7, Category = "Projectile", Power = 0.5, Words = { "CLACK!", "DO THE MATH!" } },
 	TaxAudit = { Name = "Tax Audit", Kind = "AcctStampGrab", Desc = "Grab the closest coworker and stamp AUDIT on them 3 times: your next 3 hits on them deal +4 damage.", Prop = "AcctStamp", Cooldown = 9, Anim = "TaxAudit", Sound = "Whoosh", Unblockable = true,
-		Windup = 0.1, HitboxOffset = 3.5, HitboxSize = Vector3.new(5, 6, 6), StampDamage = 2, Damage = 5, Knockback = 34, KnockUp = 10, Stun = 0.9, Category = "Heavy", Power = 0.75, Words = { "AUDITED!", "FILED!" },
+		Windup = 0.35, HitboxOffset = 3.5, HitboxSize = Vector3.new(5, 6, 6), StampDamage = 2, Damage = 5, Knockback = 34, KnockUp = 10, Stun = 0.9, Category = "Heavy", Power = 0.75, Words = { "AUDITED!", "FILED!" },
 		AuditHits = 3, AuditBonus = 4, AuditTime = 8 },
 	SpreadsheetSlam = { Name = "Spreadsheet Slam", Kind = "Melee", Desc = "Slam a giant spreadsheet on the floor: everyone on the grid gets launched.", Prop = "AcctSheet", Cooldown = 8, Anim = "SpreadsheetSlam", Sound = "Whoosh",
-		Windup = 0.32, HitboxOffset = 6, HitboxSize = Vector3.new(12, 6, 12), Damage = 10, Knockback = 6, Launch = Vector3.new(6, 46, 0), Stun = 1.0, Category = "Heavy", Power = 0.85,
+		Windup = 0.32, HitboxOffset = 6, HitboxSize = Vector3.new(12, 6, 12), Damage = 10, Knockback = 6, Launch = Vector3.new(6, 46, 0), Stun = 1.0, Category = "Heavy", GuardBreak = true, Power = 0.85,
 		Words = { "SPREADSHEET SLAM!", "CTRL+S!" } },
 	NumberCrunch = { Name = "Number Crunch", Kind = "Melee", Desc = "Hammer them with calculator bonks while numbers fly, then hit the TOTAL.", Prop = "AcctCalc", Cooldown = 8, Anim = "NumberCrunch", Sound = "Punch",
 		Hits = 7, Interval = 0.08, HitboxOffset = 3, HitboxSize = Vector3.new(6, 6, 6.5), Damage = 2, Knockback = 3, Stun = 0.45, Category = "Light", Power = 0.3,
 		Words = { "1+1!", "x2!", "%!", "+7!", "=!" },
 		Final = { Damage = 7, Knockback = 48, KnockUp = 16, Stun = 0.9, Category = "Heavy", Power = 1, Words = { "TOTAL!", "SUM!" } } },
 	BudgetCut = { Name = "Budget Cut", Kind = "Lunge", Desc = "Charge forward with giant open scissors and snip through EVERYONE in your path.", Prop = "AcctScissors", Cooldown = 8, Pierce = true, Anim = "BudgetCut", Sound = "Dash",
-		Speed = 92, Time = 0.38, HitboxSize = Vector3.new(8, 6, 8), Damage = 11, Knockback = 42, KnockUp = 14, Stun = 0.9, Category = "Heavy", Power = 0.95, Material = "Metal",
+		Speed = 92, Time = 0.38, HitboxSize = Vector3.new(8, 6, 8), Windup = 0.25, Damage = 11, Knockback = 42, KnockUp = 14, Stun = 0.9, Category = "Heavy", Power = 0.95, Material = "Metal",
 		Words = { "BUDGET CUT!", "SNIP!" } },
 	Bankrupt = { Name = "Bankrupt", Kind = "AcctBankrupt", Desc = "A giant safe crashes down on the coworker in front of you: PINS everyone under it, steals 20 Overtime from each (paid back when your Overtime ends) and heals you.", Cooldown = 15, Anim = "Bankrupt", Sound = "Ding",
-		Windup = 0.6, Range = 32, Offset = 12, Radius = 9, Steal = 20, HealPer = 5, Damage = 14, Knockback = 0, KnockUp = 0, Stun = 1.2, Category = "Heavy", Power = 1.2, Words = { "BANKRUPT!", "CHA-CHING!" }, Effects = { Pin = true } },
+		Windup = 0.6, Range = 32, Offset = 12, Radius = 9, Steal = 20, HealPer = 5, Damage = 14, Knockback = 0, KnockUp = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.2, Words = { "BANKRUPT!", "CHA-CHING!" }, Effects = { Pin = true } },
 }
 
 ------------------------------------------------------------------------
@@ -413,7 +413,7 @@ function M.ServerInit(api)
 				end
 			end
 			s.last = t
-			p.damage *= 1 + 0.1 * s.stacks
+			p.damage *= 1 + 0.05 * s.stacks -- max +25 % (docs/Equilibrage.md)
 		end
 	end)
 end

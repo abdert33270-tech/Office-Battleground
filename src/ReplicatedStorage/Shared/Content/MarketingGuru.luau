@@ -37,13 +37,13 @@ M.Attacks = {
 	ConfettiCannon = { Name = "Confetti Cannon", Kind = "MKConfetti", Desc = "Fire a confetti shell that bursts on impact and blinds everyone around it.", Prop = "MKCannon", Cooldown = 8, Anim = "MKConfetti", Sound = "Throw",
 		Windup = 0.2, Speed = 90, Range = 60, Gravity = 0.35, Up = 9, Radius = 8, Damage = 7, Knockback = 22, KnockUp = 10, Stun = 0.6, Category = "Splat", Power = 0.6, Words = { "POP!", "SURPRISE!" }, Effects = { Blind = 1.5 } },
 	BillboardDrop = { Name = "Billboard Drop", Kind = "MKBillboard", Desc = "A giant advertising billboard slams down flat in front of you and pins everyone under it.", Cooldown = 11, Anim = "MKBillboard", Sound = "Crash",
-		Windup = 0.5, Offset = 10, Width = 12, Depth = 7, Damage = 13, Knockback = 0, Stun = 1.2, Category = "Heavy", Power = 1.1, Words = { "BUY NOW!", "AD BREAK!" }, Effects = { Pin = true } },
+		Windup = 0.5, Offset = 10, Width = 12, Depth = 7, Damage = 13, Knockback = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.1, Words = { "BUY NOW!", "AD BREAK!" }, Effects = { Pin = true } },
 	ViralTrend = { Name = "Viral Trend", Kind = "MKViral", Desc = "Strike a pose and go viral: a burst of likes pushes enemies away, and you get +30% damage and +25% speed for 6 s.", Prop = "MKPhone", Cooldown = 15, Anim = "MKViral", Sound = "PowerUp",
 		Windup = 0.25, Radius = 10, BuffTime = 6, SpeedBuff = 1.25, Damage = 4, Knockback = 30, KnockUp = 10, Stun = 0.5, Category = "Light", Power = 0.45, Words = { "LIKED!", "+1M VIEWS!" } },
 	Synergy = { Name = "SYNERGY!", Kind = "MKSynergy", Desc = "Link up to 4 nearby coworkers with team-building ropes, yank them all together and smash them as one.", Cooldown = 13, Anim = "MKSynergy", Sound = "Whoosh",
-		Windup = 0.3, Radius = 22, MaxTargets = 4, LinkTime = 0.35, PullSpeed = 110, Damage = 10, Knockback = 40, KnockUp = 22, Stun = 1.0, Category = "Heavy", Power = 1.0, Words = { "SYNERGY!", "TEAM BUILDING!" } },
+		Windup = 0.3, Radius = 22, MaxTargets = 4, LinkTime = 0.35, PullSpeed = 110, Damage = 10, Knockback = 40, KnockUp = 22, Stun = 1.0, Category = "Heavy", GuardBreak = true, Power = 1.0, Words = { "SYNERGY!", "TEAM BUILDING!" } },
 	HypeTrain = { Name = "Hype Train", Kind = "Lunge", Desc = "Surf a giant STONKS arrow forward, plowing through everyone and launching them sky-high.", Cooldown = 9, Pierce = true, Anim = "MKHypeTrain", Sound = "Dash",
-		Speed = 95, Time = 0.5, HitboxSize = Vector3.new(7, 6, 7), Damage = 12, Knockback = 10, Launch = Vector3.new(10, 50, 0), Stun = 1.1, Category = "Heavy", Power = 1.0, Words = { "STONKS!", "TO THE MOON!" } },
+		Speed = 95, Time = 0.5, HitboxSize = Vector3.new(7, 6, 7), Windup = 0.25, Damage = 12, Knockback = 10, Launch = Vector3.new(10, 50, 0), Stun = 1.1, Category = "Heavy", Power = 1.0, Words = { "STONKS!", "TO THE MOON!" } },
 }
 
 ------------------------------------------------------------------------

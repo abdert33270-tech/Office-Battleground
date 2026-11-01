@@ -1,6 +1,11 @@
 --[[
 	CharacterService — choix du personnage, kit d'attaques, transformation (jauge Overtime).
-	- Remote "SelectCharacter"(name) : name dans Config/Characters.Order. Prend effet tout de suite.
+	- Remote "SelectCharacter"(name) : name dans Config/Characters.Order. 1 requête / s (Net.allow), re-choisir le
+	  perso actuel = rien. Prend effet tout de suite, SAUF en combat (coup donné / reçu, bloqué, garde cassée, paré
+	  depuis COMBAT_LOCK s) : changement mis en file pour la prochaine apparition (toast, attribut Player
+	  PendingCharacter). Un changement en direct ne remet JAMAIS les recharges à zéro : chaque emplacement garde le
+	  temps restant de l'ancien kit (carryCooldowns). Remise à zéro seulement à l'apparition (perso neuf) et par la
+	  transformation (voulu). Voir docs/Serveur-securite.md.
 	- CharacterService.setCharacter(player, name, force?) : refuse un perso non possédé (CharacterService.canUse,
 	  branché par UnlockService) sauf force = true (admin /char). Perso actuel non possédé => retour à l'Intern.
 	- Remote "Transform" : jauge Overtime pleine -> transformation (durée de la fiche), annonce serveur
@@ -14,6 +19,7 @@ local Shared = ReplicatedStorage.Shared
 local Characters = require(Shared.Config.Characters)
 local Sounds = require(Shared.Config.Sounds)
 local CombatConfig = require(Shared.Config.Combat)
+local Attacks = require(Shared.Config.Attacks)
 local Net = require(Shared.Modules.Net)
 local CharacterState = require(script.Parent.CharacterState)
 local AbilityService = require(script.Parent.AbilityService)
@@ -25,7 +31,10 @@ local CharacterService = {}
 CharacterService.Priority = 25
 
 local DEFAULT = "Intern"
+local COMBAT_LOCK = 8 -- s sans échange de coups avant de pouvoir changer de perso en direct
 local FX
+local lastCombat = setmetatable({}, { __mode = "k" }) -- [character] = os.clock() du dernier échange
+local pending = setmetatable({}, { __mode = "k" }) -- [player] = perso choisi pour la prochaine apparition
 
 local function now()
 	return workspace:GetServerTimeNow()
@@ -159,7 +168,7 @@ end
 ------------------------------------------------------------------------
 -- Choix du personnage
 ------------------------------------------------------------------------
-local function endTransform(character: Model)
+local function endTransform(character: Model, keepCooldowns: boolean?)
 	if not character:GetAttribute("Transformed") then
 		return
 	end
@@ -177,7 +186,9 @@ local function endTransform(character: Model)
 		end)
 	end
 	CharacterState.setSpeedMod(character, "Transform", nil)
-	AbilityService.resetCooldowns(character)
+	if not keepCooldowns then
+		AbilityService.resetCooldowns(character)
+	end
 end
 
 -- apparence (avatar du joueur / uniforme / skin) : SkinService.applyTo (require paresseux, pas de cycle)
@@ -190,11 +201,42 @@ local function applyLook(character: Model, name: string)
 	end
 end
 
-function CharacterService.apply(character: Model, name: string)
+-- changement en direct : chaque emplacement (1..3) du nouveau kit hérite du temps de recharge restant de l'ancien
+-- emplacement (attributs CD1..3 = heure serveur de fin) ; s.cd (os.clock, par attaque) n'est jamais vidé.
+local function snapshotCooldowns(character: Model)
+	local left = {}
+	local t = now()
+	for i = 1, 3 do
+		left[i] = math.max(0, (tonumber(character:GetAttribute("CD" .. i)) or 0) - t)
+	end
+	return left
+end
+
+local function carryCooldowns(character: Model, left)
+	local s = CharacterState.get(character)
+	s.cd = s.cd or {}
+	local kit = CharacterService.getKit(character)
+	local clock, t = os.clock(), now()
+	for i = 1, 3 do
+		local id = kit and kit[i]
+		if id then
+			-- le plus long des deux : reste de l'ancien emplacement / recharge propre de cette attaque (aller-retour A->B->A)
+			local remain = math.max(left[i] or 0, (s.cd[id] or 0) - clock)
+			s.cd[id] = clock + remain
+			character:SetAttribute("CD" .. i, remain > 0 and t + remain or 0)
+			local cfg = Attacks[id]
+			character:SetAttribute("CDMax" .. i, math.max(cfg and cfg.Cooldown or 1, remain))
+		end
+	end
+end
+
+-- swap = true : changement de perso en direct (garde les recharges) ; sinon apparition (perso neuf, remise à zéro)
+function CharacterService.apply(character: Model, name: string, swap: boolean?)
 	if not Characters[name] then
 		name = DEFAULT
 	end
-	endTransform(character)
+	local left = swap and snapshotCooldowns(character) or nil
+	endTransform(character, swap)
 	character:SetAttribute("CharacterName", name)
 	applyLook(character, name)
 	clearFolder(character, "Signature")
@@ -207,7 +249,11 @@ function CharacterService.apply(character: Model, name: string)
 		f.Parent = character
 		sig.Build(f, a)
 	end
-	AbilityService.resetCooldowns(character)
+	if left then
+		carryCooldowns(character, left)
+	else
+		AbilityService.resetCooldowns(character)
+	end
 end
 
 -- possession d'un perso (remplacé par UnlockService.owns) ; vrai par défaut
@@ -220,7 +266,11 @@ local function usable(player, name)
 		return true -- choisi par un admin (/char) : test sans déblocage
 	end
 	local ok, res = pcall(CharacterService.canUse, player, name)
-	return not ok or res == true
+	if not ok then
+		warn("[CharacterService] canUse a planté (refusé) :", res)
+		return false
+	end
+	return res == true
 end
 CharacterService.usable = usable
 
@@ -240,13 +290,56 @@ function CharacterService.setCharacter(player: Player, name: string, force: bool
 	else
 		player:SetAttribute("AdminChar", nil)
 	end
+	pending[player] = nil
+	player:SetAttribute("PendingCharacter", nil)
 	player:SetAttribute("CharacterName", name)
 	local c = player.Character
-	if c and CharacterState.isAlive(c) then
-		CharacterService.apply(c, name)
+	if c and CharacterState.isAlive(c) and c:GetAttribute("CharacterName") ~= name then
+		CharacterService.apply(c, name, true)
 	end
 	return true
 end
+
+-- combat récent (coup donné / reçu, bloqué, garde cassée, paré) : pas de changement de perso en direct
+function CharacterService.inCombat(character: Model?): boolean
+	if not character then
+		return false
+	end
+	local t = lastCombat[character]
+	return t ~= nil and os.clock() - t < COMBAT_LOCK
+end
+
+-- requête du client (remote SelectCharacter) : limitée, ignorée si rien ne change, différée en combat
+local function onSelect(player: Player, name)
+	if type(name) ~= "string" or not Net.allow(player, "SelectCharacter", 1) then
+		return
+	end
+	local def = Characters[name]
+	if not def then
+		return
+	end
+	if not usable(player, name) then
+		Announce.toast(player, "LOCKED! Unlock " .. (def.DisplayName or name) .. " first.", Color3.fromRGB(255, 110, 90))
+		return
+	end
+	local c = player.Character
+	local live = c and CharacterState.isAlive(c) and c:GetAttribute("CharacterName") or nil
+	if player:GetAttribute("CharacterName") == name and (live == nil or live == name) then
+		if pending[player] then
+			pending[player] = nil -- re-choisir le perso actuel annule un changement en file
+			player:SetAttribute("PendingCharacter", nil)
+		end
+		return
+	end
+	if live and CharacterService.inCombat(c) then
+		pending[player] = name
+		player:SetAttribute("PendingCharacter", name)
+		Announce.toast(player, "In combat! You'll be " .. (def.DisplayName or name) .. " next respawn.", Color3.fromRGB(255, 200, 90))
+		return
+	end
+	CharacterService.setCharacter(player, name)
+end
+CharacterService.onSelect = onSelect
 
 ------------------------------------------------------------------------
 -- Transformation
@@ -408,15 +501,31 @@ function CharacterService.init()
 	end
 	FX = Net.get("FX")
 	AbilityService.getKit = CharacterService.getKit
-	Net.get("SelectCharacter").OnServerEvent:Connect(function(player, name)
-		if type(name) == "string" then
-			if not CharacterService.setCharacter(player, name) and Characters[name] then
-				Announce.toast(player, "LOCKED! Unlock " .. (Characters[name].DisplayName or name) .. " first.", Color3.fromRGB(255, 110, 90))
-			end
+	Net.get("SelectCharacter").OnServerEvent:Connect(onSelect)
+	-- verrou de combat : les deux camps de chaque échange (comme AFKService)
+	local function stamp(a, b)
+		local t = os.clock()
+		if typeof(a) == "Instance" then
+			lastCombat[a] = t
 		end
-	end)
+		if typeof(b) == "Instance" then
+			lastCombat[b] = t
+		end
+	end
+	Signals.Hit:Connect(stamp) -- (attacker, victim, damage, info)
+	Signals.Blocked:Connect(stamp) -- (attacker, victim)
+	Signals.GuardBroken:Connect(stamp) -- (victim, attacker)
+	Signals.Parried:Connect(stamp) -- (defender, attacker)
 	Net.get("Transform").OnServerEvent:Connect(transform)
 	table.insert(PlayerService.afterSpawn, function(player, character)
+		-- changement demandé en combat : appliqué maintenant (perso neuf)
+		local queued = pending[player]
+		pending[player] = nil
+		player:SetAttribute("PendingCharacter", nil)
+		if queued and usable(player, queued) then
+			player:SetAttribute("AdminChar", nil)
+			player:SetAttribute("CharacterName", queued)
+		end
 		local name = player:GetAttribute("CharacterName") or DEFAULT
 		if not usable(player, name) then
 			name = DEFAULT

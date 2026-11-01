@@ -28,9 +28,15 @@ local CombatConfig = require(Shared.Config.Combat)
 local Net = require(Shared.Modules.Net)
 local Hitbox = require(Shared.Modules.Hitbox)
 local M1Style = require(Shared.Modules.M1Style) -- mini-chaîne des Use d'objets (Config/M1Styles.ItemChains)
+
 local CharacterState = require(script.Parent.CharacterState)
 local CombatService = require(script.Parent.CombatService)
 local ZoneService = require(script.Parent.ZoneService)
+
+-- enchaînement d'objet : 3 coups consécutifs puis endlag (reset après 1,2 s sans frapper ou changement d'objet)
+local ITEM_STRING_HITS = 3
+local ITEM_STRING_ENDLAG = 0.7
+local ITEM_STRING_RESET = 1.2
 local Signals = require(script.Parent.Signals)
 local World = require(script.Parent.World)
 
@@ -491,6 +497,22 @@ local function onUse(player: Player, character: Model, seq: number, mods)
 	end
 	s.nextAttack = t + use.Cooldown
 	s.combo = 0
+	-- enchaînement d'objet (compteur serveur, indépendant de l'index client mods.ic) : le 3e coup consécutif
+	-- ajoute ITEM_STRING_ENDLAG d'endlag (ni attaque, ni block, pose « essoufflé ») -> DPS soutenu borné (docs/Equilibrage.md)
+	local str = s.itemString
+	if not str or str.rec ~= rec or t - str.last > ITEM_STRING_RESET + use.Cooldown then
+		str = { rec = rec, n = 0, last = t }
+		s.itemString = str
+	end
+	str.n += 1
+	str.last = t
+	if str.n >= ITEM_STRING_HITS and use.Special ~= "Eat" then
+		str.n = 0
+		local recover = use.Cooldown + ITEM_STRING_ENDLAG
+		s.nextAttack = t + recover
+		s.busyUntil = math.max(s.busyUntil or 0, t + recover)
+		character:SetAttribute("EndlagUntil", workspace:GetServerTimeNow() + recover)
+	end
 	-- mini-chaîne (Config/M1Styles.ItemChains) : index du client (mods.ic) accepté s'il est cohérent avec celui du serveur
 	Anim:FireAllClients(character, (M1Style.itemAnim(character, use.Anim or "Jab", type(mods) == "table" and mods.ic or nil)))
 	if rec.cfg.SlamPath then

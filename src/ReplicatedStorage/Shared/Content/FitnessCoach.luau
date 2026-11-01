@@ -1,6 +1,6 @@
 --[[
 	The Fitness Coach — personnage complet (format : voir Modules/ContentLoader).
-	Passif No Pain No Gain : sous 50 % de PV, +20 % de dégâts et +10 % de vitesse.
+	Passif No Pain No Gain : sous 50 % de PV, +12 % de dégâts et +10 % de vitesse.
 	Attaques : Kettlebell Swing (énorme swing à deux mains), Medicine Ball (ballon lourd qui traverse et rebondit sur les murs),
 	           Spot Me! (saisie : développé-couché de la victime au-dessus de la tête, 3 reps, puis lancer).
 	Transformation Beast Mode : Protein Shake (buff : soin, +25 % dégâts, -30 % de recul subi + onde de flex),
@@ -32,7 +32,7 @@ M.Character = {
 	Role = "Bruiser",
 	Color = LIME,
 	Shirt = Color3.fromRGB(150, 230, 40), Pants = Color3.fromRGB(40, 40, 55), Tie = DARK,
-	Passive = { Name = "No Pain No Gain", Desc = "Below 50% HP he deals +20% damage and gets +10% speed." },
+	Passive = { Name = "No Pain No Gain", Desc = "Below 50% HP he deals +12% damage and gets +10% speed." },
 	Attacks = { "KettlebellSwing", "MedicineBall", "SpotMe" },
 	Transformation = { Name = "Beast Mode", Desc = "Giant headphones, champion belt and bulging shoulders.", Duration = 20, SpeedMultiplier = 1.1 },
 	TransAttacks = { "ProteinShake", "JumpRopeWhirlwind", "PushUpShockwave" },
@@ -40,12 +40,12 @@ M.Character = {
 
 M.Attacks = {
 	KettlebellSwing = { Name = "Kettlebell Swing", Kind = "Melee", Desc = "Hike a huge kettlebell between your legs and swing it up: launches everything in front.", Prop = "FitKettlebell", Cooldown = 7, Anim = "FitSwing", Sound = "Whoosh",
-		Windup = 0.34, HitboxOffset = 4, HitboxSize = Vector3.new(9, 6, 7), Damage = 13, Knockback = 52, KnockUp = 26, Stun = 1.0, Category = "Heavy", Power = 1.05, Material = "Metal",
+		Windup = 0.34, HitboxOffset = 4, HitboxSize = Vector3.new(9, 6, 7), Damage = 13, Knockback = 52, KnockUp = 26, Stun = 1.0, Category = "Heavy", GuardBreak = true, Power = 1.05, Material = "Metal",
 		Words = { "KETTLEBELL!", "ONE REP!", "WHAM!" } },
 	MedicineBall = { Name = "Medicine Ball", Kind = "FitBall", Desc = "Chest-pass a heavy medicine ball: it plows through coworkers and bounces off walls.", Prop = "FitMedBall", Cooldown = 7, Anim = "FitBall", Sound = "Throw",
 		Speed = 78, Range = 80, Bounces = 2, Damage = 8, Knockback = 30, KnockUp = 12, Stun = 0.8, Category = "Heavy", Power = 0.75, Words = { "MEDICINE BALL!", "BOOF!" } },
 	SpotMe = { Name = "Spot Me!", Kind = "FitSpot", Desc = "Grab a coworker, bench-press them overhead for 3 reps, then hurl them forward.", Cooldown = 10, Anim = "FitSpot", Sound = "Whoosh",
-		HitboxOffset = 3.5, HitboxSize = Vector3.new(6, 6, 7), Reps = 3, RepTime = 0.25, RepDamage = 1.5, Damage = 9, ThrowKnockback = 58, ThrowUp = 28, Stun = 1.0, Category = "Heavy", Power = 1.0,
+		HitboxOffset = 3.5, HitboxSize = Vector3.new(6, 6, 7), Reps = 3, RepTime = 0.25, RepDamage = 1.5, Windup = 0.25, Damage = 9, ThrowKnockback = 58, ThrowUp = 28, Stun = 1.0, Category = "Heavy", Power = 1.0,
 		Words = { "SPOT ME!", "LIGHTWEIGHT!" } },
 	ProteinShake = { Name = "Protein Shake", Kind = "FitShake", Desc = "Chug a protein shake: heal 15, then 6s of +25% damage and -30% knockback taken. Flex blast!", Prop = "FitShaker", Cooldown = 16, Anim = "FitShake", Sound = "Eat",
 		Heal = 15, BuffTime = 6, Radius = 8, Damage = 4, Knockback = 30, KnockUp = 8, Stun = 0.4, Category = "Light", Power = 0.5, Words = { "GAINS!", "FLEX!" } },
@@ -53,7 +53,7 @@ M.Attacks = {
 		Radius = 10, Hits = 6, Interval = 0.17, Damage = 2, Knockback = 8, KnockUp = 4, Stun = 0.45, Category = "Light", Power = 0.3, Words = { "WHIP!", "SNAP!", "DOUBLE UNDER!" },
 		Final = { Damage = 6, Knockback = 44, KnockUp = 30, Stun = 1.0, Category = "Heavy", Power = 1.0, Words = { "FEEL THE BURN!" } } },
 	PushUpShockwave = { Name = "Push-Up Shockwave", Kind = "FitPushUp", Desc = "Drop and do ONE mega push-up: the floor shockwave PINS everyone around you.", Cooldown = 13, Anim = "FitPushUp", Sound = "GroundSlam",
-		Windup = 0.45, Radius = 14, Damage = 13, Knockback = 0, Stun = 1.4, Category = "Heavy", Power = 1.2,
+		Windup = 0.45, Radius = 14, Damage = 13, Knockback = 0, Stun = 1.4, Category = "Heavy", GuardBreak = true, Power = 1.2,
 		Words = { "DROP AND GIVE ME 20!", "NO PAIN NO GAIN!" }, Effects = { Pin = true } },
 }
 
@@ -378,7 +378,7 @@ function M.ServerInit(api)
 		local a, v = p.attacker, p.victim
 		if a and a:GetAttribute("CharacterName") == "FitnessCoach" then
 			if lowHP(a) then
-				p.damage *= 1.2
+				p.damage *= 1.12
 			end
 			if (a:GetAttribute("FitPumpUntil") or 0) > now() then
 				p.damage *= 1.25

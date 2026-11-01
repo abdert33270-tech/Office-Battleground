@@ -1,7 +1,7 @@
 --[[
 	The Consultant — personnage complet (format : voir Modules/ContentLoader).
 	Consultant en stratégie : diapos PowerPoint (parodie), graphiques, mots à la mode, pointeur laser, « let's circle back ».
-	Passif « Move the Needle » : chaque coup porté ajoute +1 KPI (max 5) ; chaque KPI = +4 % de dégâts.
+	Passif « Move the Needle » : chaque coup porté ajoute +1 KPI (max 4) ; chaque KPI = +4 % de dégâts.
 	Un coup lourd subi fait s'effondrer la courbe (KPI à 0). Graphique de KPI affiché au-dessus de lui.
 	Attaques : Laser Pointer (visée puis rayon instantané : marque +5), Let's Circle Back (diapo-boomerang aller + retour
 	           qui ramène vers lui), Buzzword Blast (cône de lettres géantes qui étourdit).
@@ -36,7 +36,7 @@ M.Character = {
 	Role = "Ranged strategist",
 	Color = ROYAL,
 	Shirt = Color3.fromRGB(35, 45, 85), Pants = Color3.fromRGB(32, 34, 48), Tie = ORANGE,
-	Passive = { Name = "Move the Needle", Desc = "Every hit he lands adds +1 KPI (max 5): each KPI = +4% damage. Taking a heavy hit crashes the chart back to 0." },
+	Passive = { Name = "Move the Needle", Desc = "Every hit he lands adds +1 KPI (max 4): each KPI = +4% damage. Taking a heavy hit crashes the chart back to 0." },
 	Attacks = { "LaserPointer", "CircleBack", "Buzzword" },
 	Transformation = { Name = "Keynote Mode", Desc = "Headset mic, a floating projector screen behind him and a holographic pie chart over his shoulder.", Duration = 20, SpeedMultiplier = 1.1 },
 	TransAttacks = { "ParadigmShift", "GrowthChart", "TakeOffline" },
@@ -53,9 +53,9 @@ M.Attacks = {
 	ParadigmShift = { Name = "Paradigm Shift", Kind = "CSSlideWall", Desc = "A giant presentation slide slams down and SWEEPS forward like a wall, bulldozing everyone in its path.", Cooldown = 12, Anim = "CSParadigm", Sound = "Whoosh",
 		Windup = 0.34, Width = 14, Distance = 30, Time = 0.6, Damage = 9, Knockback = 52, KnockUp = 14, Stun = 0.9, Category = "Heavy", Power = 1.0, Words = { "PARADIGM SHIFT!", "NEXT SLIDE!" } },
 	GrowthChart = { Name = "Exponential Growth", Kind = "CSGrowth", Desc = "The bars of a giant growth chart erupt one after another in a line, each taller than the last, launching coworkers sky-high.", Prop = "CSClicker", Cooldown = 13, Anim = "CSGrowth", Sound = "Rumble",
-		Windup = 0.35, Bars = 5, Gap = 4.5, Interval = 0.12, Radius = 3.4, Damage = 8, Knockback = 6, Launch = Vector3.new(4, 50, 0), Stun = 1.0, Category = "Heavy", Power = 0.9, Words = { "STONKS!", "+400%!", "Q4 GROWTH!" } },
+		Windup = 0.35, Bars = 5, Gap = 4.5, Interval = 0.12, Radius = 3.4, Damage = 8, Knockback = 6, Launch = Vector3.new(4, 50, 0), Stun = 1.0, Category = "Heavy", GuardBreak = true, Power = 0.9, Words = { "STONKS!", "+400%!", "Q4 GROWTH!" } },
 	TakeOffline = { Name = "Let's Take This Offline", Kind = "CSOffline", Desc = "Leap onto the closest coworker in front and slam a giant 3-ring binder down on them: PINS everyone under it.", Prop = "CSBinder", Cooldown = 11, Anim = "CSOffline", Sound = "Whoosh",
-		Range = 26, Offset = 12, Radius = 8, Up = 42, Rise = 0.3, Damage = 13, Knockback = 0, Stun = 1.3, Category = "Heavy", Power = 1.2, Words = { "OFFLINE!", "MEETING ADJOURNED!" }, Effects = { Pin = true } },
+		Range = 26, Offset = 12, Radius = 8, Up = 42, Rise = 0.3, Windup = 0.25, Damage = 13, Knockback = 0, Stun = 1.3, Category = "Heavy", Power = 1.2, Words = { "OFFLINE!", "MEETING ADJOURNED!" }, Effects = { Pin = true } },
 }
 
 ------------------------------------------------------------------------
@@ -463,7 +463,7 @@ M.Kinds = {
 ------------------------------------------------------------------------
 -- Passif (serveur) : Move the Needle (KPI)
 ------------------------------------------------------------------------
-local KPI_MAX, KPI_BONUS = 5, 0.04
+local KPI_MAX, KPI_BONUS = 4, 0.04
 function M.ServerInit(api)
 	local CombatService = api.CombatService
 	table.insert(CombatService.damageMods, function(p)

@@ -36,7 +36,7 @@ M.Character = {
 M.Attacks = {
 	MonkeyWrench = { Name = "Monkey Wrench", Kind = "Melee", Desc = "Wind up your giant wrench and bring it down two-handed: pins the coworker in front to the floor.", Prop = "MGWrench", Cooldown = 7, Anim = "MGWrench", Sound = "Clang",
 		Windup = 0.32, HitboxOffset = 3.5, HitboxSize = Vector3.new(6, 7, 7.5), Material = "Metal",
-		Damage = 12, Knockback = 0, KnockUp = 0, Stun = 1.2, Category = "Heavy", Power = 1.0, Words = { "BONK!", "TIGHTENED!", "CLANG!" }, Effects = { Pin = true } },
+		Damage = 12, Knockback = 0, KnockUp = 0, Stun = 1.2, Category = "Heavy", GuardBreak = true, Power = 1.0, Words = { "BONK!", "TIGHTENED!", "CLANG!" }, Effects = { Pin = true } },
 	FuseBox = { Name = "Fuse Box", Kind = "MGFuseBox", Desc = "Plant a live fuse box: for 5 s it zaps the closest coworker nearby with lightning.", Cooldown = 14, Anim = "MGFuseBox", Sound = "Electric",
 		Windup = 0.3, Offset = 4, Life = 5, Interval = 0.75, Range = 17, Damage = 2.5, Knockback = 6, KnockUp = 4, Stun = 0.45, Category = "Light", Power = 0.35, Words = { "ZAP!", "BZZT!" } },
 	DuctTape = { Name = "Duct Tape", Kind = "MGDuctTape", Desc = "Hurl a roll of duct tape that bounces off walls and tapes up the first coworker it hits (big slow).", Prop = "MGTapeRoll", Cooldown = 8, Anim = "MGDuctTape", Sound = "Throw",
@@ -47,7 +47,7 @@ M.Attacks = {
 	ShortCircuit = { Name = "Short Circuit", Kind = "MGShortCircuit", Desc = "Punch the floor and send a surge of electricity racing forward that launches everyone in its path.", Cooldown = 10, Anim = "MGShortCircuit", Sound = "Electric",
 		Windup = 0.36, Length = 32, Width = 6, Damage = 9, Knockback = 6, Launch = Vector3.new(6, 46, 0), Stun = 1.0, Category = "Heavy", Power = 0.85, Words = { "SHORT CIRCUIT!", "KZZZT!" } },
 	ToolboxDrop = { Name = "Toolbox Drop", Kind = "MGToolbox", Desc = "Call in a giant toolbox from the ceiling: it crushes and pins everyone under it.", Cooldown = 14, Anim = "MGToolbox", Sound = "Crash",
-		Windup = 0.55, Offset = 13, Radius = 10, Damage = 14, Knockback = 0, Stun = 1.3, Category = "Heavy", Power = 1.2, Words = { "TOOLBOX!", "CRUNCH!" }, Effects = { Pin = true } },
+		Windup = 0.55, Offset = 13, Radius = 10, Damage = 14, Knockback = 0, Stun = 1.3, Category = "Heavy", GuardBreak = true, Power = 1.2, Words = { "TOOLBOX!", "CRUNCH!" }, Effects = { Pin = true } },
 }
 
 ------------------------------------------------------------------------
