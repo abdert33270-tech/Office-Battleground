@@ -77,7 +77,9 @@ partir des **mêmes événements que les dégâts** : `Signals.Hit` (et `Blocked
 `canM1(model)`. Elles appellent `CombatService.performM1(character, mods)`, `performBlock(character, on)`,
 `performDash(character, kind)` quand ils existent (détection + `pcall`), sinon un **repli** : chaîne de M1 recopiée
 de Config (`CombatService.swing`), `CharacterState.setBlocking`, dash par `LinearVelocity`, EVASIVE émulée
-(attaquants repoussés par un `applyHit` sans dégâts).
+(attaquants repoussés par un `applyHit` sans dégâts). `performDash` renvoie `"Dash"` / `"Evasive"` / nil ;
+`performBlock(c, on, auto)` : `auto = true` = pas de perfect block. Les bots n'ont pas de kit de perso :
+`AbilityService.performAbility` n'est pas utilisé, l'attaque générique passe par `AbilityService.api.Kinds`.
 
 ## Remote `Training`
 

@@ -1,7 +1,8 @@
 --[[
 	AFKController — bouton AFK du dock (devient EXIT dans la salle) + tout le côté client de la salle de pause.
 	- Compteur en haut de l'écran (compact, lisible sur mobile) :
-		« AFK 03:12        $150 »  + barre jusqu'au prochain versement + « next +25 in 00:48 · bonus in 9:12 · 2,850 left today »
+		« AFK 03:12        $150 »  + barre jusqu'au prochain versement + « next +25 in 00:48 · $1,350 left today »
+		+ ligne dorée mise en avant « NEXT BONUS +100 in 07:12 » avec sa propre barre (BonusEvery = 10 min)
 		+ gros bouton EXIT. Échelle propre (UIScale) : téléphone ~0.9, PC 1.
 	- Chaque versement : « +25 CASH » qui jaillit au-dessus du perso + son (CartoonFX « Ding », « LevelUp » pour le bonus).
 	- Tableau des gains : SurfaceGui locale (PlayerGui, Adornee = BreakRoom.PayoutScreen, face Left = -X, vers la salle)
@@ -39,7 +40,7 @@ local EXIT_COLOR = Color3.fromRGB(240, 90, 70)
 local ORIGIN = Config.Origin
 
 local remote
-local gui, counter, timeText, earnedText, sub, barFill, fade
+local gui, counter, timeText, earnedText, sub, barFill, fade, bonusText, bonusFill
 local board -- { gui, labels }
 local lastSend = 0
 local lastEarned = 0
@@ -95,7 +96,7 @@ local function build()
 		Name = "AFKCounter",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 104), -- sous la barre de phase du HUD
-		Size = UDim2.fromOffset(440, 76),
+		Size = UDim2.fromOffset(440, 104),
 		Accent = BLUE,
 		Visible = false,
 		Parent = gui,
@@ -126,6 +127,14 @@ local function build()
 	UIKit.corner(barFill, UDim.new(0.5, 0))
 	sub = UIKit.label({ Name = "Sub", Text = "", Font = UIKit.Body, Position = UDim2.fromOffset(14, 51), Size = UDim2.new(1, -130, 0, 15), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = UIKit.Colors.Muted, Stroke = 1.5, ZIndex = 2 })
 	sub.Parent = counter
+	-- prochain bonus : ligne dorée bien visible + barre (le gros versement des 10 min)
+	bonusText = UIKit.label({ Name = "Bonus", Text = "", Position = UDim2.fromOffset(14, 70), Size = UDim2.new(1, -130, 0, 16), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = UIKit.Colors.Gold, Stroke = 2, ZIndex = 2 })
+	bonusText.Parent = counter
+	local bbar = UIKit.new("Frame", { Name = "BonusBar", BackgroundColor3 = UIKit.Colors.Slot, Position = UDim2.fromOffset(14, 89), Size = UDim2.new(1, -130, 0, 8), ZIndex = 2, Parent = counter })
+	UIKit.corner(bbar, UDim.new(0.5, 0))
+	UIKit.stroke(bbar, 2, UIKit.Black, true)
+	bonusFill = UIKit.new("Frame", { Name = "Fill", BackgroundColor3 = UIKit.Colors.Gold, Size = UDim2.fromScale(0, 1), ZIndex = 3, Parent = bbar })
+	UIKit.corner(bonusFill, UDim.new(0.5, 0))
 	local exit = UIKit.button({ Name = "Exit", Text = "EXIT", Color = EXIT_COLOR, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.fromOffset(100, 56), ZIndex = 3, Parent = counter })
 	exit.Activated:Connect(function()
 		send("Exit")
@@ -178,7 +187,7 @@ local function ensureBoard()
 		})
 		UIKit.Theme.hookFonts(sg)
 		local holder = UIKit.new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromScale(0.04, 0.08), Size = UDim2.fromScale(0.92, 0.84), Parent = sg })
-		UIKit.new("UIGridLayout", { CellSize = UDim2.fromScale(0.5, 0.5), CellPadding = UDim2.new(), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
+		UIKit.new("UIGridLayout", { CellSize = UDim2.fromScale(1 / 3, 0.5), CellPadding = UDim2.new(), SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
 		local labels = {}
 		local function cell(order, title, color)
 			local f = UIKit.new("Frame", { BackgroundTransparency = 1, LayoutOrder = order, Parent = holder })
@@ -190,8 +199,9 @@ local function ensureBoard()
 		end
 		labels.earned = cell(1, "EARNED THIS BREAK", UIKit.Colors.Cash)
 		labels.next = cell(2, "NEXT PAYOUT", UIKit.Colors.Yellow)
-		labels.time = cell(3, "TIME ON BREAK", Color3.fromRGB(150, 210, 255))
-		labels.cap = cell(4, "LEFT TODAY", Color3.fromRGB(255, 190, 120))
+		labels.bonus = cell(3, "NEXT BONUS", UIKit.Colors.Gold)
+		labels.time = cell(4, "TIME ON BREAK", Color3.fromRGB(150, 210, 255))
+		labels.cap = cell(5, "LEFT TODAY", Color3.fromRGB(255, 190, 120))
 		sg.Parent = pg
 		board = { gui = sg, labels = labels }
 	end
@@ -199,7 +209,7 @@ local function ensureBoard()
 	return board
 end
 
-local function updateBoard(now, since, toPay, earned, capLeft, on)
+local function updateBoard(now, since, toPay, earned, capLeft, on, toBonus)
 	local b = ensureBoard()
 	if not b then
 		return
@@ -208,10 +218,16 @@ local function updateBoard(now, since, toPay, earned, capLeft, on)
 	if not on then
 		L.earned.Text, L.next.Text, L.time.Text = "-", "-", "-"
 		L.cap.Text = "-"
+		if L.bonus then
+			L.bonus.Text = "-"
+		end
 		return
 	end
 	L.earned.Text = money(earned)
 	L.time.Text = fmt(now - since)
+	if L.bonus then
+		L.bonus.Text = (capLeft == 0 or not toBonus) and "-" or ("+" .. Config.BonusAmount .. " in " .. fmt(toBonus))
+	end
 	if capLeft == 0 then
 		L.next.Text = "CAP REACHED"
 		L.cap.Text = "$0"
@@ -233,8 +249,9 @@ local function update()
 	local earned = tonumber(player:GetAttribute("AFKEarned")) or 0
 	local capLeft = tonumber(player:GetAttribute("AFKCapLeft")) or -1
 	local toPay = math.max(0, nextPay - now)
+	local toBonus = nextBonus and math.max(0, nextBonus - now) or nil
 	if on or board then
-		updateBoard(now, since, toPay, earned, capLeft, on)
+		updateBoard(now, since, toPay, earned, capLeft, on, toBonus)
 	end
 	if not counter or not counter.Visible then
 		return
@@ -245,6 +262,8 @@ local function update()
 		barFill.Size = UDim2.fromScale(1, 1)
 		barFill.BackgroundColor3 = UIKit.Colors.Orange
 		sub.Text = "Daily cap reached - come back tomorrow!"
+		bonusText.Text = "NO MORE BONUS TODAY"
+		bonusFill.Size = UDim2.fromScale(1, 1)
 	else
 		barFill.Size = UDim2.fromScale(math.clamp(1 - toPay / Config.PayInterval, 0, 1), 1)
 		barFill.BackgroundColor3 = UIKit.Colors.Cash
@@ -253,8 +272,14 @@ local function update()
 		if rj and now - rj < REJOIN_NOTE then
 			parts = { "Reconnected to keep you AFK" }
 		end
-		if nextBonus then
-			table.insert(parts, "bonus in " .. fmt(nextBonus - now))
+		if toBonus then
+			bonusText.Text = "NEXT BONUS +" .. Config.BonusAmount .. " in " .. fmt(toBonus)
+			bonusFill.Size = UDim2.fromScale(math.clamp(1 - toBonus / Config.BonusEvery, 0, 1), 1)
+			-- dernière minute : le texte pulse pour attirer l'oeil
+			bonusText.TextTransparency = toBonus < 60 and (0.35 - 0.35 * math.abs(math.sin(now * 3))) or 0
+		else
+			bonusText.Text = "NEXT BONUS +" .. Config.BonusAmount
+			bonusFill.Size = UDim2.fromScale(0, 1)
 		end
 		if capLeft > 0 then
 			table.insert(parts, money(capLeft) .. " left today")
