@@ -40,6 +40,7 @@ end
 
 -- direction de visée validée (comme Kinds.Projectile)
 function Kit.aimDir(attacker, aim)
+	Kit.noteCaster(attacker)
 	local root = Kit.root(attacker)
 	local look = root and root.CFrame.LookVector or Vector3.new(0, 0, -1)
 	local base = (typeof(aim) == "Vector3" and aim.Magnitude > 0.5 and aim.Magnitude < 2) and aim.Unit or look
@@ -49,10 +50,63 @@ end
 ------------------------------------------------------------------------
 -- SERVEUR
 ------------------------------------------------------------------------
+-- CONTEXTE (lanceur / victime) des Kit.fx : le filtre des onomatopées côté client (CartoonFX.isRelevant)
+-- a besoin de savoir qui attaque qui. Les Kinds de Content tournent chacun dans un thread neuf
+-- (task.spawn d'AbilityService) : toute fonction du Kit qui reçoit l'attaquant le note sur le thread courant,
+-- et Kit.fx l'ajoute au payload (clés ca / cv : jamais a / v, pour ne pas changer le comportement des handlers
+-- qui testent d.a / d.v). Les callbacks onHit de Kit.projectile reçoivent (attaquant, victime) explicitement.
+local CTX_LIFE = 8 -- s : au-delà, un indice est jugé périmé (threads de connexions réutilisés)
+local threadCtx = setmetatable({}, { __mode = "k" }) -- [thread] = { a, v, t }
+
+local function isChar(m)
+	return typeof(m) == "Instance" and m:IsA("Model")
+end
+
+-- note l'attaquant (et la victime) du thread courant
+function Kit.noteCaster(attacker, victim)
+	if not isChar(attacker) then
+		return
+	end
+	local th = coroutine.running()
+	local c = threadCtx[th]
+	if c and c.a == attacker then
+		c.t = os.clock()
+		if victim ~= nil then
+			c.v = victim
+		end
+	else
+		threadCtx[th] = { a = attacker, v = victim, t = os.clock() }
+	end
+end
+
+-- exécute fn(...) avec un contexte explicite (pour du code Content qui crée ses propres threads)
+function Kit.withCaster(attacker, victim, fn, ...)
+	local th = coroutine.running()
+	local prev = threadCtx[th]
+	threadCtx[th] = isChar(attacker) and { a = attacker, v = victim, t = os.clock() } or prev
+	local res = table.pack(pcall(fn, ...))
+	threadCtx[th] = prev
+	if not res[1] then
+		error(res[2], 0)
+	end
+	return table.unpack(res, 2, res.n)
+end
+
 local fxRemote
 function Kit.fx(data)
 	fxRemote = fxRemote or Net.get("FX")
 	data.k = "Content"
+	if isChar(data.a) then
+		Kit.noteCaster(data.a) -- payload explicite : rafraîchit l'indice pour les Kit.fx suivants
+	else
+		local c = threadCtx[coroutine.running()]
+		if c and os.clock() - c.t < CTX_LIFE and c.a.Parent then
+			data.ca = c.a
+			if data.v == nil and data.cv == nil and isChar(c.v) then
+				data.cv = c.v
+			end
+		end
+	end
 	fxRemote:FireAllClients(data)
 end
 function Kit.rawFX(data)
@@ -65,6 +119,7 @@ function Kit.isProtected(c)
 end
 
 function Kit.enemies(attacker)
+	Kit.noteCaster(attacker)
 	local list = {}
 	for _, c in ipairs(Hitbox.characters()) do
 		if c ~= attacker and Kit.root(c) then
@@ -87,6 +142,7 @@ end
 
 -- premier ennemi sur une ligne (origine, direction, portée, largeur)
 function Kit.firstInLine(attacker, origin, dir, range, width)
+	Kit.noteCaster(attacker)
 	local cf = CFrame.lookAt(origin + dir * range / 2, origin + dir * range)
 	local hits = Hitbox.box(cf, Vector3.new(width, 7, range), attacker)
 	local best, bestD = nil, math.huge
@@ -213,6 +269,7 @@ end
 	         onEnd = function(pos) }
 ]]
 function Kit.projectile(attacker, opts)
+	Kit.noteCaster(attacker)
 	local part = Kit.sPart({ Name = "Projectile", Size = opts.size or Vector3.one, Color = opts.color or Color3.new(1, 1, 1) })
 	if opts.shape then
 		part.Shape = opts.shape
@@ -235,7 +292,7 @@ function Kit.projectile(attacker, opts)
 		Kit.rawFX({ k = "ProjPop", p = pos, c = part.Color })
 		part:Destroy()
 		if opts.onEnd then
-			opts.onEnd(pos)
+			Kit.withCaster(attacker, nil, opts.onEnd, pos)
 		end
 	end
 	conn = RunService.Heartbeat:Connect(function(dt)
@@ -263,7 +320,7 @@ function Kit.projectile(attacker, opts)
 		for _, v in ipairs(Hitbox.box(CFrame.new(newPos), part.Size + Vector3.one * 2.5, attacker, 3)) do
 			if not hitSet[v] then
 				hitSet[v] = true
-				local keep = opts.onHit and opts.onHit(v, newPos, vel, part)
+				local keep = opts.onHit and Kit.withCaster(attacker, v, opts.onHit, v, newPos, vel, part)
 				if keep and typeof(keep) == "Vector3" then
 					vel = keep -- nouvelle vitesse (rebond vers une autre cible)
 					traveled = 0
@@ -292,6 +349,23 @@ function Kit.mine(c)
 	return player ~= nil and c ~= nil and c == player.Character
 end
 
+-- (attaquant, victime) d'un payload Kit.fx pour le filtre des mots : a / v explicites, sinon ca / cv
+-- (contexte serveur), et si je fais partie de la liste vs je suis la victime
+function Kit.context(d)
+	local a = isChar(d.a) and d.a or (isChar(d.ca) and d.ca or nil)
+	local v = isChar(d.v) and d.v or (isChar(d.cv) and d.cv or nil)
+	local me = player and player.Character
+	if me and v == nil and a ~= me and type(d.vs) == "table" then
+		for _, m in ipairs(d.vs) do
+			if m == me then
+				v = me
+				break
+			end
+		end
+	end
+	return a, v
+end
+
 function Kit.on(id, fn)
 	handlers[id] = fn
 	if connected or RunService:IsServer() then
@@ -299,13 +373,14 @@ function Kit.on(id, fn)
 	end
 	connected = true
 	task.spawn(function()
+		local CartoonFX = require(Shared.Modules.CartoonFX) -- paresseux : jamais requis côté serveur
 		Net.get("FX").OnClientEvent:Connect(function(d)
 			if type(d) == "table" and d.k == "Content" then
 				local h = handlers[d.id or ""]
 				if h then
-					local ok, err = pcall(h, d)
-					if not ok then
-						warn("[ContentKit]", d.id, err)
+					local a, v = Kit.context(d)
+					if not CartoonFX.withContext(a, v, h, d) then
+						warn("[ContentKit] handler en erreur :", d.id)
 					end
 				end
 			end
@@ -481,6 +556,7 @@ end
 
 -- ruée horizontale (s'arrête devant un mur) ; onStep(root) renvoie true pour arrêter
 function Kit.dash(attacker, dir, speed, duration, onStep)
+	Kit.noteCaster(attacker)
 	local root = Kit.root(attacker)
 	if not root then
 		return
@@ -517,6 +593,7 @@ end
 
 -- bond vers un point : montée (up studs/s pendant rise s) puis chute rapide ; rend la main à l'atterrissage
 function Kit.leap(attacker, dest, up, rise)
+	Kit.noteCaster(attacker)
 	local root = Kit.root(attacker)
 	local hum = attacker:FindFirstChildOfClass("Humanoid")
 	if not root or not hum then
@@ -552,6 +629,7 @@ end
 
 -- maintient la victime à offset (repère de la racine de l'attaquant) ; renvoie release(keepDown), attachment (bouger a1.Position)
 function Kit.holdAt(victim, attacker, offset)
+	Kit.noteCaster(attacker, victim)
 	local vr, ar = Kit.root(victim), Kit.root(attacker)
 	local hum = victim:FindFirstChildOfClass("Humanoid")
 	if not vr or not ar then

@@ -34,6 +34,10 @@ function CharacterState.get(character: Model)
 			hitStreak = 0, streakLast = 0,  -- (compatibilité : remis à zéro par UltimateService)
 			recentVictims = {},             -- [victime] = os.clock() du dernier coup (finishers)
 			blocking = false, wantBlock = false, blockStart = -10, lastBlockPress = -10,
+			parryAttempt = nil, parryLockUntil = 0, -- tentative de PERFECT BLOCK en cours / ratée -> verrou (os.clock)
+			pendingKO = false,              -- coup fatal engagé (hit-stop K.O.) : plus aucun coup, mort assurée
+			recentAttackers = {},           -- [attaquant] = os.clock() du dernier coup reçu (EVASIVE)
+			chainStart = nil, chainLinks = 0, -- combo vrai subi (server time) : plafond anti-infini (CombatConfig.ComboCap)
 			guard = CombatConfig.Block.MaxGuard, guardT = 0, guardHitT = -100,
 			held = nil,
 		}
@@ -60,9 +64,10 @@ function CharacterState.setup(character: Model)
 			p.CollisionGroup = "Characters"
 		end
 	end
-	for _, a in ipairs({ "StunUntil", "DizzyUntil", "BlindUntil", "CD1", "CD2", "CD3", "CDDash", "CDDashStrike", "CDEvasive", "KnockdownUntil", "GuardBrokenUntil" }) do
+	for _, a in ipairs({ "StunUntil", "DizzyUntil", "BlindUntil", "CD1", "CD2", "CD3", "CDDash", "CDDashStrike", "CDEvasive", "KnockdownUntil", "GuardBrokenUntil", "EndlagUntil" }) do
 		character:SetAttribute(a, 0)
 	end
+	character:SetAttribute("PendingKO", nil)
 	character:SetAttribute("ComboCount", 0)
 	character:SetAttribute("Blocking", false)
 	character:SetAttribute("Guard", CombatConfig.Block.MaxGuard)
@@ -95,6 +100,24 @@ function CharacterState.recordHit(victim: Model, attacker: Model?, weapon: strin
 	s.lastWeapon = weapon
 	s.lastCause = cause or (attacker and "Combat" or "Event")
 	s.lastHitTime = os.clock()
+	if attacker and attacker ~= victim then
+		s.recentAttackers[attacker] = s.lastHitTime
+	end
+end
+
+-- attaquants qui ont touché la victime dans les `window` dernières secondes (EVASIVE)
+function CharacterState.recentAttackers(victim: Model, window: number): { Model }
+	local s = CharacterState.get(victim)
+	local t = os.clock()
+	local out = {}
+	for a, at in pairs(s.recentAttackers) do
+		if t - at <= window and a.Parent then
+			table.insert(out, a)
+		elseif t - at > window then
+			s.recentAttackers[a] = nil
+		end
+	end
+	return out
 end
 
 ------------------------------------------------------------------------
@@ -217,7 +240,10 @@ end
 -- Garde (block / perfect block / guard break)
 ------------------------------------------------------------------------
 -- noParry = true : block activé automatiquement (F maintenu à la fin d'un hitstun / d'une récupération) :
--- pas de fenêtre de PERFECT BLOCK (sinon maintenir F pendant un combo donnerait une parade gratuite)
+-- pas de fenêtre de PERFECT BLOCK (sinon maintenir F pendant un combo donnerait une parade gratuite).
+-- Anti-spam : une tentative de perfect block RATÉE (fenêtre écoulée sans coup) verrouille la parade pendant
+-- ParryFailRearm après la fin de la fenêtre : rappuyer sur F pendant ce verrou ne donne qu'un block normal.
+-- Maintenir F ne renouvelle jamais la fenêtre (elle ne s'ouvre qu'à l'appui).
 function CharacterState.setBlocking(character: Model, on: boolean, noParry: boolean?)
 	local s = CharacterState.get(character)
 	if on == s.blocking then
@@ -226,8 +252,18 @@ function CharacterState.setBlocking(character: Model, on: boolean, noParry: bool
 	s.blocking = on
 	if on then
 		local t = os.clock()
-		-- fenêtre de parade seulement si on n'a pas spammé la touche
-		s.blockStart = (not noParry and t - s.lastBlockPress >= CombatConfig.Block.ParryRearm) and t or -10
+		local B = CombatConfig.Block
+		local window = B.PerfectWindow or B.ParryWindow
+		-- tentative précédente jamais consommée par un coup : ratée -> verrou
+		if s.parryAttempt and t - s.parryAttempt > window then
+			s.parryLockUntil = math.max(s.parryLockUntil, s.parryAttempt + window + (B.ParryFailRearm or 1))
+			s.parryAttempt = nil
+		end
+		local can = not noParry and t - s.lastBlockPress >= B.ParryRearm and t >= s.parryLockUntil and not s.parryAttempt
+		s.blockStart = can and t or -10
+		if can then
+			s.parryAttempt = t
+		end
 		s.lastBlockPress = t
 	end
 	character:SetAttribute("Blocking", on)
@@ -299,6 +335,7 @@ function CharacterState.knockdown(character: Model, duration: number?)
 	end
 	local untilT = math.max(character:GetAttribute("KnockdownUntil") or 0, now() + duration)
 	character:SetAttribute("KnockdownUntil", untilT)
+	s.chainStart, s.chainLinks = nil, 0 -- le combo subi s'arrête au sol
 	CharacterState.stun(character, untilT - now())
 	hum.PlatformStand = true
 	local token = {}
@@ -308,6 +345,7 @@ function CharacterState.knockdown(character: Model, duration: number?)
 			return
 		end
 		s.kdToken = nil
+		s.chainStart, s.chainLinks = nil, 0
 		character:SetAttribute("KnockdownUntil", 0)
 		local h = character:FindFirstChildOfClass("Humanoid")
 		if h and h.Health > 0 then

@@ -231,6 +231,8 @@ if RunService:IsClient() then
 end
 
 local lastSoundAt = {} -- [clé] = os.clock() : évite d'empiler 5 fois le même son dans la même image
+local lastSoundIdx = {} -- [clé] = dernier index joué (anti-répétition)
+local DEFAULT_VAR = { 0.92, 1.1, 0.88, 1.05 }
 local liveSounds = 0
 local MAX_SOUNDS = 28
 function CartoonFX.sound(key: string, pos: Vector3?, volume: number?, pitch: number?)
@@ -242,11 +244,22 @@ function CartoonFX.sound(key: string, pos: Vector3?, volume: number?, pitch: num
 	if (lastSoundAt[key] or 0) > now - 0.035 or liveSounds >= MAX_SOUNDS then
 		return nil
 	end
+	-- anti-répétition : jamais deux fois de suite le même fichier pour une clé (si la liste en a plusieurs)
+	local idx = rng:NextInteger(1, #list)
+	if #list > 1 and idx == lastSoundIdx[key] then
+		idx = idx % #list + 1
+	end
+	local id = list[idx]
+	if type(id) ~= "string" then
+		return nil
+	end
 	lastSoundAt[key] = now
+	lastSoundIdx[key] = idx
+	local var = (type(Sounds.Variation) == "table" and Sounds.Variation[key]) or Sounds.DefaultVariation or DEFAULT_VAR
 	local s = Instance.new("Sound")
-	s.SoundId = list[rng:NextInteger(1, #list)]
-	s.Volume = math.clamp((volume or 0.7) * rng:NextNumber(0.88, 1.05), 0, 3)
-	s.PlaybackSpeed = (pitch or 1) * rng:NextNumber(0.92, 1.1)
+	s.SoundId = id
+	s.Volume = math.clamp((volume or 0.7) * rng:NextNumber(var[3], var[4]), 0, 3)
+	s.PlaybackSpeed = math.clamp((pitch or 1) * rng:NextNumber(var[1], var[2]), 0.3, 3)
 	s.RollOffMaxDistance = 150
 	s.RollOffMinDistance = 14
 	s.SoundGroup = CartoonFX.sfxGroup()
@@ -1120,6 +1133,36 @@ function CartoonFX.impactFrame(strength: number?)
 	end)
 end
 
+-- flash « ralenti » (parade parfaite) : teinte froide + désaturation qui revient en douceur ;
+-- un seul effet réutilisé, adouci si « Reduce flashes »
+local slowCC
+local slowToken = 0
+function CartoonFX.slowFlash(color: Color3?, dur: number?)
+	if not RunService:IsClient() then
+		return
+	end
+	dur = dur or 0.4
+	if not slowCC or not slowCC.Parent then
+		slowCC = Instance.new("ColorCorrectionEffect")
+		slowCC.Name = "SlowFlash"
+		slowCC.Parent = game:GetService("Lighting")
+	end
+	slowToken += 1
+	local token = slowToken
+	local soft = reducedFlashes()
+	slowCC.Enabled = true
+	slowCC.TintColor = color or Color3.fromRGB(200, 240, 255)
+	slowCC.Brightness = soft and 0.03 or 0.18
+	slowCC.Saturation = soft and -0.15 or -0.45
+	slowCC.Contrast = soft and 0 or 0.1
+	tween(slowCC, dur, { TintColor = Color3.new(1, 1, 1), Brightness = 0, Saturation = 0, Contrast = 0 }, Enum.EasingStyle.Sine)
+	task.delay(dur + 0.05, function()
+		if token == slowToken and slowCC then
+			slowCC.Enabled = false
+		end
+	end)
+end
+
 -- lignes de vitesse plein écran (style manga)
 local linesGui
 function CartoonFX.speedLines(duration: number?, color: Color3?)
@@ -1339,13 +1382,31 @@ function CartoonFX.hit(data)
 	if type(data.d) == "number" and data.d > 0 then
 		CartoonFX.damageNumber(pos, data.d, power, ctx)
 	end
-	CartoonFX.flash(data.v, heavy and 0.12 or 0.07)
-	CartoonFX.sparks(pos, heavy and 18 or 8)
-	CartoonFX.shards(pos, heavy and 10 or 4, nil, heavy and 1.2 or 0.8)
+	CartoonFX.flash(data.v, heavy and 0.12 or 0.05)
 	if heavy then
+		-- LOURD / FINISHER : gros impact, onde d'air dans l'axe du coup, double onde au sol (bigImpact)
+		CartoonFX.sparks(pos, 18)
+		CartoonFX.shards(pos, 10, nil, 1.2)
 		CartoonFX.bigImpact(pos, dir, power + (data.fin and 0.3 or 0) + (data.ko and 0.4 or 0))
+		if dir and (data.fin or data.ko) then
+			CartoonFX.airRing(pos, dir, 11, Color3.fromRGB(255, 245, 220), 0.3)
+			task.delay(0.06, CartoonFX.airRing, pos, dir, 7, Color3.new(1, 1, 1), 0.25)
+		end
 		if mine then
 			CartoonFX.light(pos, Color3.fromRGB(255, 240, 200), 14, 3, 0.18)
+		end
+	else
+		-- LÉGER (M1) : petite étincelle sèche, peu de débris
+		CartoonFX.sparks(pos, 6)
+		CartoonFX.shards(pos, 3, nil, 0.7)
+	end
+	-- PLAQUÉ AU SOL : sol fendu + poussière
+	if data.r == "Slam" then
+		local g = groundAt(pos)
+		if (pos - g).Magnitude < 8 then
+			CartoonFX.cracks(g, 5, 3.5, 1)
+			CartoonFX.dust(g, 6, nil, 8)
+			CartoonFX.sound("GroundCrack", g, 0.8, 0.95)
 		end
 	end
 
@@ -1363,14 +1424,23 @@ function CartoonFX.hit(data)
 
 	-- sons superposés : claque principale + corps (grave) + gros impact + matière + « oof »
 	local vol = mine and 1 or 0.75
-	CartoonFX.sound(Sounds.Category[category] or "Punch", pos, (0.9 + power * 0.5) * vol, heavy and 0.92 or 1.05)
-	CartoonFX.sound("Thud", pos, 0.45 * vol, heavy and 0.8 or 1.15)
+	local base = Sounds.Category[category] or "Punch"
+	if not heavy and base == "Punch" then
+		base = "PunchLight" -- M1 : claque courte et aiguë
+	end
+	CartoonFX.sound(base, pos, (0.9 + power * 0.5) * vol, heavy and 0.9 or 1.12)
 	if heavy then
+		-- couche grave (basse + corps) sous le gros impact
+		CartoonFX.sound("Thud", pos, 0.6 * vol, 0.78)
+		CartoonFX.sound("LowThump", pos, 0.9 * vol, 0.92)
 		CartoonFX.sound("BigImpact", pos, 1.1 * vol)
 		CartoonFX.sound("AnimeHit", pos, 0.7 * vol)
 		if data.fin or data.ko then
-			CartoonFX.sound("Explosion", pos, 0.45 * vol, 1.35)
+			CartoonFX.sound("Boom", pos, 0.6 * vol, 1.05)
+			CartoonFX.sound("Explosion", pos, 0.4 * vol, 1.35)
 		end
+	else
+		CartoonFX.sound("Thud", pos, 0.25 * vol, 1.3)
 	end
 	if data.m and Sounds.MaterialHit[data.m] then
 		CartoonFX.sound(Sounds.MaterialHit[data.m], pos, 1.0 * vol)
@@ -1544,8 +1614,10 @@ function CartoonFX.blockHit(pos: Vector3, normal: Vector3?, data)
 	else
 		CartoonFX.sparks(pos, 10, GUARD_BLUE)
 	end
-	CartoonFX.sound("Block", pos, 1)
-	CartoonFX.sound("Clang", pos, 0.35, 1.3)
+	-- coup encaissé : bruit mat (bois / corps) + petit tintement métallique discret
+	CartoonFX.sound("Block", pos, 0.9)
+	CartoonFX.sound("BlockThud", pos, 0.8, 0.85)
+	CartoonFX.sound("Clang", pos, 0.22, 1.3)
 	local me = involvesLocal(data.v or data.character) or involvesLocal(data.a)
 	if me then
 		CartoonFX.shake(0.18)
@@ -1638,7 +1710,7 @@ function CartoonFX.guardBreak(arg, attacker)
 	end)
 	local glist = Words.GuardBreak or { "GUARD BREAK!" }
 	CartoonFX.word(p, glist[rng:NextInteger(1, #glist)], 1.1, "KO", { a = a, v = victim, prefer = "up", avoid = { a, victim } })
-	CartoonFX.soundLayer({ { "GlassBreak", 1.1 }, { "Clang", 0.8, 0.85 }, { "BigImpact", 0.6, 1.1, 0.04 } }, p)
+	CartoonFX.soundLayer({ { "GlassShatter", 1.1 }, { "GlassBreak", 0.8, 1.05, 0.03 }, { "LowThump", 1.1, 0.85 }, { "Clang", 0.6, 0.85 }, { "BigImpact", 0.6, 1.1, 0.04 } }, p)
 	if victim then
 		CartoonFX.flash(victim, 0.14, GUARD_BLUE)
 		CartoonFX.dizzy(victim, 1.5)
@@ -1678,8 +1750,12 @@ function CartoonFX.perfectBlock(arg, attacker)
 	end
 	local plist = Words.Perfect or { "PERFECT!" }
 	CartoonFX.word(front, plist[rng:NextInteger(1, #plist)], 1.0, "Parry", { a = a, v = blocker, avoid = { a, blocker } })
-	CartoonFX.soundLayer({ { "Parry", 1.1, 1.1 }, { "Ding", 0.7, 1.4 }, { "Clang", 0.5, 1.25 } }, front)
+	CartoonFX.soundLayer({ { "Ting", 1.1, 1.15 }, { "Parry", 0.9, 1.1 }, { "Ding", 0.6, 1.4, 0.03 }, { "Clang", 0.4, 1.25 } }, front)
+	-- ralenti : les deux combattants figés un court instant (animations), flash froid à l'écran
+	freezeAnim(a, 0.14)
+	freezeAnim(blocker, 0.14)
 	if involvesLocal(a) or involvesLocal(blocker) then
+		CartoonFX.slowFlash(Color3.fromRGB(200, 240, 255), 0.4)
 		CartoonFX.freezeLocal(0.07)
 		CartoonFX.fovKick(5)
 		CartoonFX.shake(0.35)
@@ -1722,7 +1798,11 @@ function CartoonFX.slam(data)
 	CartoonFX.bigImpact(data.p + Vector3.new(0, 1, 0), Vector3.new(0, -1, 0), big and 1.4 or 0.9)
 	CartoonFX.word(data.p + Vector3.new(0, 1, 0), big and "KABOOM!" or "THOOM!", big and 1.2 or 0.8, "Heavy", { a = data.a, v = data.v, avoid = { data.a, data.v } })
 	CartoonFX.sound("GroundSlam", data.p, 1.2)
+	CartoonFX.sound("GroundCrack", data.p, big and 1 or 0.7, 0.9)
+	CartoonFX.sound("LowThump", data.p, big and 1 or 0.6, 0.85)
 	CartoonFX.sound("Rumble", data.p, 0.5)
+	CartoonFX.cracks(data.p, big and 7 or 4, big and 5 or 3, 1.3)
+	CartoonFX.dust(data.p, big and 9 or 6, nil, big and 12 or 8)
 	CartoonFX.shockwave(data.p + Vector3.new(0, 0.3, 0), big and 14 or 9)
 	CartoonFX.shockwave(data.p + Vector3.new(0, 0.3, 0), big and 9 or 6, Color3.fromRGB(255, 230, 120))
 	CartoonFX.puff(data.p, big and 1.8 or 1.2)
@@ -1830,8 +1910,8 @@ function CartoonFX.dashFX(character: Model, direction: Vector3?)
 		Debris:AddItem(l, 0.27)
 	end
 	CartoonFX.trailOn(character:FindFirstChild("Torso") or root, Color3.fromRGB(235, 245, 255), 0.3, -1, 2)
-	CartoonFX.sound("Dash", root.Position, 0.9)
-	CartoonFX.sound("Whoosh", root.Position, 0.5, 1.15)
+	CartoonFX.sound("Dash", root.Position, 0.8)
+	CartoonFX.sound("DashWhoosh", root.Position, 0.75, 1.05)
 	if involvesLocal(character) then
 		CartoonFX.fovKick(3)
 	end
@@ -1851,8 +1931,10 @@ function CartoonFX.knockdown(arg)
 	end
 	local g = groundAt(pos)
 	CartoonFX.dust(g, 5, nil, 9)
+	CartoonFX.cracks(g, 3, 2.2, 0.8)
 	CartoonFX.shockwave(g + Vector3.new(0, 0.12, 0), 5, Color3.fromRGB(235, 230, 220))
 	CartoonFX.sound("Thud", g, 0.9, 0.85)
+	CartoonFX.sound("GroundCrack", g, 0.45, 1.1)
 	if typeof(arg) == "Instance" and involvesLocal(arg) then
 		CartoonFX.shake(0.3)
 	end

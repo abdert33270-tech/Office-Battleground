@@ -47,7 +47,8 @@
 	K.release(data)           rend la caméra (normal, transition douce). Fait automatiquement à "End", à la mort, au respawn.
 	K.releaseAll(instant)     rend la caméra quelle que soit l'ulti (utilisé par UltimateController)
 	K.shake(amount)           tremblement (0.3 léger … 2 énorme, × réglage ScreenShake) ; K.fov(amount) coup de zoom (degrés)
-	K.letterbox(data, on, t)  bandes noires cinéma (lanceur + victime ; posées automatiquement pendant toute l'ulti)
+	K.letterbox(data, on, t)  bandes noires cinéma (lanceur + victime ; posées automatiquement pendant toute l'ulti ;
+	                          comptées par ulti : deux ultis qui se chevauchent gardent les bandes jusqu'à la fin de la 2e)
 	K.cinematic()             false si le joueur a coupé les caméras d'ulti ; K.reducedFlashes() ; K.setting(key, default)
 
 	═════════════════════════════  LISIBILITÉ (v3)  ═════════════════════════════
@@ -66,7 +67,8 @@
 	                          opts = { title, sub, color, color2, dur, subject (Model, défaut data.caster), small = true }
 	K.impactFrames(pattern, step)  images d'impact anime : pattern = "BWB" (B = noir/silhouettes, W = blanc cramé,
 	                          R = rouge, I = contraste inversé) ; step = durée d'une image (0.04 par défaut)
-	K.flash(color, dur, alpha) plein écran ; K.darken(on, strength, t) assombrit le monde (ColorCorrection)
+	K.flash(color, dur, alpha) plein écran ; K.darken(on, strength, t) assombrit le monde (ColorCorrection ;
+	                          compté : le plus fort des assombrissements en cours est gardé)
 	K.speedLines(dur, color)  lignes de vitesse manga ; K.slowmo(chars, dur) gèle les animations (hit-stop)
 
 	═════════════════════════════  VFX MONDE (parts locales, auto-nettoyées)  ═════════════════════════════
@@ -117,6 +119,10 @@ local CartoonFX = require(Shared.Modules.CartoonFX)
 local ProcAnim = require(Shared.Modules.ProcAnim)
 local UITheme = require(Shared.Modules.UITheme)
 local Sounds = require(Shared.Config.Sounds)
+local SAFE_ATTR = (function()
+	local ok, cfg = pcall(require, Shared.Config.Combat)
+	return ok and type(cfg) == "table" and cfg.SafeZoneAttribute or "SafeZone"
+end)()
 
 local K = {}
 K.CFX = CartoonFX
@@ -741,37 +747,72 @@ function K.impactFrames(pattern, step)
 	end)
 end
 
--- assombrit le monde (cut-in) ; on = false pour revenir
+-- assombrit le monde (cut-in) ; on = false pour revenir.
+-- Compté par « détenteur » (deux ultis qui se chevauchent : la 1re qui finit ne rallume pas le monde de l'autre).
+-- key = seq de l'ulti (UltimateController) ; sans key = appel d'un module (détenteur commun "_mod").
+-- On garde l'assombrissement le plus fort parmi les détenteurs restants.
 local darkCC
-function K.darken(on, strength, t)
+local darkHolders = {} -- [key] = strength
+local function applyDark(t)
 	if not darkCC or not darkCC.Parent then
 		darkCC = Instance.new("ColorCorrectionEffect")
 		darkCC.Name = "UltDarken"
 		darkCC.Parent = Lighting
 	end
-	strength = strength or 1
-	if on then
+	local strength = 0
+	for _, st in pairs(darkHolders) do
+		strength = math.max(strength, st)
+	end
+	if strength > 0 then
 		darkCC.Enabled = true
 		K.tween(darkCC, t or 0.15, { Brightness = -0.28 * strength, Contrast = 0.25 * strength, Saturation = -0.35 * strength })
 	else
 		K.tween(darkCC, t or 0.3, { Brightness = 0, Contrast = 0, Saturation = 0 })
 	end
 end
+function K.darken(on, strength, t, key)
+	key = key or "_mod"
+	if on and (strength or 1) > 0 then
+		darkHolders[key] = strength or 1
+	else
+		darkHolders[key] = nil
+	end
+	applyDark(t)
+end
+-- tout rallumer (mort / respawn / plus aucune ulti en cours)
+function K.darkenReset(t)
+	table.clear(darkHolders)
+	applyDark(t)
+end
 
--- bandes noires cinéma (lanceur + victime)
+-- bandes noires cinéma (lanceur + victime), comptées par ulti (data.seq) : elles ne se retirent que quand
+-- TOUTES les ultis qui les ont posées sont finies. K.letterbox(nil, false) = retrait forcé (mort, respawn).
 local lbGui
+local lbHolders = {} -- [seq] = true
 function K.letterbox(data, on, t)
-	if data and not K.involved(data) then
-		return
+	if on then
+		if data and not K.involved(data) then
+			return
+		end
+		if not K.cinematic() then
+			return
+		end
+		lbHolders[data and data.seq or 0] = true
+	elseif data then
+		-- retrait : sans tester « involved » (le perso local a pu réapparaître entre-temps)
+		lbHolders[data.seq or 0] = nil
+	else
+		table.clear(lbHolders)
 	end
-	if on and not K.cinematic() then
-		return
-	end
+	local show = next(lbHolders) ~= nil
 	local pg = playerGui()
 	if not pg then
 		return
 	end
 	if not lbGui or not lbGui.Parent then
+		if not show then
+			return
+		end
 		lbGui = Instance.new("ScreenGui")
 		lbGui.Name = "UltLetterbox"
 		lbGui.IgnoreGuiInset = true
@@ -790,7 +831,7 @@ function K.letterbox(data, on, t)
 		end
 	end
 	for _, b in ipairs(lbGui:GetChildren()) do
-		K.tween(b, t or 0.2, { Size = UDim2.fromScale(1, on and 0.09 or 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+		K.tween(b, t or 0.2, { Size = UDim2.fromScale(1, show and 0.09 or 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
 	end
 end
 
@@ -1032,6 +1073,12 @@ local function render(dt)
 		releaseCam(true)
 		return
 	end
+	-- entré dans la zone AFK pendant le plan : on rend la caméra
+	local me = player and player.Character
+	if me and me:GetAttribute(SAFE_ATTR) == true then
+		releaseCam(false)
+		return
+	end
 	if c.CameraType ~= Enum.CameraType.Scriptable then
 		c.CameraType = Enum.CameraType.Scriptable
 	end
@@ -1167,6 +1214,10 @@ function K.shot(data, kind, opts)
 	end
 	local hum = player and player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if not hum or hum.Health <= 0 then
+		return false
+	end
+	-- zone AFK : jamais de caméra imposée
+	if player.Character:GetAttribute(SAFE_ATTR) == true then
 		return false
 	end
 	local c = workspace.CurrentCamera
@@ -1677,17 +1728,20 @@ K.CFX = setmetatable({
 ------------------------------------------------------------------------
 -- Nettoyage d'une ulti (appelé par UltimateController à "End")
 ------------------------------------------------------------------------
-function K._cleanup(data)
+function K._cleanup(data, othersLive)
 	local seq = data.seq or 0
 	ended[seq] = true
 	task.delay(60, function()
 		ended[seq] = nil
 	end)
 	K.release(data)
-	if lbGui and lbGui.Parent then
-		K.letterbox(nil, false, 0.25)
+	-- comptés par ulti : une autre ulti encore en cours garde ses bandes noires / son assombrissement
+	K.letterbox(data, false, 0.25)
+	darkHolders[seq] = nil
+	if not othersLive then
+		darkHolders._mod = nil -- assombrissement posé par un module sans clé : rendu quand plus rien ne tourne
 	end
-	K.darken(false, nil, 0.35)
+	applyDark(0.35)
 	local list = tracked[data.seq or 0]
 	tracked[data.seq or 0] = nil
 	if list then

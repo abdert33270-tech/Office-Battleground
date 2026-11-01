@@ -267,6 +267,34 @@ local function knockback(victim: Model, velocity: Vector3, tumble: boolean, stun
 end
 CombatService.knockback = knockback
 
+-- renversé : poussière + « thud » quand la victime touche le sol (FXController « Knockdown »).
+-- Elle est éjectée d'abord : on attend la retombée (rayon vers le bas), au plus jusqu'à la fin du renversé.
+local downParams = RaycastParams.new()
+downParams.FilterType = Enum.RaycastFilterType.Exclude
+local function knockdownFX(victim: Model, delay: number)
+	task.delay(delay + 0.12, function()
+		local root = victim.Parent and victim:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return
+		end
+		local excl = { workspace:FindFirstChild("FX"), workspace:FindFirstChild("ActiveItems") }
+		for _, c in ipairs(Hitbox.characters()) do
+			table.insert(excl, c)
+		end
+		downParams.FilterDescendantsInstances = excl
+		local t0 = os.clock()
+		while root.Parent and os.clock() - t0 < 1.2 and CharacterState.isKnockedDown(victim) do
+			if root.AssemblyLinearVelocity.Y <= 2 and workspace:Raycast(root.Position, Vector3.new(0, -3.6, 0), downParams) then
+				break
+			end
+			task.wait(0.03)
+		end
+		if root.Parent and CharacterState.isAlive(victim) and CharacterState.isKnockedDown(victim) then
+			FX:FireAllClients({ type = "Knockdown", v = victim, p = root.Position })
+		end
+	end)
+end
+
 -- écrase la victime au sol (Downslam)
 local function slam(victim: Model, attacker: Model?, spec)
 	local root = victim:FindFirstChild("HumanoidRootPart")
@@ -333,6 +361,7 @@ local function slam(victim: Model, attacker: Model?, spec)
 			end
 			if spec.Knockdown then
 				CharacterState.knockdown(victim, CombatConfig.Knockdown.Duration)
+				-- (pas de « Knockdown » ici : l'effet « Slam » fait déjà poussière + onde au même endroit)
 			elseif spec.Pin then
 				CharacterState.stun(victim, spec.Stun)
 			elseif (spec.BounceUp or 0) > 0 then
@@ -405,6 +434,11 @@ function CombatService.applyHit(p)
 	if not hum or not root or hum.Health <= 0 then
 		return nil
 	end
+	local vs = CharacterState.get(victim)
+	-- coup fatal déjà engagé (hit-stop K.O.) : plus rien ne s'empile, la mort est assurée
+	if vs.pendingKO then
+		return nil
+	end
 	if CharacterState.isProtected(victim) then
 		return nil
 	end
@@ -427,7 +461,6 @@ function CombatService.applyHit(p)
 	for _, mod in ipairs(CombatService.damageMods) do
 		mod(p)
 	end
-	local vs = CharacterState.get(victim)
 	local B = CombatConfig.Block
 	local heavy = p.heavy == true or p.category == "Heavy"
 
@@ -440,11 +473,14 @@ function CombatService.applyHit(p)
 			if t - vs.blockStart <= (B.PerfectWindow or B.ParryWindow) then
 				-- PERFECT BLOCK (parade) : marche aussi contre les coups lourds ; l'attaquant est repoussé, étourdi, désarmé
 				vs.blockStart = -10
-				FX:FireAllClients({ k = "Parry", p = root.Position + p.dir * -1.5 + Vector3.new(0, 1, 0), v = victim, a = attacker })
-				FX:FireAllClients({ k = "ComboName", a = victim, name = "PERFECT BLOCK!" })
+				vs.parryAttempt = nil -- tentative réussie : pas de verrou anti-spam
+				-- un seul effet (FXController « PerfectBlock » : éclair, anneau, PERFECT!, sons) ; la réaction de
+				-- l'attaquant (anim + vertige) vient de l'Anim « HitHeavy » et de son attribut DizzyUntil (stun)
+				FX:FireAllClients({ type = "PerfectBlock", character = victim, a = attacker, p = root.Position + p.dir * -1.5 + Vector3.new(0, 1, 0) })
 				Anim:FireAllClients(victim, "PerfectBlock")
 				if attacker then
 					attacker:SetAttribute("ParriedAt", now())
+					Anim:FireAllClients(attacker, "HitHeavy")
 				end
 				if attacker and CharacterState.isAlive(attacker) then
 					local aRoot = attacker:FindFirstChild("HumanoidRootPart")
@@ -473,7 +509,8 @@ function CombatService.applyHit(p)
 				return "GuardBreak"
 			end
 			local chip = p.trayGuard and 0 or p.damage * (1 - B.Reduction)
-			FX:FireAllClients({ k = "Block", p = root.Position + p.dir * -1.2 + Vector3.new(0, 1, 0), v = victim, a = attacker, d = chip })
+			-- étincelles orientées vers l'attaquant (dir = normale de rebond, du bloqueur vers l'attaquant)
+			FX:FireAllClients({ type = "BlockHit", p = root.Position + p.dir * -1.2 + Vector3.new(0, 1, 0), dir = -p.dir, v = victim, a = attacker, d = chip })
 			if chip > 0 then
 				CharacterState.recordHit(victim, attacker, p.weapon, p.cause)
 				hum:TakeDamage(chip)
@@ -481,6 +518,33 @@ function CombatService.applyHit(p)
 			knockback(victim, p.dir * 6, false, 0.1, attacker)
 			return "Blocked"
 		end
+	end
+
+	-- ANTI-INFINI (CombatConfig.ComboCap) : combo vrai trop long -> ce coup renverse de force
+	local C = CombatConfig.ComboCap
+	local tNow = now()
+	if not (vs.chainStart and tNow < vs.stunUntil + C.Grace) then
+		vs.chainStart, vs.chainLinks = tNow, 0 -- la victime avait récupéré : nouveau combo
+	end
+	if p.tether then
+		vs.chainLinks += 1
+	end
+	if not p.unblockable and not p.knockdown and (vs.chainLinks >= C.MaxLinks or tNow - vs.chainStart >= C.MaxTime) then
+		p.knockdown, p.tether, p.air, p.launch = true, nil, nil, nil
+		if p.pin and not p.slam then
+			p.slam = { SlamSpeed = 150, Stun = CombatConfig.PinStun, BounceUp = 0, Pin = true }
+		end
+		if p.slam then
+			p.slam = table.clone(p.slam) -- (la spec peut être une table de Config partagée)
+			p.slam.Knockdown = true
+		else
+			p.knockback = math.max(p.knockback or 0, C.Knockback)
+			p.up = math.max(p.up or 0, C.Up)
+		end
+		p.words = C.Words
+	end
+	if p.knockdown then
+		vs.chainStart, vs.chainLinks = nil, 0
 	end
 
 	local damage = p.damage
@@ -517,10 +581,23 @@ function CombatService.applyHit(p)
 	end
 
 	if ko then
+		-- coup fatal ENGAGÉ : la victime est figée (pas d'EVASIVE, pas d'autres coups empilés) et meurt à la fin du
+		-- hit-stop même si une bulle (ForceField) apparaît entre-temps (Health posé directement, pas TakeDamage).
+		-- (Plot Armor de Bacon agit avant, dans damageMods : un coup qu'elle sauve n'est jamais « ko » ici.)
+		vs.pendingKO = true
+		victim:SetAttribute("PendingKO", true)
 		releaseTether(victim)
+		CharacterState.stun(victim, hitStop + 0.2)
 		victim:SetAttribute("KOLaunch", p.dir * CombatConfig.KOLaunch.Speed + Vector3.new(0, CombatConfig.KOLaunch.Up, 0))
 		task.delay(hitStop, function()
-			hum:TakeDamage(damage)
+			if hum.Parent and hum.Health > 0 then
+				CharacterState.recordHit(victim, attacker, p.weapon, p.cause) -- le tueur reste celui du coup fatal
+				hum.Health = 0
+			end
+			vs.pendingKO = false
+			if victim.Parent then
+				victim:SetAttribute("PendingKO", nil)
+			end
 		end)
 		return "Hit"
 	end
@@ -533,6 +610,7 @@ function CombatService.applyHit(p)
 			victim:SetAttribute("KnockdownUntil", math.max(victim:GetAttribute("KnockdownUntil") or 0, now() + hitStop + 1))
 		else
 			CharacterState.knockdown(victim, hitStop + CombatConfig.Knockdown.Duration)
+			knockdownFX(victim, hitStop)
 		end
 	elseif p.tether and attacker then
 		setTether(victim, attacker, math.min(p.stun or 0.6, 0.8) + 0.12)
@@ -697,6 +775,8 @@ local function setRecovery(character: Model, s, t: number, cooldown: number, hea
 	s.nextAttack = t + cooldown
 	s.busyUntil = t + cooldown + (heavy and 0 or M1.DropEndlag)
 	s.endlagUntil = heavy and (t + cooldown) or 0
+	-- endlag visible par tous (ProcAnim : pose « essoufflé » tant que EndlagUntil n'est pas passé)
+	character:SetAttribute("EndlagUntil", heavy and (now() + cooldown) or 0)
 	slowAttacker(character, cooldown + 0.05)
 end
 
@@ -810,6 +890,7 @@ local function doM1(player: Player, character: Model, seq: number, mods)
 				s.nextAttack = t2 + 0.2
 				s.busyUntil = t2 + 0.2
 				s.endlagUntil = 0
+				character:SetAttribute("EndlagUntil", 0)
 				s.airCombo = 0
 				s.airChainUntil = t2 + U.AirWindow
 				s.lastM1Victim, s.lastM1Hit = hits[1], t2
@@ -875,14 +956,13 @@ local function evasive(character: Model): boolean
 		return false
 	end
 	-- interdit : guard break (punition du block), renversé (déjà intouchable), tenu par une ulti
-	if CharacterState.isGuardBroken(character) or CharacterState.isKnockedDown(character)
+	if CharacterState.isGuardBroken(character) or CharacterState.isKnockedDown(character) or s.pendingKO
 		or character:GetAttribute("UltHeld") ~= nil or character:GetAttribute("UltAnchor") then
 		return false
 	end
 	s.nextBreak = t + E.Cooldown
 	character:SetAttribute("CDEvasive", now() + E.Cooldown)
 	character:SetAttribute("CDMaxEvasive", E.Cooldown)
-	releaseTether(character)
 	for _, n in ipairs({ "KB", "AirStall", "Spin" }) do
 		local c = root:FindFirstChild(n)
 		if c then
@@ -892,10 +972,17 @@ local function evasive(character: Model): boolean
 	CharacterState.clearStun(character) -- remet aussi PlatformStand à false
 	CharacterState.protect(character, E.IFrames, false)
 	character:SetAttribute("EvasiveAt", now()) -- le client fait un petit bond en arrière
-	for _, other in ipairs(Hitbox.characters()) do
+	-- seuls les attaquants RÉCENTS de l'évadé sont repoussés (pas les passants dans le rayon)
+	local tether = tethers[character]
+	local attackers = CharacterState.recentAttackers(character, E.AttackerMemory or 2)
+	if tether and tether.a and not table.find(attackers, tether.a) then
+		table.insert(attackers, tether.a)
+	end
+	releaseTether(character)
+	for _, other in ipairs(attackers) do
 		local oRoot = other ~= character and other:FindFirstChild("HumanoidRootPart")
 		if oRoot and (oRoot.Position - root.Position).Magnitude <= E.Radius and not CharacterState.inSafeZone(other)
-			and not CharacterState.isProtected(other) then
+			and not CharacterState.isProtected(other) and CharacterState.isAlive(other) then
 			local dir = flatUnit(oRoot.Position - root.Position, root.CFrame.LookVector)
 			releaseTether(other)
 			CharacterState.stun(other, E.AttackerStun)
@@ -970,7 +1057,7 @@ function CombatService.init()
 	end)
 
 	-- Q : dash directionnel (kind = "F" | "B" | "L" | "R") ; pendant un hitstun = EVASIVE
-	Net.get("Dash").OnServerEvent:Connect(function(player, kind)
+	Net.get("Dash").OnServerEvent:Connect(function(player, kind, wantDir)
 		if not Net.allow(player, "Dash", R.Dash) then
 			return
 		end
@@ -994,17 +1081,35 @@ function CombatService.init()
 		s.nextDash = t + D.Cooldown
 		s.lastDash = t
 		s.lastDashKind = kind
-		-- dash cancel au milieu de la chaîne (jamais pendant l'endlag d'un coup lourd, voir plus haut)
+		-- dash cancel au milieu de la chaîne (jamais pendant l'endlag d'un coup lourd, voir plus haut) :
+		-- la chaîne CONTINUE (s.combo gardé) : dash après le 4e coup = le prochain M1 est le FINISHER, jamais un
+		-- retour au 1er coup (sinon combo infini). La laisse est relâchée : le dash ne traîne pas la victime.
 		if t < s.nextAttack then
 			s.nextAttack = t
 		end
 		s.busyUntil = math.min(s.busyUntil, t)
-		s.combo = 0
+		for victim, d in pairs(tethers) do
+			if d.a == character then
+				releaseTether(victim)
+			end
+		end
 		s.wantBlock = false
 		CharacterState.setBlocking(character, false)
 		character:SetAttribute("CDDash", now() + D.Cooldown)
 		character:SetAttribute("CDMaxDash", D.Cooldown)
-		FX:FireAllClients({ k = "Dash", a = character, kind = kind })
+		-- direction : celle du client si plausible (horizontale), sinon déduite du type et de l'orientation
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local dir
+		if typeof(wantDir) == "Vector3" and wantDir.Magnitude == wantDir.Magnitude and wantDir.Magnitude < 1e3 then
+			local f = Vector3.new(wantDir.X, 0, wantDir.Z)
+			dir = f.Magnitude > 0.05 and f.Unit or nil
+		end
+		if not dir and root then
+			local cf = root.CFrame
+			dir = (kind == "B" and -cf.LookVector) or (kind == "L" and -cf.RightVector) or (kind == "R" and cf.RightVector) or cf.LookVector
+		end
+		-- skipSelf : le dasheur a déjà joué son effet en local (CombatController)
+		FX:FireAllClients({ type = "DashFX", character = character, dir = dir, skipSelf = true })
 		Anim:FireAllClients(character, DASH_ANIMS[kind])
 	end)
 

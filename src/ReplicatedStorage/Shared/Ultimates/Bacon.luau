@@ -172,7 +172,11 @@ local SHADES = {
 local M = {
 	Name = "MAXIMUM OOF",
 	-- v3 : titres de temps forts (UltimateController)
-	Beats = { Connect = { { 0, "NOOB COMBO" }, { T.Kick, "YEET" }, { T.Summon, "BACON STRIKE" }, { T.Shades0, "DEAL WITH IT" } } },
+	Beats = {
+		Rush = "NOOB RUSH",
+		Connect = { { 0, "NOOB COMBO" }, { T.Kick, "YEET" }, { T.Summon, "BACON FROM THE SKY" }, { T.Shades0, "DEAL WITH IT" } },
+		Whiff = "IT WAS LAG, I SWEAR",
+	},
 	Desc = "Noob-rush them, 6 noob slaps and a YEET, then a GIANT bacon strip from the sky flattens them. Deal with it.",
 	Color = BACON,
 	Color2 = GOLD,
@@ -360,7 +364,7 @@ function M.Client(K, data)
 			return
 		end
 		K.layer({ { "Dash", 1 }, { "Whoosh2", 0.9, 1.1 } }, r.Position)
-		K.word(r.Position + Vector3.new(0, 4, 0), "NOOB RUSH!", 1.0, "Light")
+		K.word(r.Position + Vector3.new(0, 4, 0), "COMING THROUGH!", 1.0, "Light")
 		for i = 0, 4 do
 			K.at(data, i * 0.08, function()
 				local rr = K.root(caster)
@@ -443,7 +447,12 @@ function M.Server(U, caster, target, ctx)
 	vp = Vector3.new(vp.X, cf.Position.Y, vp.Z)
 	local H = math.clamp(U.headroom(vp, 12), 3, 9)
 	local vcf = U.facing(vp, cf.Position)
-	U.hold(ctx, target, vcf)
+	-- prise refusée (cible passée en zone AFK, tenue par une autre ulti...) : on rate plutôt que frapper une cible libre
+	if not U.hold(ctx, target, vcf) then
+		U.fx(ctx, "Whiff")
+		U.wait(ctx, 1.3)
+		return
+	end
 	U.fx(ctx, "Connect", { cf = cf, vp = vp, h = H })
 	local tc = os.clock()
 	local function at(t)

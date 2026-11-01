@@ -144,7 +144,7 @@ function HintController.init()
 			local stunned = c ~= nil and sn < (c:GetAttribute("StunUntil") or 0)
 			local broken = c ~= nil and sn < (c:GetAttribute("GuardBrokenUntil") or 0)
 			local evasiveReady = stunned and not broken and sn >= (c:GetAttribute("CDEvasive") or 0)
-				and sn >= (c:GetAttribute("KnockdownUntil") or 0)
+				and sn >= (c:GetAttribute("KnockdownUntil") or 0) and not c:GetAttribute("PendingKO")
 			if broken then
 				bar.Text = chips({ { "GUARD BROKEN!", "you can't block for a moment" } })
 			elseif evasiveReady then
@@ -154,7 +154,7 @@ function HintController.init()
 					or chips({ { "CLICK", "swing" }, { "R", "throw" }, { "E", "drop" } })
 			else
 				bar.Text = touch and chips({ { "HIT x5", "combo" }, { "JUMP + 5th HIT", "uppercut" }, { "BLOCK", "guard" }, { "DASH", "dash" }, { "GRAB", "pick up" } })
-					or chips({ { "CLICK x5", "combo" }, { "SPACE + 5th", "uppercut" }, { "F", "block (tap = perfect)" }, { "Q + WASD", "dash" }, { "E", "pick up" }, { "W W", "run" } })
+					or chips({ { "CLICK x5", "combo" }, { "SPACE + 5th", "uppercut" }, { "F", "block (timed = perfect)" }, { "Q + WASD", "dash" }, { "E", "pick up" }, { "W W", "run" } })
 			end
 			-- objet le plus proche
 			local best, bestDist = nil, CombatConfig.PickupRange

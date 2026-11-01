@@ -100,16 +100,26 @@ local function sneakers(col, toe, sole)
 	end)
 end
 
-local HOOD = C(62, 64, 88)
+local HOOD = C(46, 42, 104) -- v5 : violet « minuit » (l'uniforme de base est gris ardoise)
 S({ Id = "Temp_Rare", Character = "Temp", Rarity = "Rare", Name = "Night Shift Temp",
 	Desc = "Works 11 PM to 7 AM. Nobody has ever seen him arrive. Or leave.",
-	Outfit = { Shirt = HOOD, Pants = C(40, 42, 56) },
+	Outfit = { Shirt = HOOD, Pants = C(26, 28, 50) },
 	HideHair = true,
 	Parts = join({
 		-- bonnet + revers + pompon post-it
 		R(H, V(1.38, 0.78, 1.4), INDIGOD, FA, 0, 0.55, 0.03),
 		P(H, CY, V(0.3, 1.44, 1.44), C(75, 68, 170), FA, 0, 0.3, 0.03, 0, 0, 90),
 		P(H, BA, V(0.42, 0.42, 0.42), NOTE, SP, 0, 0.98, 0.06),
+		-- masque de sommeil relevé sur le bonnet (yeux fermés brodés)
+		P(H, CY, V(0.26, 1.46, 1.46), INDIGO2, FA, 0, 0.64, 0.03, 0, 0, 90),
+		P(H, B, V(0.28, 0.05, 0.03), WHT, SP, -0.243, 0.64, -0.674, 0, 19, 12),
+		P(H, B, V(0.28, 0.05, 0.03), WHT, SP, 0.243, 0.64, -0.674, 0, -19, -12),
+		-- « Zzz » flottant
+		P(H, B, V(1.1, 0.5, 0.05), WHT, SP, 0.6, 1.5, 0, { Transparency = 1,
+			Text = { Text = "Zzz", Color = INDIGO2, Font = "Cartoon", Face = "Both" }, Anim = { Float = true, Seed = 52 } }),
+		-- broche lune lumineuse (poitrine, côté gauche) : disque néon + disque sombre décalé = croissant
+		P(T, CY, V(0.05, 0.42, 0.42), NOTE, NE, -0.52, 0.5, -0.53, 0, 90, 0),
+		P(T, CY, V(0.05, 0.36, 0.36), HOOD, SP, -0.44, 0.56, -0.56, 0, 90, 0),
 		-- capuche baissée + casque autour du cou
 		R(T, V(1.75, 0.62, 0.8), HOOD, FA, 0, 1.0, 0.42),
 		P(T, B, V(1.55, 0.1, 0.14), DARK, SP, 0, 1.1, 0.42),
@@ -125,13 +135,13 @@ S({ Id = "Temp_Rare", Character = "Temp", Rarity = "Rare", Name = "Night Shift T
 		P(LA, CY, V(0.16, 0.52, 0.52), INDIGO, SP, 0, -0.85, -0.15, 0, 0, 90),
 	},
 	sym(LA, RA, function(l)
-		return { P(l, B, V(1.07, 0.26, 1.07), C(48, 50, 70), FA, 0, -0.8, 0) }
+		return { P(l, B, V(1.07, 0.26, 1.07), C(34, 30, 82), FA, 0, -0.8, 0) }
 	end),
 	sneakers(WHT, WHT, INDIGO)),
 	Paint = {
 		face(T, "Front", {
-			bx(0.5, 0.78, 0.6, 0.26, C(50, 52, 72), { Corner = 0.3 }), -- poche kangourou
-			bx(0.5, 0.67, 0.6, 0.02, C(40, 42, 60)),
+			bx(0.5, 0.78, 0.6, 0.26, C(36, 33, 86), { Corner = 0.3 }), -- poche kangourou
+			bx(0.5, 0.67, 0.6, 0.02, C(28, 26, 70)),
 			bx(0.3, 0.36, 0.3, 0.2, WHT, { Corner = 0.15 }), -- étiquette HELLO
 			bx(0.3, 0.29, 0.3, 0.07, C(220, 50, 50), { Corner = 0.15 }),
 			tx(0.3, 0.29, 0.26, 0.05, "HELLO MY NAME IS", WHT, "Black"),

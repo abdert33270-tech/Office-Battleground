@@ -158,10 +158,11 @@ end
 local CREAM, KNIT, MOCHA, CARAMEL = C(240, 230, 212), C(222, 207, 182), C(92, 66, 50), C(196, 134, 72)
 local FOAM, BEAN, ESP, AMBER = C(250, 244, 232), C(105, 62, 34), C(58, 38, 28), C(255, 165, 60)
 local CHEST, MUST, MUST2 = C(112, 62, 38), C(214, 158, 58), C(170, 70, 50)
+local SAGE, SAGEK = C(156, 184, 146), C(128, 158, 120) -- v5 : pull « sauge » (la base est crème)
 
 S({ Id = "Barista_Rare", Character = "Barista", Rarity = "Rare", Name = "Latte Art Influencer",
 	Desc = "Posts the foam. Never drinks it. 12K likes on a heart.",
-	Outfit = { Shirt = CREAM, Pants = MOCHA },
+	Outfit = { Shirt = SAGE, Pants = MOCHA },
 	HideHair = true, HideFace = true,
 	Parts = join({
 		-- béret incliné + cheveux longs ondulés
@@ -193,18 +194,18 @@ S({ Id = "Barista_Rare", Character = "Barista", Rarity = "Rare", Name = "Latte A
 	}, shoes(WH, CARAMEL, WH)),
 	Paint = join({
 		PT(T, "Front", {
-			Ln(0.12, 0.55, 0.012, 0.75, KNIT), Ln(0.24, 0.55, 0.012, 0.75, KNIT), Ln(0.6, 0.55, 0.012, 0.75, KNIT),
-			Ln(0.72, 0.55, 0.012, 0.75, KNIT), Ln(0.84, 0.55, 0.012, 0.75, KNIT),
-			Bx(0.5, 0.94, 1, 0.12, KNIT), Bx(0.5, 0.05, 0.5, 0.1, KNIT),
+			Ln(0.12, 0.55, 0.012, 0.75, SAGEK), Ln(0.24, 0.55, 0.012, 0.75, SAGEK), Ln(0.6, 0.55, 0.012, 0.75, SAGEK),
+			Ln(0.72, 0.55, 0.012, 0.75, SAGEK), Ln(0.84, 0.55, 0.012, 0.75, SAGEK),
+			Bx(0.5, 0.94, 1, 0.12, SAGEK), Bx(0.5, 0.05, 0.5, 0.1, SAGEK),
 			Tx(0.72, 0.3, 0.14, 0.14, "♥", CARAMEL, "Black", { Stroke = false }),
 		}),
 		PT(T, "Back", {
-			Ln(0.2, 0.55, 0.012, 0.75, KNIT), Ln(0.4, 0.55, 0.012, 0.75, KNIT), Ln(0.6, 0.55, 0.012, 0.75, KNIT),
-			Ln(0.8, 0.55, 0.012, 0.75, KNIT), Bx(0.5, 0.94, 1, 0.12, KNIT),
+			Ln(0.2, 0.55, 0.012, 0.75, SAGEK), Ln(0.4, 0.55, 0.012, 0.75, SAGEK), Ln(0.6, 0.55, 0.012, 0.75, SAGEK),
+			Ln(0.8, 0.55, 0.012, 0.75, SAGEK), Bx(0.5, 0.94, 1, 0.12, SAGEK),
 		}),
 		faceP(join(eyes(0.44, INK, { lash = INK, h = 0.14 }), brows(0.27, C(90, 50, 30), -6, { th = 0.025 }),
 			smile(0.7, 0.16, C(170, 60, 70)), blush(0.6, C(255, 120, 130)), { Ci(0.66, 0.58, 0.025, 0.025, C(120, 70, 50)) })),
-	}, ring4x2({ Bx(0.5, 0.93, 1, 0.14, KNIT), Ln(0.5, 0.93, 1, 0.01, CREAM) }),
+	}, ring4x2({ Bx(0.5, 0.93, 1, 0.14, SAGEK), Ln(0.5, 0.93, 1, 0.01, CREAM) }),
 	legs4({ Bx(0.5, 0.03, 1, 0.06, C(70, 50, 38)) }),
 	{ PT(LL, "Front", { Ln(0.5, 0.3, 0.015, 0.5, C(70, 50, 38)) }), PT(RL, "Front", { Ln(0.5, 0.3, 0.015, 0.5, C(70, 50, 38)) }) }),
 })

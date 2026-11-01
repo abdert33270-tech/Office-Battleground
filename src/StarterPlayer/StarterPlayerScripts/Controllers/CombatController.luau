@@ -21,6 +21,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CombatConfig = require(Shared.Config.Combat)
 local ItemsConfig = require(Shared.Config.Items)
+local WordsConfig = require(Shared.Config.Words)
+local SoundsConfig = require(Shared.Config.Sounds)
 local Net = require(Shared.Modules.Net)
 local Hitbox = require(Shared.Modules.Hitbox)
 local ProcAnim = require(Shared.Modules.ProcAnim)
@@ -83,12 +85,10 @@ local function inSafeZone(c)
 	return c:GetAttribute(CombatConfig.SafeZoneAttribute or "SafeZone") == true
 end
 
--- caméra : respecte les paramètres du joueur (tremblement x réglage, zoom FOV désactivable)
+-- caméra : CartoonFX.shake applique déjà le réglage joueur ScreenShake (ne pas le multiplier ici) ;
+-- zoom FOV désactivable (FOVKick)
 local function camShake(amount: number)
-	local mult = tonumber(ClientSettings.get("ScreenShake")) or 1
-	if mult > 0 then
-		CartoonFX.shake(amount * mult)
-	end
+	CartoonFX.shake(amount)
 end
 local function camKick(amount: number)
 	if ClientSettings.get("FOVKick") ~= false then
@@ -231,6 +231,84 @@ local function releaseAir(c)
 end
 CombatController.releaseAir = releaseAir
 
+-- PRÉDICTION d'un coup (attaquant local) : tout le « ressenti » part tout de suite (étincelles, impact, sons,
+-- réaction de la victime, hit-stop, caméra) ; les MOTS, le CHIFFRE de dégâts et le K.O. attendent la confirmation
+-- du serveur (payload « Hit » de ce seq, voir confirmHit) : un coup parré / bloqué au dernier moment n'affiche
+-- donc jamais « POW! 3 » à tort. FXController saute le « Hit » serveur déjà prédit (CombatController.predicted).
+local function predictVisual(c, victim, pos: Vector3, spec, extra)
+	local category = spec.Category or "Light"
+	local power = tonumber(spec.Power) or 0.4
+	local heavy = category == "Heavy"
+	local vRoot = victim:FindFirstChild("HumanoidRootPart")
+	local aRoot = c:FindFirstChild("HumanoidRootPart")
+	local dir = (vRoot and aRoot) and (vRoot.Position - aRoot.Position) or nil
+	CartoonFX.noteEngage(c, victim)
+	CartoonFX.impact(pos, power)
+	CartoonFX.hitSpark(pos, dir, power + (heavy and 0.4 or 0))
+	CartoonFX.flash(victim, heavy and 0.12 or 0.07)
+	CartoonFX.sparks(pos, heavy and 18 or 8)
+	CartoonFX.shards(pos, heavy and 10 or 4, nil, heavy and 1.2 or 0.8)
+	if heavy then
+		CartoonFX.bigImpact(pos, dir, power)
+	end
+	local r = extra and extra.Reaction or "Light"
+	if r == "Launch" then
+		ProcAnim.play(victim, "Launch")
+	elseif r == "Heavy" or r == "Slam" then
+		ProcAnim.play(victim, "HitHeavy")
+	else
+		ProcAnim.play(victim, math.random() < 0.5 and "HitLight" or "HitLight2")
+	end
+	CartoonFX.sound(SoundsConfig.Category[category] or "Punch", pos, 0.9 + power * 0.5, heavy and 0.92 or 1.05)
+	CartoonFX.sound("Thud", pos, 0.45, heavy and 0.8 or 1.15)
+	if heavy then
+		CartoonFX.sound("BigImpact", pos, 1.1)
+		CartoonFX.sound("AnimeHit", pos, 0.7)
+	end
+	if extra and extra.Material and SoundsConfig.MaterialHit and SoundsConfig.MaterialHit[extra.Material] then
+		CartoonFX.sound(SoundsConfig.MaterialHit[extra.Material], pos, 1)
+	end
+	if r == "Launch" then
+		CartoonFX.sound("Boing", pos, 0.6)
+	end
+	local HS, SH, FK = CombatConfig.HitStop, CombatConfig.Shake, CombatConfig.FOVKick
+	local hs = heavy and HS.Heavy or HS.Light
+	ProcAnim.freeze(c, hs)
+	ProcAnim.freeze(victim, hs)
+	CartoonFX.freezeLocal(hs)
+	camShake(heavy and SH.Heavy or SH.Light)
+	camKick(heavy and FK.Heavy or FK.Light)
+	if heavy then
+		CartoonFX.impactFrame(1)
+		CartoonFX.speedLines(0.3)
+	end
+end
+
+-- confirmation serveur d'un coup prédit : mot + chiffre (+ K.O.), que FXController ne jouera pas (déjà prédit)
+local function confirmHit(data)
+	local pos = data.p
+	if typeof(pos) ~= "Vector3" then
+		local r = data.v and data.v:FindFirstChild("HumanoidRootPart")
+		pos = r and r.Position
+	end
+	if typeof(pos) ~= "Vector3" then
+		return
+	end
+	local category = data.c or "Light"
+	local power = tonumber(data.pw) or 0.4
+	local list = (type(data.w) == "table" and #data.w > 0) and data.w or WordsConfig[category] or WordsConfig.Light
+	local ctx = { a = data.a, v = data.v, avoid = { data.a, data.v } }
+	CartoonFX.word(pos, list[math.random(1, #list)], power + (data.fin and 0.4 or 0), category, ctx)
+	if type(data.d) == "number" and data.d > 0 then
+		CartoonFX.damageNumber(pos, data.d, power, ctx)
+	end
+	if data.ko then
+		CartoonFX.ko(data.v, pos, true, data.a)
+		camShake(CombatConfig.Shake.KO)
+		camKick(CombatConfig.FOVKick.KO)
+	end
+end
+
 local function predictHits(c, spec, mySeq, extra)
 	task.delay(spec.Windup or 0.1, function()
 		if not character() then
@@ -244,15 +322,12 @@ local function predictHits(c, spec, mySeq, extra)
 		for _, victim in ipairs(Hitbox.box(cf, spec.HitboxSize, c, 3)) do
 			local vRoot = victim:FindFirstChild("HumanoidRootPart")
 			local hum = victim:FindFirstChildOfClass("Humanoid")
-			if vRoot and hum and not victim:FindFirstChildOfClass("ForceField") and not victim:GetAttribute("Blocking")
-				and not knockedDown(victim) and not inSafeZone(victim) then
+			-- (cible qui bloque / renversée / protégée : rien de prédit, le serveur enverra Block / PerfectBlock)
+			if vRoot and hum and hum.Health > 0 and not victim:FindFirstChildOfClass("ForceField") and not victim:GetAttribute("Blocking")
+				and not victim:GetAttribute("PendingKO") and not knockedDown(victim) and not inSafeZone(victim) then
 				CombatController.predicted[mySeq] = CombatController.predicted[mySeq] or {}
 				CombatController.predicted[mySeq][victim] = true
-				CartoonFX.hit({
-					a = c, v = victim, p = vRoot.Position:Lerp(root.Position, 0.3) + Vector3.new(0, 0.6, 0),
-					c = spec.Category, pw = spec.Power, d = spec.Damage, w = extra and extra.Words, m = extra and extra.Material,
-					ko = hum.Health - spec.Damage <= 0, r = extra and extra.Reaction,
-				})
+				predictVisual(c, victim, vRoot.Position:Lerp(root.Position, 0.3) + Vector3.new(0, 0.6, 0), spec, extra)
 			end
 		end
 		task.delay(2, function()
@@ -511,7 +586,8 @@ function CombatController.dash()
 	local t = os.clock()
 	if isStunned(c) then
 		-- EVASIVE : se libérer d'un combo (pas pendant un guard break ni au sol)
-		if serverNow() >= (c:GetAttribute("CDEvasive") or 0) and not guardBroken(c) and not knockedDown(c) then
+		if serverNow() >= (c:GetAttribute("CDEvasive") or 0) and not guardBroken(c) and not knockedDown(c)
+			and not c:GetAttribute("PendingKO") then
 			Net.get("Dash"):FireServer("F")
 		end
 		return
@@ -527,9 +603,9 @@ function CombatController.dash()
 	local kind, dir = dashDirection(c, hum)
 	nextDash = t + D.Cooldown
 	lastDash, lastDashKind = t, kind
-	nextAttack = math.min(nextAttack, t) -- dash cancel au milieu de la chaîne
+	-- dash cancel au milieu de la chaîne : la chaîne CONTINUE (pas de retour au 1er coup, même règle que le serveur)
+	nextAttack = math.min(nextAttack, t)
 	busyUntil = math.min(busyUntil, t)
-	combo = 0
 	if blocking then
 		wantBlock = false -- le dash annule le block ; il faut rappuyer sur F
 		blocking = false
@@ -556,7 +632,7 @@ function CombatController.dash()
 	if kind == "F" then
 		CartoonFX.speedLines(0.15)
 	end
-	Net.get("Dash"):FireServer(kind)
+	Net.get("Dash"):FireServer(kind, dir)
 end
 
 function CombatController.ability(i: number)
@@ -689,7 +765,8 @@ local function buildGuardMeter()
 		local g = c:GetAttribute("Guard") or maxG
 		local broken = guardBroken(c)
 		local stunned = isStunned(c)
-		local evasiveReady = stunned and not broken and not knockedDown(c) and serverNow() >= (c:GetAttribute("CDEvasive") or 0)
+		local evasiveReady = stunned and not broken and not knockedDown(c) and not c:GetAttribute("PendingKO")
+			and serverNow() >= (c:GetAttribute("CDEvasive") or 0)
 		local showBar = c:GetAttribute("Blocking") == true or g < maxG - 0.5 or broken
 		holder.Visible = showBar or evasiveReady
 		bar.Visible = showBar
@@ -791,15 +868,25 @@ function CombatController.init()
 		if type(data) ~= "table" or not c then
 			return
 		end
-		if data.k == "Parry" and data.v == c then
+		local kind = data.k or data.type
+		local blocker = data.character or data.v
+		if kind == "Hit" and data.a == c and data.seq then
+			-- coup prédit confirmé par le serveur : mot + chiffre maintenant
+			local set = CombatController.predicted[data.seq]
+			if type(set) == "table" and set[data.v] then
+				confirmHit(data)
+			end
+		elseif (kind == "PerfectBlock" or kind == "Parry") and blocker == c then
 			ProcAnim.play(c, "PerfectBlock")
-		elseif data.k == "GuardBreak" and data.v == c then
+		elseif kind == "GuardBreak" and blocker == c then
 			blocking = false
 			ProcAnim.play(c, "GuardBroken")
 			camShake(0.4)
-		elseif data.k == "Parry" and data.a == c then
-			-- notre coup a été parfaitement bloqué : la chaîne est perdue
+		elseif (kind == "PerfectBlock" or kind == "Parry") and data.a == c then
+			-- notre coup a été parfaitement bloqué : la chaîne est perdue, on recule sonné
 			combo, airChainUntil = 0, 0
+			holdingAttack = false
+			ProcAnim.play(c, "HitHeavy")
 		end
 	end)
 

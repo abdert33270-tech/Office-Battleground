@@ -44,7 +44,7 @@
 		U.alive(ctx) -> bool
 
 	Lecture
-		U.root(model), U.valid(model) (vivant, pas protégé, pas tenu par une autre ulti)
+		U.root(model), U.valid(model) (vivant, pas protégé, hors zone AFK, pas tenu par une autre ulti)
 		U.flat(v, fallback) (vecteur horizontal unitaire), U.ground(pos) (sol sous pos), U.headroom(pos, want) (hauteur libre)
 		U.facing(pos, lookAt) (CFrame à pos tournée vers lookAt, à plat), U.around(center, angleDeg, dist, dy, basisCF?)
 		U.inFront(ctx, range, angle) (meilleure cible devant le lanceur), U.currentCF(ctx, model), U.wallSafe(from, to, margin)
@@ -223,7 +223,7 @@ end
 
 function U.valid(v, ctx)
 	return v ~= nil and v.Parent ~= nil and CharacterState.isAlive(v) and U.root(v) ~= nil
-		and not CharacterState.isProtected(v) and not isHeldByOther(v, ctx)
+		and not CharacterState.isProtected(v) and not CharacterState.inSafeZone(v) and not isHeldByOther(v, ctx)
 end
 
 local function pickTarget(caster, range, angle, hint)
@@ -435,7 +435,8 @@ function U.release(ctx, model, keepDown)
 end
 
 function U.hold(ctx, v, cf)
-	if ctx.done or not v or not CharacterState.isAlive(v) or isHeldByOther(v, ctx) then
+	-- jamais un joueur de la zone AFK (ancré + caméra prise alors qu'il ne joue pas)
+	if ctx.done or not v or not CharacterState.isAlive(v) or isHeldByOther(v, ctx) or CharacterState.inSafeZone(v) then
 		return false
 	end
 	if not ctx.held[v] then
@@ -635,6 +636,10 @@ local function step(ctx)
 	if os.clock() - ctx.clock0 > MAX_TIME then
 		ctx.aborted = true
 	end
+	-- lanceur entré dans la zone AFK : ulti annulée
+	if CharacterState.inSafeZone(c) then
+		ctx.aborted = true
+	end
 	local t = os.clock()
 	-- victime perdue (morte, partie) avant le finisher : on arrête l'ulti après un court délai
 	if not ctx.finished and not ctx.lostAt then
@@ -657,6 +662,13 @@ local function step(ctx)
 		local hum = model:FindFirstChildOfClass("Humanoid")
 		if not r or not model.Parent or not hum or hum.Health <= 0 then
 			U.release(ctx, model, true)
+		elseif model ~= c and CharacterState.inSafeZone(model) then
+			-- victime entrée dans la zone AFK : relâchée tout de suite (comme une victime perdue)
+			U.release(ctx, model, false)
+			if not ctx.finished then
+				ctx.lostAt = ctx.lostAt or t
+				ctx.everHeld[model] = nil
+			end
 		elseif pin.set and (r.Position - pin.set.Position).Magnitude > TELEPORT_DIST then
 			-- téléporté par autre chose (fin de manche, zone…) : on ne le ramène pas de force
 			U.release(ctx, model, false)
@@ -838,8 +850,8 @@ local function onRequest(player, hint)
 	if not c:GetAttribute("Transformed") or c:GetAttribute("UltReady") ~= true then
 		return
 	end
-	if CharacterState.isStunned(c) then
-		return
+	if CharacterState.isStunned(c) or CharacterState.inSafeZone(c) then
+		return -- étourdi, ou dans la zone AFK (ni ulti ni coups là-bas)
 	end
 	local def = getDef(c:GetAttribute("CharacterName"))
 	if not def then

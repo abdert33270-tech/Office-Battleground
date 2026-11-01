@@ -356,6 +356,7 @@ function Mobile.init(ctx)
 			local sn = workspace:GetServerTimeNow()
 			local evade = c ~= nil and sn < (c:GetAttribute("StunUntil") or 0) and sn >= (c:GetAttribute("CDEvasive") or 0)
 				and sn >= (c:GetAttribute("GuardBrokenUntil") or 0) and sn >= (c:GetAttribute("KnockdownUntil") or 0)
+				and not c:GetAttribute("PendingKO")
 			dash.Label.Text = evade and "EVADE!" or "DASH"
 			dash.BackgroundColor3 = evade and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(120, 210, 255)
 			task.wait(0.15)

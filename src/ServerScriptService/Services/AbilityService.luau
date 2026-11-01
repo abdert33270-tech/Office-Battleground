@@ -589,8 +589,8 @@ local function onAbility(player: Player, slot, aim)
 		return
 	end
 	local t = os.clock()
-	if t < (s.gcdUntil or 0) or t < s.nextAttack - 0.05 then
-		return -- anti-spam : délai global entre attaques, et pas pendant la récupération d'un combo
+	if t < (s.gcdUntil or 0) or t < s.nextAttack - 0.05 or t < (s.busyUntil or 0) - 0.05 then
+		return -- anti-spam : délai global entre attaques, et pas pendant la récupération d'un combo (busyUntil = endlag / chaîne lâchée)
 	end
 	s.cd = s.cd or {}
 	s.charges = s.charges or {}

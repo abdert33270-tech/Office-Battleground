@@ -94,10 +94,17 @@ return {
 		PerfectWindow = 0.22, -- PERFECT BLOCK : F appuyé dans ce délai avant le coup (marche aussi contre les lourds)
 		ParryWindow = 0.22,   -- (ancien nom, gardé pour compatibilité)
 		ParryStun = 1.4, ParryRearm = 0.5, ParryKnockback = 22,
+		ParryFailRearm = 1.0, -- perfect block RATÉ (fenêtre écoulée sans coup) : pas de nouvelle fenêtre pendant ce délai
 	},
+	-- ANTI-INFINI : combo vrai subi (chaque coup arrive pendant le hitstun du précédent). Au-delà de MaxLinks coups
+	-- « collants » (M1 1-4 + jongle) OU de MaxTime secondes, le coup suivant RENVERSE de force la victime
+	-- (knockdown = intouchable puis relevé invulnérable). Le combo complet légitime (4 M1 + uppercut + 2 en l'air +
+	-- downslam) = 6 coups collants en ~3,5 s : il passe. Les ultimes (unblockable) ne sont pas concernées.
+	ComboCap = { MaxLinks = 7, MaxTime = 4.8, Grace = 0.05, Knockback = 30, Up = 14, Words = { "BREAK AWAY!", "TOO LONG!" } },
 	-- EVASIVE (combo breaker) : Q pendant un hitstun -> on se libère, invulnérable un instant, les attaquants proches
 	-- sont repoussés. Interdit pendant un guard break (punition du block) et quand on est renversé (déjà intouchable).
-	Evasive = { Cooldown = 18, IFrames = 0.5, Radius = 10, Knockback = 46, AttackerStun = 0.45, Hop = 22 },
+	Evasive = { Cooldown = 18, IFrames = 0.5, Radius = 10, Knockback = 46, AttackerStun = 0.45, Hop = 22,
+		AttackerMemory = 2 }, -- seuls ceux qui ont touché l'évadé dans les AttackerMemory s (ou le tiennent en laisse) sont repoussés
 	WallSplat = { MinSpeed = 36, Damage = 5, Stun = 0.9 },
 	Overtime = { Max = 100, DealMult = 0.4, TakeMult = 0.22, Parry = 5, DurationMult = 1.75 }, -- ~250 dégâts infligés pour remplir
 

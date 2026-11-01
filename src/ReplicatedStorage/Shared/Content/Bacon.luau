@@ -3,14 +3,17 @@
 	Le célèbre « Bacon Hair » de Roblox (le débutant à l'avatar par défaut) devenu légende du bureau : il a l'air d'un
 	noob, mais c'est secrètement le GOAT. Voulu par le propriétaire comme le perso LE PLUS FORT du jeu (sans one-shot).
 
-	Look signature (Character.Look) : un skin complet au format SkinBuilder, porté de force en jeu (ServerInit,
-	quel que soit le skin équipé) et utilisé tel quel par le menu (CharacterSelectController). Couleurs classiques de
+	Look signature (Character.Look) : un skin complet au format SkinBuilder, porté de force en jeu quel que soit le
+	skin équipé (SkinService.applyTo -> M.Identity ; puis surveillance ÉVÉNEMENTIELLE : accessoires / vêtements de
+	l'avatar qui arrivent en retard, dossier du look retiré ; contrôle lent toutes les 3 s en secours) et utilisé
+	tel quel par le menu (CharacterSelectController). Couleurs classiques de
 	l'avatar par défaut (tête/mains jaunes, t-shirt bleu, pantalon vert), cheveux en tranches de bacon ondulées,
 	lunettes pixel « Deal With It », blouson noir à revers bacon, chaîne en or (médaillon R$), écharpe-bacon, baskets.
 	Transformation « Extra Crispy » (M.Transform) : cheveux en flammes, lunettes néon, poêle dans le dos, graisse qui grésille.
 
 	Passif « Main Character » : +10 % de dégâts infligés, -15 % de dégâts subis ; une fois par vie, un coup fatal le
-	laisse à 1 PV (« OOF! »), puis il reprend 25 PV et devient intouchable 1,5 s.
+	laisse à 1 PV (« OOF! »), il est intouchable 1,8 s dès ce coup et reprend 25 PV. La sauvegarde n'est consommée que
+	si le coup va VRAIMENT le tuer (pas sur une parade / un block dont le chip n'est pas mortel).
 	Attaques : Oof (cri en cône qui repousse), Bacon Whip (fouet-bacon qui attrape, tire et claque),
 	           Free Robux? (panneau-appât qui ATTIRE tout le monde... puis explose : arnaque !).
 	Extra Crispy : Noob Rush (ruée bras tendus façon noob qui renverse tout, finit en plat-ventre),
@@ -25,6 +28,7 @@ local RunService = game:GetService("RunService")
 local Shared = script.Parent.Parent
 local Kit = require(Shared.Modules.ContentKit)
 local SoundsCfg = require(Shared.Config.Sounds)
+local CombatCfg = require(Shared.Config.Combat)
 
 local CYL, BALL, UP = Kit.CYL, Kit.BALL, Kit.UPRIGHT
 local C = Color3.fromRGB
@@ -150,7 +154,7 @@ M.Character = {
 	Featured = true, -- en tête du menu des persos + badge LEGENDARY (CharacterSelectController)
 	NoSkins = true, -- aucun skin : son look signature (Look) est toujours porté
 	Look = LOOK,
-	Passive = { Name = "Main Character", Desc = "Deals 10% more and takes 15% less damage. Once per life, a KO hit leaves him at 1 HP instead (OOF!): he heals 25 and is untouchable for 1.5s." },
+	Passive = { Name = "Main Character", Desc = "Deals 10% more and takes 15% less damage. Once per life, a KO hit leaves him at 1 HP instead (OOF!): he heals 25 and is untouchable for 1.8s." },
 	Attacks = { "BaconOof", "BaconWhip", "FreeRobux" },
 	Transformation = { Name = "Extra Crispy", Desc = "Hair on fire, neon shades, a frying pan on his back and sizzling grease everywhere. Faster and hotter.", Duration = 20, SpeedMultiplier = 1.25 },
 	TransAttacks = { "NoobRush", "SizzlingPan", "GreaseSlide" },
@@ -158,8 +162,10 @@ M.Character = {
 
 -- Look signature porté via l'Identity (appelée par SkinBuilder.identity : SkinService pour les persos sans skins,
 -- aperçus du menu) : habille le modèle (vrai perso OU mannequin de ViewportFrame) avec LOOK.
+-- force = true : rhabille même si le dossier du look est déjà là (vêtements / accessoires de l'avatar revenus)
 local SkinBuilder
-local function wearLook(c)
+local trackLook -- (serveur) surveillance événementielle du look, définie avec le passif
+local function wearLook(c, force)
 	if not SkinBuilder then
 		local ok, mod = pcall(require, Shared.Modules.SkinBuilder)
 		if not ok then
@@ -168,7 +174,7 @@ local function wearLook(c)
 		SkinBuilder = mod
 	end
 	local f = c:FindFirstChild(SkinBuilder.FOLDER or "SkinParts")
-	if f and f:GetAttribute("SkinId") == LOOK.Id then
+	if not force and f and f:GetAttribute("SkinId") == LOOK.Id then
 		return
 	end
 	SkinBuilder.dress(c, LOOK)
@@ -176,6 +182,10 @@ end
 
 function M.Identity(_f, _head, _torso, c)
 	wearLook(c)
+	-- appelé par SkinService.applyTo juste après l'habillage : on branche la surveillance du vrai perso
+	if trackLook and c:GetAttribute("CharacterName") == "Bacon" then
+		trackLook(c)
+	end
 end
 
 M.Attacks = {
@@ -371,6 +381,13 @@ local function ready(api, c)
 	return api.CharacterState.isAlive(c) and not api.CharacterState.isStunned(c)
 end
 
+-- cible légitime pour les effets qui ne passent pas par applyHit (attraction, ralentissement) :
+-- pas protégée, pas dans la zone AFK, pas tenue par une ulti
+local function affectable(api, v)
+	return not Kit.isProtected(v) and not v:GetAttribute("UltHeld")
+		and not (api.CharacterState.inSafeZone and api.CharacterState.inSafeZone(v))
+end
+
 M.Kinds = {
 	-- Oof : cri en cône (souffle), repousse tout le monde devant
 	BaconOof = function(attacker, cfg, aim, api)
@@ -460,8 +477,10 @@ M.Kinds = {
 			return
 		end
 		for _, v in ipairs(Kit.inCircle(attacker, center + Vector3.new(0, 3, 0), cfg.LureRadius, 8)) do
-			Kit.pull(v, center, cfg.PullSpeed, 2.5)
-			api.CharacterState.setSpeedMod(v, "BaconBait", 0.5, cfg.LureTime)
+			if affectable(api, v) then
+				Kit.pull(v, center, cfg.PullSpeed, 2.5)
+				api.CharacterState.setSpeedMod(v, "BaconBait", 0.5, cfg.LureTime)
+			end
 		end
 		Kit.fx({ id = "Telegraph", p = center, r = cfg.BlastRadius, dur = cfg.LureTime, a = attacker })
 		task.wait(cfg.LureTime)
@@ -536,7 +555,9 @@ M.Kinds = {
 			local t0 = os.clock()
 			while os.clock() - t0 < cfg.GreaseTime do
 				for _, v in ipairs(Kit.inCircle(attacker, center + Vector3.new(0, 3, 0), cfg.Radius, 6)) do
-					api.CharacterState.setSpeedMod(v, "BaconGrease", cfg.GreaseSlow, 0.45)
+					if affectable(api, v) then
+						api.CharacterState.setSpeedMod(v, "BaconGrease", cfg.GreaseSlow, 0.45)
+					end
 				end
 				task.wait(0.25)
 			end
@@ -576,7 +597,7 @@ M.Kinds = {
 			while os.clock() - t0 < cfg.GreaseTime do
 				for _, v in ipairs(Kit.enemies(attacker)) do
 					local vr = Kit.root(v)
-					if vr and not slipped[v] and not Kit.isProtected(v) then
+					if vr and not slipped[v] and affectable(api, v) then
 						local vel = Vector3.new(vr.AssemblyLinearVelocity.X, 0, vr.AssemblyLinearVelocity.Z)
 						for _, pt in ipairs(trail) do
 							local d = Vector3.new(vr.Position.X - pt.X, 0, vr.Position.Z - pt.Z).Magnitude
@@ -603,18 +624,110 @@ local function isBacon(c)
 	return c ~= nil and c:GetAttribute("CharacterName") == "Bacon"
 end
 
+local LOOK_SAFETY = 3 -- s, contrôle lent de secours (tout le reste est événementiel)
+local CLOTHES = { Shirt = true, Pants = true, ShirtGraphic = true }
 
-local function checkLook(c)
-	if not isBacon(c) or not c.Parent then
-		return
+local function lookReady(c)
+	local hum = c and c.Parent and c:FindFirstChildOfClass("Humanoid")
+	return hum ~= nil and hum.Health > 0 and c:FindFirstChild("Torso") ~= nil and c:FindFirstChild("Head") ~= nil
+end
+
+-- le look a-t-il été abîmé ? (dossier absent / autre skin, vêtements ou accessoires de l'avatar visibles)
+local function lookBroken(c)
+	local f = c:FindFirstChild("SkinParts")
+	if not f or f:GetAttribute("SkinId") ~= LOOK.Id then
+		return true
 	end
-	local hum = c:FindFirstChildOfClass("Humanoid")
-	if hum and hum.Health > 0 and c:FindFirstChild("Torso") and c:FindFirstChild("Head") then
-		local ok, err = pcall(wearLook, c)
-		if not ok then
-			warn("[Bacon] look :", err)
+	for _, ch in ipairs(c:GetChildren()) do
+		if CLOTHES[ch.ClassName] then
+			return true
+		elseif ch:IsA("Accessory") then
+			local h = ch:FindFirstChild("Handle")
+			if h and h:IsA("BasePart") and h.Transparency < 1 and h:GetAttribute("_SkinHid") == nil then
+				return true
+			end
 		end
 	end
+	return false
+end
+
+local function checkLook(c)
+	if not isBacon(c) or not lookReady(c) then
+		return
+	end
+	local ok, err = pcall(function()
+		if lookBroken(c) then
+			-- rhabillage complet (SkinBuilder.dress retire l'ancien dossier, recache les accessoires, vide les vêtements)
+			wearLook(c, true)
+		end
+	end)
+	if not ok then
+		warn("[Bacon] look :", err)
+	end
+end
+
+-- re-pose regroupée (plusieurs accessoires qui arrivent d'un coup = un seul rhabillage)
+local pendingLook = setmetatable({}, { __mode = "k" })
+local function scheduleLook(c)
+	if not c or pendingLook[c] then
+		return
+	end
+	pendingLook[c] = true
+	task.delay(0.1, function()
+		pendingLook[c] = nil
+		checkLook(c)
+	end)
+end
+
+-- branché une fois par perso (serveur) : accessoires / vêtements ajoutés, dossier du look retiré
+local tracked = setmetatable({}, { __mode = "k" })
+function trackLook(c)
+	if not c or tracked[c] or not RunService:IsServer() then
+		return
+	end
+	tracked[c] = true
+	c.ChildAdded:Connect(function(ch)
+		if isBacon(c) and ch.Parent == c and (ch:IsA("Accessory") or CLOTHES[ch.ClassName] or ch:IsA("BodyColors")) then
+			scheduleLook(c)
+		end
+	end)
+	c.ChildRemoved:Connect(function(ch)
+		if ch.Name == "SkinParts" and isBacon(c) then
+			scheduleLook(c)
+		end
+	end)
+end
+
+-- état « K.O. en cours » posé par CombatService (le coup fatal est déjà parti : rien à sauver)
+local function pendingKO(api, v)
+	if v:GetAttribute("PendingKO") then
+		return true
+	end
+	local ok, st = pcall(api.CharacterState.get, v)
+	return ok and type(st) == "table" and st.pendingKO ~= nil and st.pendingKO ~= false
+end
+
+-- dégâts que ce coup va VRAIMENT infliger, en rejouant l'ordre de CombatService.applyHit (garde de face) :
+-- renvoie (dégâts, multiplicateur) ; paré => 0 ; bloqué / garde cassée => chip = dégâts x (1 - Reduction)
+local function landed(api, v, p)
+	if p.unblockable then
+		return p.damage, 1
+	end
+	local ok, st = pcall(api.CharacterState.get, v)
+	local root = v:FindFirstChild("HumanoidRootPart")
+	if not ok or type(st) ~= "table" or not st.blocking or not root then
+		return p.damage, 1
+	end
+	local dir = p.dir or Vector3.new(0, 0, -1)
+	if root.CFrame.LookVector:Dot(-dir) <= 0.1 then
+		return p.damage, 1 -- block de dos : le coup passe
+	end
+	local B = CombatCfg.Block or {}
+	if os.clock() - (st.blockStart or -10) <= (B.PerfectWindow or B.ParryWindow or 0) then
+		return 0, 1 -- PERFECT BLOCK : aucun dégât
+	end
+	local mult = math.max(0.01, 1 - (B.Reduction or 0.85))
+	return p.damage * mult, mult
 end
 
 function M.ServerInit(api)
@@ -632,7 +745,9 @@ function M.ServerInit(api)
 			p.damage *= TAKE_MULT
 		end
 	end)
-	-- Plot Armor (OOF!) : ajouté en DERNIER (après tous les autres bonus) pour juger du vrai coup fatal
+	-- Plot Armor (OOF!) : ajouté en DERNIER (après tous les autres bonus) pour juger du vrai coup fatal.
+	-- Les damageMods tournent AVANT la garde (CombatService.applyHit) : on prédit ici l'issue du coup pour ne
+	-- brûler la sauvegarde que si le coup va VRAIMENT le tuer (pas sur un coup paré / bloqué non mortel).
 	task.delay(1.5, function()
 		table.insert(CS.damageMods, function(p)
 			local v = p.victim
@@ -640,29 +755,41 @@ function M.ServerInit(api)
 				return
 			end
 			local hum = v:FindFirstChildOfClass("Humanoid")
-			if not hum or hum.Health <= 0 or hum.Health - p.damage > 0 then
+			if not hum or hum.Health <= 0 or pendingKO(api, v) then
 				return
 			end
+			local taken, chipMult = landed(api, v, p)
+			if taken <= 0 or hum.Health - taken > 0 then
+				return -- paré, ou pas mortel (bloqué : seul le « chip » passe)
+			end
 			v:SetAttribute("BaconOofUsed", true)
-			p.damage = math.max(0, hum.Health - 1)
+			-- reste à 1 PV : coup normal => dégâts = PV - 1 ; bloqué => le chip (dégâts x chipMult) laisse 1 PV
+			p.damage = math.max(0, hum.Health - 1) / chipMult
 			p.words = { "OOF!", "PLOT ARMOR!" }
 			p.launch = nil
 			p.knockback = math.min(p.knockback or 0, 30)
 			Kit.fx({ id = "Bacon_PlotArmor", v = v })
-			task.delay(0.3, function()
-				if hum.Parent and hum.Health > 0 and v.Parent then
-					hum.Health = math.min(hum.MaxHealth, hum.Health + OOF_HEAL)
+			-- intouchable dès la fin de CE coup (task.defer : après son TakeDamage, qu'un ForceField annulerait),
+			-- sinon le coup suivant d'un combo le finirait pendant le relevé ; soin 0,3 s plus tard
+			task.defer(function()
+				if v.Parent and hum.Health > 0 then
 					local ff = Instance.new("ForceField")
 					ff.Name = "BaconPlotArmor"
 					ff.Visible = false
 					ff.Parent = v
-					Debris:AddItem(ff, OOF_SHIELD)
+					Debris:AddItem(ff, 0.3 + OOF_SHIELD)
+				end
+			end)
+			task.delay(0.3, function()
+				if hum.Parent and hum.Health > 0 and v.Parent then
+					hum.Health = math.min(hum.MaxHealth, hum.Health + OOF_HEAL)
 				end
 			end)
 		end)
 	end)
 
-	-- look signature : porté quel que soit le skin équipé (SkinService remet l'avatar si rien n'est équipé)
+	-- look signature : porté quel que soit le skin équipé. Appliqué par SkinService.applyTo (-> M.Identity, qui
+	-- branche aussi trackLook) ; ici : changement de perso / respawn / avatar chargé en retard, puis contrôle lent.
 	local function watch(pl)
 		pl:GetAttributeChangedSignal("CharacterName"):Connect(function()
 			task.delay(0.1, function()
@@ -670,23 +797,30 @@ function M.ServerInit(api)
 			end)
 		end)
 		pl.CharacterAdded:Connect(function(c)
+			trackLook(c)
 			task.delay(0.2, function()
 				checkLook(c)
 			end)
 		end)
+		pl.CharacterAppearanceLoaded:Connect(function(c)
+			scheduleLook(c) -- vêtements / accessoires de l'avatar arrivés après l'habillage
+		end)
+		if pl.Character then
+			trackLook(pl.Character)
+		end
 	end
 	Players.PlayerAdded:Connect(watch)
 	for _, pl in ipairs(Players:GetPlayers()) do
 		watch(pl)
 	end
-	-- filet de sécurité : tout changement d'apparence (respawn, menu, admin) est rattrapé en < 0,3 s
+	-- filet de sécurité LENT (les cas normaux sont tous événementiels) : toutes les 3 s
 	task.spawn(function()
 		while true do
-			task.wait(0.3)
+			task.wait(LOOK_SAFETY)
 			for _, pl in ipairs(Players:GetPlayers()) do
 				local c = pl.Character
-				if c and isBacon(c) then
-					checkLook(c)
+				if c and isBacon(c) and lookBroken(c) then
+					scheduleLook(c)
 				end
 			end
 		end
@@ -909,6 +1043,9 @@ function M.ClientInit(api)
 			coin.CFrame = coin.CFrame * CFrame.Angles(0.12, 0, 0)
 		end)
 		task.delay(3, function()
+			if signs[d.a or 0] == st then
+				signs[d.a or 0] = nil -- Bacon mort avant l'explosion : on oublie le panneau
+			end
 			for _, e in ipairs(list) do
 				if e.p.Parent then
 					e.p:Destroy()

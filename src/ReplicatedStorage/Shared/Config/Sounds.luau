@@ -49,6 +49,35 @@ local Sounds = {
 	Slip = { "rbxassetid://129432532096499", "rbxassetid://4390298761" },
 	LevelUp = { "rbxassetid://112485797063762", "rbxassetid://3120909354" },
 	UIClick = { "rbxassetid://116080744084010", "rbxassetid://88442833509532" },
+	-- lot 3 : couches de « poids » des coups (IDs déjà utilisés ailleurs dans le jeu : UltKit.SFX / Ultimates)
+	PunchLight = { "rbxassetid://139795256698131", "rbxassetid://109316755832781", "rbxassetid://9113573976" }, -- claque sèche (M1)
+	LowThump = { "rbxassetid://9119388384", "rbxassetid://106271204257379" }, -- basse sourde sous les gros coups
+	Boom = { "rbxassetid://9114362625", "rbxassetid://73620401949114" }, -- finisher / K.O.
+	GlassShatter = { "rbxassetid://9114589343", "rbxassetid://139826391278483" }, -- garde brisée
+	Ting = { "rbxassetid://9119933232", "rbxassetid://9119516524" }, -- parade parfaite (aigu, clair)
+	BlockThud = { "rbxassetid://9113480915", "rbxassetid://9114773735" }, -- coup encaissé en garde (mat)
+	GroundCrack = { "rbxassetid://5689401424", "rbxassetid://9126096095", "rbxassetid://9126096220" }, -- sol qui se fend
+	DashWhoosh = { "rbxassetid://109827819756282", "rbxassetid://77673379143813", "rbxassetid://79352427112835" },
+	Typing = { "rbxassetid://9116157899" }, -- clavier (révélations de skins)
+}
+
+-- variation par clé (anti-répétition) : { hauteur min, hauteur max, volume min, volume max } ;
+-- défaut = Sounds.DefaultVariation. Les sons courts et fréquents varient davantage.
+Sounds.DefaultVariation = { 0.92, 1.1, 0.88, 1.05 }
+Sounds.Variation = {
+	Punch = { 0.86, 1.18, 0.82, 1.05 },
+	PunchLight = { 0.95, 1.28, 0.8, 1.05 },
+	PunchHeavy = { 0.85, 1.05, 0.9, 1.08 },
+	Thud = { 0.8, 1.2, 0.8, 1.05 },
+	LowThump = { 0.85, 1.0, 0.92, 1.05 },
+	Block = { 0.88, 1.14, 0.85, 1.05 },
+	BlockThud = { 0.75, 0.95, 0.85, 1.05 },
+	Whoosh = { 0.85, 1.25, 0.8, 1.05 },
+	DashWhoosh = { 0.9, 1.2, 0.85, 1.05 },
+	Ting = { 1.0, 1.12, 0.92, 1.05 },
+	Ding = { 0.95, 1.15, 0.9, 1.05 },
+	UIClick = { 0.96, 1.06, 0.95, 1.0 },
+	KO = { 0.97, 1.03, 0.95, 1.0 },
 }
 
 -- son d'impact selon la matière de l'objet

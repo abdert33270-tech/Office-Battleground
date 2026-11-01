@@ -1071,7 +1071,8 @@ local function refreshButtons()
 		ui.play.Label.Text = "PLAY AS " .. string.upper(shortName(selChar))
 		ui.play.BackgroundColor3 = Color3.fromRGB(255, 150, 30)
 	elseif ue.Tier == "Robux" and (not ue.GamePassId or ue.GamePassId == 0) then
-		ui.play.Label.Text = "COMING SOON"
+		-- Game Pass pas encore créé (Config/Unlocks) : on montre quand même le prix
+		ui.play.Label.Text = priceText(selChar) .. "  -  SOON"
 		ui.play.BackgroundColor3 = COL.Grey
 	elseif ue.Tier == "Robux" then
 		ui.play.Label.Text = "BUY  " .. priceText(selChar)
@@ -1083,7 +1084,7 @@ local function refreshButtons()
 	if ui.charLock then
 		ui.charLock.Visible = not owned
 		if not owned then
-			ui.charLockL.Text = ue.Tier == "Robux" and ((ue.GamePassId or 0) == 0 and "LOCKED  -  ROBUX (SOON)" or ("LOCKED  -  " .. priceText(selChar)))
+			ui.charLockL.Text = ue.Tier == "Robux" and ((ue.GamePassId or 0) == 0 and ("LOCKED  -  " .. priceText(selChar) .. " (SOON)") or ("LOCKED  -  " .. priceText(selChar)))
 				or ("LOCKED  -  " .. priceText(selChar))
 		end
 	end

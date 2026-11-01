@@ -25,6 +25,8 @@ local HOLD_POSES = {
 	Block = { RS = { p = 1.65, y = 0.95, r = 0.15 }, LS = { p = 1.65, y = 0.95, r = 0.15 }, RJ = { ln = 0.12 }, RH = { p = 0.25 }, LH = { p = -0.15 } },
 	Stunned = { RS = { p = 0.25, r = -0.25 }, LS = { p = 0.25, r = -0.25 }, RJ = { ln = 0.25, sd = 0.1 } },
 	GuardBroken = { RS = { p = 0.35, r = -0.45 }, LS = { p = 0.35, r = -0.45 }, RJ = { ln = 0.4, sd = 0.15 }, RH = { p = 0.15 }, LH = { p = -0.1 } },
+	-- ENDLAG (attribut EndlagUntil, coup lourd raté ou réussi) : essoufflé, bras ballants, buste plié -> « punissable »
+	Winded = { RS = { p = 0.15, r = -0.15 }, LS = { p = 0.15, r = -0.15 }, RJ = { ln = 0.42 }, RH = { p = 0.3 }, LH = { p = -0.2 } },
 }
 
 -- générateurs d'animations répétitives (rafales, tremblements, course)
@@ -306,6 +308,12 @@ local ANIMS = {
 		{ t = 0.14, RS = { p = 1.0, r = -1.45 }, LS = { p = 1.0, r = -1.45 }, RJ = { ln = -0.3 }, RH = { r = -0.45 }, LH = { r = -0.45 } },
 		{ t = 0.4, RS = { p = 0.9, r = -1.3 }, LS = { p = 0.9, r = -1.3 }, RJ = { ln = -0.2 }, RH = { r = -0.35 }, LH = { r = -0.35 } },
 		{ t = 0.55 },
+	},
+	GetUp = { -- fin du renversé (KnockdownUntil) : accroupi, mains au sol, puis on se redresse (joué automatiquement)
+		{ t = 0 },
+		{ t = 0.05, RS = { p = 1.2, r = -0.3 }, LS = { p = 1.2, r = -0.3 }, RJ = { ln = 0.75 }, RH = { p = 1.1 }, LH = { p = 0.9 } },
+		{ t = 0.3, RS = { p = 0.6, r = -0.5 }, LS = { p = 0.6, r = -0.5 }, RJ = { ln = 0.35 }, RH = { p = 0.45 }, LH = { p = 0.2 } },
+		{ t = 0.5 },
 	},
 	BlockStart = {
 		{ t = 0 },
@@ -667,6 +675,12 @@ local function holdPose(character)
 				pose[k] = v
 			end
 		end
+	elseif serverNow < (character:GetAttribute("EndlagUntil") or 0) then
+		for k, v in pairs(HOLD_POSES.Winded) do
+			if not pose[k] then
+				pose[k] = v
+			end
+		end
 	end
 	return pose
 end
@@ -767,6 +781,16 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 			continue
 		end
+		-- fin du renversé : animation de relevé (lisible : « il se relève, invulnérable un instant »)
+		local down = workspace:GetServerTimeNow() < (character:GetAttribute("KnockdownUntil") or 0)
+		if s.wasDown and not down then
+			local hum = character:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 then
+				s.track = { frames = ANIMS.GetUp, t = 0, speed = 1 }
+				s.blend = nil
+			end
+		end
+		s.wasDown = down
 		local hold = full(holdPose(character))
 		local pose
 		if s.track then

@@ -308,6 +308,11 @@ local function transform(player: Player)
 	if (c:GetAttribute("Overtime") or 0) < CombatConfig.Overtime.Max then
 		return
 	end
+	-- zone AFK : pas de transformation (ni coups, ni ulti là-bas)
+	if CharacterState.inSafeZone(c) then
+		Announce.toast(player, "No Overtime in the AFK zone!", Color3.fromRGB(255, 200, 90))
+		return
+	end
 	local name = c:GetAttribute("CharacterName") or DEFAULT
 	local def = Characters[name]
 	-- durée allongée (multiplicateur global) + soin complet à l'activation

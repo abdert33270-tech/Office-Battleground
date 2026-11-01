@@ -160,7 +160,7 @@ end
 local function cleanupSeq(data)
 	live[data.seq] = nil
 	lit[data.seq] = nil
-	K._cleanup(data)
+	K._cleanup(data, next(live) ~= nil)
 end
 
 -- cut-in automatique
@@ -181,10 +181,11 @@ local function builtinCutin(data)
 		K.sound("CutIn", pos, 0.8)
 	end
 	if near then
-		K.darken(true, 1, 0.12)
+		-- compté par ulti (clé = seq) : la fin d'un cut-in ne rallume pas le monde d'une autre ulti en cours
+		K.darken(true, 1, 0.12, data.seq)
 		K.at(data, dur, function()
 			if live[data.seq] then
-				K.darken(false, nil, 0.35)
+				K.darken(false, nil, 0.35, data.seq)
 			end
 		end)
 	end
@@ -271,7 +272,7 @@ local function onFX(data)
 		live[data.seq] = nil
 		task.delay(0.05, function()
 			lit[data.seq] = nil
-			K._cleanup(data)
+			K._cleanup(data, next(live) ~= nil)
 		end)
 	end
 end
@@ -301,6 +302,7 @@ function UltimateController.init()
 		hook(c)
 		K.releaseAll(true)
 		K.letterbox(nil, false, 0.1)
+		K.darkenReset(0.2)
 		local hum = c:WaitForChild("Humanoid", 10)
 		if hum and hum:IsA("Humanoid") then
 			hum.Died:Connect(function()

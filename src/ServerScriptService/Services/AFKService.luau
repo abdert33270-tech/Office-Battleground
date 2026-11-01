@@ -39,7 +39,7 @@ local room -- Model workspace.BreakRoom
 local spawnSpots = {}
 local sessions = {} -- [player] = { character, enteredAt, lastPay, bonuses, earned }
 local lastToggle = {} -- [player] = os.clock()
-local lastHurt = setmetatable({}, { __mode = "k" }) -- [character] = os.clock()
+local lastCombat = setmetatable({}, { __mode = "k" }) -- [character] = os.clock() du dernier coup reçu OU donné
 local busy = {} -- [player] = true pendant une téléportation
 
 local function serverNow()
@@ -129,16 +129,86 @@ local function couch(parent, cf, width, color, seats)
 	end
 end
 
-local function plant(parent, cf, scale)
+-- plante en pot ; le feuillage est un Model « AmbSway » (pivot = haut du pot) que le client fait onduler
+local function plant(parent, cf, scale, phase)
 	local s = scale or 1
 	part(parent, Vector3.new(2.4, 2.4, 2.4) * s, cf * CFrame.new(0, 1.2 * s, 0) * CFrame.Angles(0, 0, math.rad(90)), Color3.fromRGB(196, 110, 70), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder })
 	part(parent, Vector3.new(2.1, 0.2, 2.1) * s, cf * CFrame.new(0, 2.35 * s, 0), Color3.fromRGB(90, 60, 40), Enum.Material.Ground)
+	local leaves = Instance.new("Model")
+	leaves.Name = "Foliage"
+	leaves:SetAttribute("AmbSway", (BASE * cf * CFrame.new(0, 2.4 * s, 0)).Position)
+	leaves:SetAttribute("AmbPhase", phase or 0)
+	leaves.Parent = parent
 	local greens = { Color3.fromRGB(70, 170, 80), Color3.fromRGB(95, 195, 95), Color3.fromRGB(55, 140, 70) }
 	local offs = { Vector3.new(0, 4.2, 0), Vector3.new(0.9, 3.4, 0.4), Vector3.new(-0.8, 3.6, -0.5), Vector3.new(0.2, 5.3, -0.2) }
 	for i, o in ipairs(offs) do
 		local d = (i == 1 and 2.6 or 1.9) * s
-		part(parent, Vector3.new(d, d, d), cf * CFrame.new(o * s), greens[(i % #greens) + 1], Enum.Material.Grass, { Shape = Enum.PartType.Ball, CanCollide = false })
+		part(leaves, Vector3.new(d, d, d), cf * CFrame.new(o * s), greens[(i % #greens) + 1], Enum.Material.Grass, { Shape = Enum.PartType.Ball, CanCollide = false, CastShadow = false })
 	end
+end
+
+-- lumière qui clignote / pulse côté client (AFKController) : mode "blink" (créneau) ou "pulse" (sinus)
+local function blink(p, period, phase, mode)
+	p:SetAttribute("AmbBlink", period)
+	p:SetAttribute("AmbPhase", phase or 0)
+	p:SetAttribute("AmbMode", mode or "pulse")
+	p:SetAttribute("AmbBaseT", p.Transparency)
+	return p
+end
+
+-- vapeur (ParticleEmitter sur une Attachment) ; dir = face locale de l'hôte qui pointe vers le haut
+local function steamAt(host, offset, rate, size, dir)
+	local a = Instance.new("Attachment")
+	a.Name = "Steam"
+	a.Position = offset
+	a.Parent = host
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	e.Rate = rate
+	e.Lifetime = NumberRange.new(1.6, 2.6)
+	e.Speed = NumberRange.new(0.8, 1.6)
+	e.SpreadAngle = Vector2.new(12, 12)
+	e.Acceleration = Vector3.new(0.4, 0.6, 0)
+	e.RotSpeed = NumberRange.new(-30, 30)
+	e.Rotation = NumberRange.new(0, 360)
+	e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, size * 0.3), NumberSequenceKeypoint.new(1, size) })
+	e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.15, 0.55), NumberSequenceKeypoint.new(1, 1) })
+	e.LightInfluence = 0.3
+	e.EmissionDirection = dir or Enum.NormalId.Top
+	e.Color = ColorSequence.new(Color3.new(1, 1, 1))
+	e.Parent = a
+	return e
+end
+
+-- siège (assis face au LookVector de cf)
+local function seat(parent, size, cf, color, material, transparent)
+	local s = Instance.new("Seat")
+	s.Anchored = true
+	s.Size = size
+	s.CFrame = BASE * cf
+	s.Color = color
+	s.Material = material or Enum.Material.Fabric
+	s.TopSurface = Enum.SurfaceType.Smooth
+	s.BottomSurface = Enum.SurfaceType.Smooth
+	if transparent then
+		s.Transparency = 1
+		s.CastShadow = false
+	end
+	s.Parent = parent
+	return s
+end
+
+-- nuage : boules blanches, avance lentement en X côté client (attribut AmbCloud = vitesse studs/s)
+local function cloud(parent, center, scale, speed, rng)
+	local m = Instance.new("Model")
+	m.Name = "Cloud"
+	m:SetAttribute("AmbCloud", speed)
+	m.Parent = parent
+	for i = 1, 4 do
+		local d = scale * rng:NextNumber(7, 12)
+		part(m, Vector3.new(d, d, d), CFrame.new(center + Vector3.new((i - 2.5) * scale * 6, rng:NextNumber(-1, 2) * scale, rng:NextNumber(-3, 3))), Color3.fromRGB(255, 255, 255), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Ball, CanCollide = false, CastShadow = false, Transparency = 0.12 })
+	end
+	m.WorldPivot = CFrame.new(ORIGIN + center)
 end
 
 local function buildSkyline(parent)
@@ -162,16 +232,23 @@ local function buildSkyline(parent)
 		local strips = math.floor(h / 22)
 		for i = 1, strips do
 			if rng:NextNumber() < 0.75 then
-				part(parent, Vector3.new(w - 3, 1.4, 0.3), CFrame.new(cx, -90 + i * 20, z + b.Size.Z / 2 + 0.1), Color3.fromRGB(255, 226, 140), Enum.Material.Neon, { CanCollide = false, CastShadow = false, Transparency = rng:NextNumber(0.1, 0.45) })
+				part(parent, Vector3.new(w - 3, 1.4, 0.3), CFrame.new(cx, -90 + i * 20, z + b.Size.Z / 2 + 0.1), Color3.fromRGB(255, 226, 140), Enum.Material.Neon, { Name = "Window", CanCollide = false, CastShadow = false, Transparency = rng:NextNumber(0.1, 0.45) })
 			end
 		end
 		-- antenne sur les plus hautes
 		if h > 150 then
 			part(parent, Vector3.new(0.6, 14, 0.6), CFrame.new(cx, -90 + h + 7, z), Color3.fromRGB(200, 200, 210), Enum.Material.Metal, { CanCollide = false })
-			part(parent, Vector3.new(1.2, 1.2, 1.2), CFrame.new(cx, -90 + h + 14.5, z), Color3.fromRGB(255, 60, 60), Enum.Material.Neon, { CanCollide = false, Shape = Enum.PartType.Ball })
+			blink(part(parent, Vector3.new(1.2, 1.2, 1.2), CFrame.new(cx, -90 + h + 14.5, z), Color3.fromRGB(255, 60, 60), Enum.Material.Neon, { CanCollide = false, Shape = Enum.PartType.Ball }), 1.6, rng:NextNumber(0, 1.6), "blink")
 		end
 		x += w + rng:NextNumber(2, 10)
 		row = (row + 1) % 2
+	end
+	-- nuages lents au-dessus de la ville
+	local clouds = Instance.new("Folder")
+	clouds.Name = "Clouds"
+	clouds.Parent = parent
+	for i = 1, 7 do
+		cloud(clouds, Vector3.new(-240 + i * 68 + rng:NextNumber(-15, 15), rng:NextNumber(26, 60), -110 - rng:NextNumber(0, 120)), rng:NextNumber(0.8, 1.5), rng:NextNumber(1.2, 2.6), rng)
 	end
 end
 
@@ -215,11 +292,25 @@ local function buildRoom()
 	part(m, Vector3.new(8, 12, 1), CFrame.new(0, 17, 32.5), WALL)
 	local door = part(m, Vector3.new(8, 11, 0.6), CFrame.new(0, 5.5, 32.7), C(120, 82, 55), Enum.Material.Wood, { Name = "ExitDoor" })
 	part(m, Vector3.new(0.5, 0.5, 1), CFrame.new(2.8, 5.5, 32.2), C(235, 200, 90), Enum.Material.Metal, { Shape = Enum.PartType.Ball })
-	local exitSign = part(m, Vector3.new(6, 1.8, 0.4), CFrame.new(0, 12.6, 31.9), C(40, 200, 90), Enum.Material.Neon)
-	surfaceText(exitSign, Enum.NormalId.Front, { { text = "EXIT", h = 0.8 } }, { pps = 60 })
-	-- dalle de sortie
-	local pad = part(m, Vector3.new(8, 0.3, 5), CFrame.new(0, 0.15, 28.5), C(60, 220, 110), Enum.Material.Neon, { Name = "ExitPad", CanCollide = false, CanTouch = true, Transparency = 0.15 })
-	surfaceText(pad, Enum.NormalId.Top, { { text = "BACK TO WORK", h = 0.5 } }, { pps = 40 })
+	-- enseigne EXIT (face avant = -Z = vers l'intérieur de la salle)
+	local exitSign = part(m, Vector3.new(10, 3, 0.4), CFrame.new(0, 13.4, 31.9), C(30, 150, 70), Enum.Material.SmoothPlastic)
+	surfaceText(exitSign, Enum.NormalId.Front, {
+		{ text = "EXIT", h = 0.55, color = C(170, 255, 190) },
+		{ text = "back to the arena", h = 0.28, body = true },
+	}, { pps = 50, brightness = 2 })
+	-- cadre lumineux vert autour de la porte
+	for _, sx in ipairs({ -1, 1 }) do
+		blink(part(m, Vector3.new(0.5, 11.4, 0.5), CFrame.new(sx * 4.4, 5.7, 31.9), C(60, 230, 110), Enum.Material.Neon, { CanCollide = false }), 2.4, 0, "pulse")
+	end
+	blink(part(m, Vector3.new(9.3, 0.5, 0.5), CFrame.new(0, 11.4, 31.9), C(60, 230, 110), Enum.Material.Neon, { CanCollide = false }), 2.4, 0, "pulse")
+	-- dalle de sortie + chevrons qui défilent vers la porte (+Z)
+	local pad = part(m, Vector3.new(8, 0.3, 5), CFrame.new(0, 0.15, 28.5), C(40, 170, 85), Enum.Material.SmoothPlastic, { Name = "ExitPad", CanCollide = false, CanTouch = true })
+	for i, z0 in ipairs({ 26.6, 28, 29.4 }) do
+		for _, sx in ipairs({ -1, 1 }) do
+			-- bras du « ^ » pointant vers +Z (rotation Y : LookVector local Z -> (sin, 0, cos))
+			blink(part(m, Vector3.new(0.45, 0.1, 1.75), CFrame.new(sx * 0.6, 0.33, z0 + 0.6) * CFrame.Angles(0, math.rad(-45 * sx), 0), C(200, 255, 210), Enum.Material.Neon, { CanCollide = false }), 1.2, (i - 1) * 0.4, "chase")
+		end
+	end
 
 	-- éclairage doux : dalles lumineuses + lampadaires
 	for _, x in ipairs({ -22, 0, 22 }) do
@@ -253,11 +344,13 @@ local function buildRoom()
 	for _, o in ipairs({ Vector3.new(-4, 0, -2), Vector3.new(4, 0, -2), Vector3.new(-4, 0, 2), Vector3.new(4, 0, 2) }) do
 		part(m, Vector3.new(0.5, 1.6, 0.5), CFrame.new(o + Vector3.new(0, 0.8, 0)), C(110, 75, 50), Enum.Material.Wood)
 	end
-	part(m, Vector3.new(1, 1.2, 1), CFrame.new(-2, 2.8, 0) * CFrame.Angles(0, 0, math.rad(90)), C(255, 255, 255), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder })
+	local mug = part(m, Vector3.new(1, 1.2, 1), CFrame.new(-2, 2.8, 0) * CFrame.Angles(0, 0, math.rad(90)), C(255, 255, 255), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder })
+	steamAt(mug, Vector3.new(0.5, 0, 0), 2, 0.7, Enum.NormalId.Right) -- cylindre couché : X local = haut du monde
 	part(m, Vector3.new(2.2, 0.4, 1.6), CFrame.new(2, 2.4, 0.4) * CFrame.Angles(0, 0.3, 0), C(240, 80, 80), Enum.Material.SmoothPlastic)
-	-- poufs près des vitres
-	for _, p in ipairs({ { Vector3.new(-26, 1.5, -24), C(255, 120, 180) }, { Vector3.new(-18, 1.5, -26), C(120, 210, 255) }, { Vector3.new(24, 1.5, -24), C(150, 230, 120) } }) do
-		part(m, Vector3.new(4.5, 3.4, 4.5), CFrame.new(p[1]), p[2], Enum.Material.Fabric, { Shape = Enum.PartType.Ball })
+	-- poufs près des vitres (siège invisible dessus, face à la skyline -Z)
+	for _, p in ipairs({ { Vector3.new(-26, 1.5, -24), C(255, 120, 180) }, { Vector3.new(-18, 1.5, -26), C(120, 210, 255) }, { Vector3.new(24, 1.5, -24), C(150, 230, 120) }, { Vector3.new(16, 1.5, -26), C(255, 200, 90) } }) do
+		part(m, Vector3.new(3.6, 3.6, 3.6), CFrame.new(p[1]), p[2], Enum.Material.Fabric, { Shape = Enum.PartType.Ball })
+		seat(m, Vector3.new(2.4, 0.4, 2.4), CFrame.new(p[1] + Vector3.new(0, 1.55, 0)), p[2], Enum.Material.Fabric, true)
 	end
 
 	-- comptoir café (mur gauche)
@@ -266,21 +359,20 @@ local function buildRoom()
 	local mach = part(m, Vector3.new(3, 4.4, 3.2), CFrame.new(-41, 6.2, -17), C(55, 55, 65), Enum.Material.Metal)
 	part(m, Vector3.new(3.2, 0.5, 3.4), CFrame.new(-41, 8.6, -17), C(200, 200, 210), Enum.Material.Metal)
 	part(m, Vector3.new(0.3, 0.8, 0.8), CFrame.new(-39.4, 6.6, -17), C(30, 30, 30), Enum.Material.Metal)
-	part(m, Vector3.new(0.2, 0.4, 0.4), CFrame.new(-39.4, 7.6, -16.2), C(80, 255, 120), Enum.Material.Neon)
-	part(m, Vector3.new(0.2, 0.4, 0.4), CFrame.new(-39.4, 7.6, -17.8), C(255, 80, 60), Enum.Material.Neon)
+	blink(part(m, Vector3.new(0.2, 0.4, 0.4), CFrame.new(-39.4, 7.6, -16.2), C(80, 255, 120), Enum.Material.Neon), 1.1, 0, "pulse")
+	blink(part(m, Vector3.new(0.2, 0.4, 0.4), CFrame.new(-39.4, 7.6, -17.8), C(255, 80, 60), Enum.Material.Neon), 0.9, 0.45, "blink")
 	part(m, Vector3.new(0.9, 0.8, 0.8), CFrame.new(-39.7, 4.4, -17) * CFrame.Angles(0, 0, math.rad(90)), C(255, 255, 255), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder })
-	local steam = Instance.new("ParticleEmitter")
-	steam.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	steam.Rate = 3
-	steam.Lifetime = NumberRange.new(1.5, 2.5)
-	steam.Speed = NumberRange.new(1, 2)
-	steam.Size = NumberSequence.new(0.4, 1.4)
-	steam.Transparency = NumberSequence.new(0.6, 1)
-	steam.EmissionDirection = Enum.NormalId.Top
-	steam.Color = ColorSequence.new(Color3.new(1, 1, 1))
-	steam.Parent = mach
+	-- vapeur : au-dessus de la tasse sous le bec, et en haut de la machine
+	steamAt(mach, Vector3.new(1.3, -1.3, 0), 6, 1.2) -- tasse (machine : centre y 6.2, tasse y 4.4)
+	steamAt(mach, Vector3.new(0, 2.5, 0), 2, 1.8) -- haut de la machine
 	local coffeeSign = part(m, Vector3.new(0.3, 2.4, 7), CFrame.new(-42.4, 11, -14), C(60, 40, 30), Enum.Material.Wood)
 	surfaceText(coffeeSign, Enum.NormalId.Right, { { text = "COFFEE", color = C(255, 220, 160), h = 0.7 } }, { pps = 50 })
+	-- tabourets de bar devant le comptoir (assis face au comptoir, -X)
+	for _, z in ipairs({ -18.5, -14, -9.5 }) do
+		part(m, Vector3.new(1.6, 0.3, 1.6), CFrame.new(-35.8, 0.15, z), C(60, 60, 70), Enum.Material.Metal)
+		part(m, Vector3.new(0.35, 2.6, 0.35), CFrame.new(-35.8, 1.45, z), C(170, 170, 180), Enum.Material.Metal)
+		seat(m, Vector3.new(1.9, 0.5, 1.9), CFrame.new(-35.8, 2.95, z) * CFrame.Angles(0, math.rad(90), 0), C(230, 120, 90), Enum.Material.Fabric)
+	end
 	for i = 0, 3 do
 		part(m, Vector3.new(0.8, 0.9, 0.8), CFrame.new(-40, 4.45, -11 + i * 1.4) * CFrame.Angles(0, 0, math.rad(90)), ({ C(255, 90, 90), C(90, 160, 255), C(255, 210, 60), C(120, 220, 120) })[i + 1], Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder })
 	end
@@ -296,7 +388,11 @@ local function buildRoom()
 	end
 	part(m, Vector3.new(0.4, 1.2, 1.6), CFrame.new(-38.4, 6, 8.1), C(40, 40, 50), Enum.Material.Metal)
 	part(m, Vector3.new(0.4, 1, 4), CFrame.new(-38.4, 1.6, 5.4), C(30, 30, 35), Enum.Material.Metal)
-	local vendTop = part(m, Vector3.new(0.3, 1.4, 5), CFrame.new(-38.4, 9.3, 6), C(255, 240, 200), Enum.Material.Neon)
+	for i = 0, 2 do
+		blink(part(m, Vector3.new(0.2, 0.3, 0.3), CFrame.new(-38.15, 7.2 - i * 0.45, 8.1), ({ C(80, 255, 120), C(255, 210, 60), C(90, 180, 255) })[i + 1], Enum.Material.Neon), 1.5, i * 0.5, "blink")
+	end
+	part(m, Vector3.new(0.3, 9, 0.25), CFrame.new(-38.35, 5.2, 2.9), C(255, 140, 200), Enum.Material.Neon, { CanCollide = false })
+	local vendTop = blink(part(m, Vector3.new(0.3, 1.4, 5), CFrame.new(-38.4, 9.3, 6), C(255, 240, 200), Enum.Material.Neon), 3, 0, "pulse")
 	surfaceText(vendTop, Enum.NormalId.Right, { { text = "SNACKS", color = C(200, 40, 50), h = 0.8, stroke = 0 } }, { pps = 50 })
 
 	-- enseigne géante + tableau des gains (mur droit)
@@ -311,26 +407,32 @@ local function buildRoom()
 	for _, z in ipairs({ -25.5, 9.5 }) do
 		part(m, Vector3.new(0.6, 8.8, 0.4), CFrame.new(41.8, 14.5, z), C(255, 140, 200), Enum.Material.Neon)
 	end
-	local board = part(m, Vector3.new(0.6, 7, 14), CFrame.new(42.3, 6.5, 20), C(40, 80, 60), Enum.Material.SmoothPlastic)
-	part(m, Vector3.new(0.5, 7.6, 14.6), CFrame.new(42.6, 6.5, 20), TRIM, Enum.Material.Wood)
-	local capText = (Config.DailyCap or 0) > 0 and ("Daily AFK cap: " .. Config.DailyCap .. " Cash") or "No daily cap"
-	surfaceText(board, Enum.NormalId.Left, {
-		{ text = "PAYOUT BOARD", color = C(255, 214, 50), h = 0.18 },
-		{ text = "+" .. Config.PayAmount .. " Cash every " .. math.floor(Config.PayInterval / 60 + 0.5) .. " min", h = 0.13, body = true },
-		{ text = "+" .. Config.BonusAmount .. " bonus every " .. math.floor(Config.BonusEvery / 60 + 0.5) .. " min", h = 0.13, body = true, color = C(150, 255, 160) },
-		{ text = capText, h = 0.11, body = true, color = C(200, 220, 210) },
-		{ text = "Safe zone: no fighting", h = 0.11, body = true, color = C(255, 200, 200) },
+	-- tableau des gains (mur droit, face Left = -X = vers la salle) :
+	-- en-tête fixe (taux) + écran « PayoutScreen » rempli côté client (gains de la session, prochain versement, reste du jour)
+	part(m, Vector3.new(0.5, 8.6, 15), CFrame.new(42.6, 6.6, 20), TRIM, Enum.Material.Wood)
+	local header = part(m, Vector3.new(0.6, 2.8, 14), CFrame.new(42.3, 8.6, 20), C(40, 80, 60), Enum.Material.SmoothPlastic, { Name = "PayoutHeader" })
+	local capText = (Config.DailyCap or 0) > 0 and ("cap " .. Config.DailyCap .. "/day") or "no daily cap"
+	surfaceText(header, Enum.NormalId.Left, {
+		{ text = "PAYOUT BOARD", color = C(255, 214, 50), h = 0.42 },
+		{ text = "+" .. Config.PayAmount .. " / " .. math.floor(Config.PayInterval / 60 + 0.5) .. " min   +" .. Config.BonusAmount .. " bonus / " .. math.floor(Config.BonusEvery / 60 + 0.5) .. " min   " .. capText, h = 0.26, body = true, color = C(200, 240, 210) },
 	}, { pps = 40 })
+	part(m, Vector3.new(0.6, 4.4, 14), CFrame.new(42.3, 4.9, 20), C(16, 26, 22), Enum.Material.SmoothPlastic, { Name = "PayoutScreen" })
+	blink(part(m, Vector3.new(0.3, 0.3, 14), CFrame.new(41.95, 7.15, 20), C(120, 255, 160), Enum.Material.Neon, { CanCollide = false }), 4, 0, "pulse")
 
 	-- plantes
 	for _, p in ipairs({ Vector3.new(-38, 0, -28), Vector3.new(38, 0, -28), Vector3.new(38, 0, 28), Vector3.new(-38, 0, 28), Vector3.new(-7, 0, 29), Vector3.new(7, 0, 29) }) do
-		plant(m, CFrame.new(p), (math.abs(p.X) < 10) and 0.8 or 1.2)
+		plant(m, CFrame.new(p), (math.abs(p.X) < 10) and 0.8 or 1.2, (p.X + p.Z) * 0.37)
 	end
 
 	-- horloge
 	part(m, Vector3.new(0.4, 4, 4), CFrame.new(-24, 15, 32.1) * CFrame.Angles(0, math.rad(90), 0), C(255, 255, 255), Enum.Material.SmoothPlastic, { Shape = Enum.PartType.Cylinder })
-	part(m, Vector3.new(0.2, 1.4, 0.2), CFrame.new(-24, 15.6, 31.8), C(30, 30, 30))
-	part(m, Vector3.new(1, 0.2, 0.2), CFrame.new(-23.5, 15, 31.8), C(30, 30, 30))
+	-- aiguilles tournées côté client à l'heure locale du joueur (AmbHand = "Hour" | "Minute", pivot = centre)
+	local minute = part(m, Vector3.new(0.2, 1.6, 0.15), CFrame.new(-24, 15.8, 31.8), C(30, 30, 30), nil, { CanCollide = false })
+	minute:SetAttribute("AmbHand", "Minute")
+	minute:SetAttribute("AmbPivot", ORIGIN + Vector3.new(-24, 15, 31.8))
+	local hour = part(m, Vector3.new(0.25, 1.1, 0.15), CFrame.new(-24, 15.55, 31.75), C(200, 60, 50), nil, { CanCollide = false })
+	hour:SetAttribute("AmbHand", "Hour")
+	hour:SetAttribute("AmbPivot", ORIGIN + Vector3.new(-24, 15, 31.75))
 
 	-- skyline derrière les vitres
 	local city = Instance.new("Model")
@@ -451,6 +553,37 @@ local function roomSpawn()
 	return CFrame.lookAt(pos + Vector3.new(0, 3, 0), pos + Vector3.new(0, 3, -10))
 end
 
+-- point d'apparition sur l'étage courant avec du sol dessous (dalles effondrées / étage sans spawns => centre de l'étage)
+local floorRay = RaycastParams.new()
+floorRay.FilterType = Enum.RaycastFilterType.Exclude
+floorRay.RespectCanCollide = true
+local function floorSpawn(): CFrame
+	local exclude = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Character then
+			table.insert(exclude, p.Character)
+		end
+	end
+	if room then
+		table.insert(exclude, room)
+	end
+	floorRay.FilterDescendantsInstances = exclude
+	local floorY = World.getFloorY()
+	for _ = 1, 6 do
+		local cf = World.getPlayerSpawn()
+		-- le repli de World (0, 6, 0) ou un spawn d'un autre étage : on vérifie la hauteur et le sol
+		if math.abs(cf.Position.Y - floorY) < 40 then
+			local hit = workspace:Raycast(cf.Position + Vector3.new(0, 2, 0), Vector3.new(0, -30, 0), floorRay)
+			if hit then
+				return cf
+			end
+		end
+	end
+	local center = Vector3.new(0, floorY + 40, 0)
+	local hit = workspace:Raycast(center, Vector3.new(0, -80, 0), floorRay)
+	return CFrame.new((hit and hit.Position or Vector3.new(0, floorY, 0)) + Vector3.new(0, 4, 0))
+end
+
 local function inside(pos: Vector3): boolean
 	local d = pos - ORIGIN
 	return math.abs(d.X) <= HALF.X and math.abs(d.Z) <= HALF.Z and d.Y > -8 and d.Y < 30
@@ -493,9 +626,11 @@ function AFKService.enter(player: Player)
 		return deny(player, "The floor is collapsing! Hold on...")
 	end
 	local st = CharacterState.get(character)
-	local hurt = math.max(lastHurt[character] or -100, st.lastHitTime or -100)
-	if now - hurt < Config.CombatLockout or CharacterState.isStunned(character) then
-		return deny(player, "You're in combat! Get away for " .. Config.CombatLockout .. "s first")
+	-- coups reçus ET donnés : pas de fuite dans la salle juste après avoir frappé
+	local fought = math.max(lastCombat[character] or -100, st.lastHitTime or -100)
+	if now - fought < Config.CombatLockout or CharacterState.isStunned(character) then
+		local secs = math.max(1, math.ceil(Config.CombatLockout - (now - fought)))
+		return deny(player, "You're in combat! Stay out of fights for " .. secs .. "s first")
 	end
 	lastToggle[player] = now
 	busy[player] = true
@@ -533,13 +668,16 @@ function AFKService.exit(player: Player, force: boolean?)
 	busy[player] = true
 	sessions[player] = nil -- plus de rappel dans la salle pendant le trajet
 	local character = s.character
-	-- pas de retour pendant un effondrement : on attend que le nouvel étage soit posé
+	-- pas de retour pendant un effondrement : on attend (dans la salle, toujours protégé) que le nouvel étage soit posé
 	local t0 = os.clock()
-	while World.collapsing and os.clock() - t0 < 12 do
+	if World.collapsing then
+		Announce.toast(player, "The floor is collapsing - you'll go back once it lands.", Color3.fromRGB(255, 214, 50))
+	end
+	while World.collapsing and os.clock() - t0 < 45 and player.Parent do
 		task.wait(0.25)
 	end
 	if alive(character) and player.Character == character then
-		moveTo(player, character, World.getPlayerSpawn())
+		moveTo(player, character, floorSpawn())
 		pcall(CharacterState.protect, character, 3)
 	end
 	busy[player] = nil
@@ -677,9 +815,14 @@ function AFKService.init()
 		end
 	end)
 
-	Signals.Hit:Connect(function(_, victim)
+	-- verrou de combat : la victime ET l'attaquant (Signals.Hit(attacker, victim, ...))
+	Signals.Hit:Connect(function(attacker, victim)
+		local now = os.clock()
 		if typeof(victim) == "Instance" then
-			lastHurt[victim] = os.clock()
+			lastCombat[victim] = now
+		end
+		if typeof(attacker) == "Instance" and attacker ~= victim then
+			lastCombat[attacker] = now
 		end
 	end)
 
