@@ -657,6 +657,15 @@ S({ Id = "Lawyer_Rare", Character = "Lawyer", Rarity = "Rare", Name = "Barrister
 		P(LA, B, V(0.1, 0.12, 0.42), DARK, SP, 0, -1.04, -0.05),
 		P(LA, B, V(0.06, 0.12, 0.12), GOLD, ME, -0.17, -1.25, -0.3),
 		P(LA, B, V(0.06, 0.12, 0.12), GOLD, ME, -0.17, -1.25, 0.2),
+		-- v5 : maillet (main droite, manche dans le poing, tête cerclée d'or)
+		P(RA, CY, V(1.0, 0.14, 0.14), C(120, 72, 40), WO, 0, -1.02, -0.45, 0, 90, 0),
+		P(RA, CY, V(0.7, 0.3, 0.3), C(95, 55, 30), WO, 0, -1.02, -1.0),
+		P(RA, CY, V(0.08, 0.32, 0.32), GOLD, ME, 0, -1.02, -1.0),
+		-- v5 : broche balance de la justice (pan gauche de la robe)
+		P(T, B, V(0.05, 0.34, 0.05), GOLD, ME, -0.6, 0.38, -0.53),
+		P(T, B, V(0.38, 0.04, 0.05), GOLD, ME, -0.6, 0.54, -0.535),
+		P(T, BA, V(0.12, 0.12, 0.12), GOLD, NE, -0.77, 0.46, -0.54),
+		P(T, BA, V(0.12, 0.12, 0.12), GOLD, NE, -0.43, 0.46, -0.54),
 	},
 	sym(LA, RA, function(l)
 		return { P(l, B, V(1.24, 1.0, 1.28), GOWN, FA, 0, -0.35, 0) }
@@ -853,6 +862,16 @@ S({ Id = "Mascot_Rare", Character = "Mascot", Rarity = "Rare", Name = "Hot Dog H
 		-- bouteille de ketchup (main droite)
 		P(RA, CY, V(0.75, 0.4, 0.4), KET, SP, 0, -1.3, -0.25, 0, 0, 90),
 		P(RA, CY, V(0.25, 0.2, 0.2), WHT, SP, 0, -0.85, -0.25, 0, 0, 90),
+		-- v5 : moutarde (main gauche) = duo de sauces
+		P(LA, CY, V(0.75, 0.4, 0.4), MUST, SP, 0, -1.3, -0.25, 0, 0, 90),
+		P(LA, CY, V(0.25, 0.2, 0.2), KET, SP, 0, -0.85, -0.25, 0, 0, 90),
+		-- v5 : relish (trois dés verts entre les zigzags de moutarde)
+		P(H, B, V(0.14, 0.14, 0.14), C(90, 175, 60), SP, -0.2, 1.62, -0.5, 20, 30, 0),
+		P(H, B, V(0.14, 0.14, 0.14), C(90, 175, 60), SP, 0, 1.64, -0.52, 0, 45, 10),
+		P(H, B, V(0.14, 0.14, 0.14), C(90, 175, 60), SP, 0.2, 1.62, -0.5, -15, 20, 0),
+		-- v5 : calot de vendeur de hot-dogs (papier blanc, liseré rouge) posé sur la saucisse
+		P(H, B, V(0.7, 0.3, 0.55), WHT, SP, 0, 2.08, 0.1),
+		P(H, B, V(0.72, 0.07, 0.57), KET, SP, 0, 2.0, 0.1),
 	},
 	-- gants de mascotte
 	sym(LA, RA, function(l)

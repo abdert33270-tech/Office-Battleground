@@ -57,3 +57,22 @@ Une cape ou une queue-de-pie qui doit s'écarter du corps vers le bas prend donc
 - Reflet Legendary : intensité (0,3 de Reflectance au pic) à ajuster si trop discret / trop fort.
 - Capes corrigées (Giveaway King, Super Mascot, Synergy Overlord) en course.
 - Bacon : son look fixe dépend de son `Identity` (module de Content) ; sans Identity il garde l'avatar du joueur.
+
+## Passe v5 — Rares (2026-11-01)
+Objectif : qu'un Rare se distingue nettement de l'uniforme Base (accessoire thématique lisible + palette).
+Ids inchangés, plafond Rare 30 respecté (audit hors Studio : comptage + contact de chaque nouvelle pièce avec son
+membre R6 ou avec la pièce qui la porte).
+- **Night Shift Temp** (Pack5, 21 → 27) : palette violet « minuit » (la Base est gris ardoise, quasi identique
+  avant), masque de sommeil enroulé sur le bonnet (yeux fermés brodés, orientés sur la courbure), « Zzz » flottant,
+  broche croissant de lune néon.
+- **Latte Art Influencer** (Pack3) : pull sauge (la Base est crème, quasi identique avant), côtes assorties.
+- **Retro Phone Diva** (Pack3) : chemisier jaune citron années 60 (la Base est rose).
+- **Food Courier** (Pack3, 23 → 26) : sac de commande kraft « HOT! » à la main droite, rabat plié, ticket agrafé.
+- **Barrister Supreme** (Pack4, 23 → 30) : maillet (manche dans le poing, tête cerclée d'or) + broche balance de
+  la justice sur la robe.
+- **Hot Dog Hero** (Pack4, 18 → 25) : moutarde main gauche (duo de sauces), relish sur la saucisse, calot de
+  vendeur posé sur le haut de la capuche.
+- **Retro PC** (Pack6, 21 → 27) : grilles d'aération du CRT, curseur pixel flottant, CD-ROM brillant main gauche.
+- **Hoodie Hacker** (Pack2, 23 → 27) : casque audio autour du cou, fenêtre holographique « ACCESS DENIED ».
+
+À vérifier en jeu : lisibilité du « Zzz » et de la fenêtre holo à distance ; reflet du CD-ROM.

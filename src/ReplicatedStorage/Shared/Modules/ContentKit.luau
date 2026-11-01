@@ -4,6 +4,9 @@
 	          Kit.hold (gel sur place), Kit.projectile (projectile perso : rebonds, callback onHit), Kit.ground, Kit.sPart.
 	Client  : Kit.on(id, fn) (reçoit les Kit.fx du serveur), Kit.part, Kit.cubes, Kit.flatText, Kit.telegraph.
 	Aucun effet de bord au require : la connexion client se fait au premier Kit.on().
+	Filtre des mots : chaque payload Kit.fx porte le lanceur (a, ou ca déduit du thread serveur) et la victime connue
+	(v / cv / vs) ; Kit.on appelle les handlers dans CartoonFX.withContext(lanceur, victime) (voir Kit.context).
+	Kit.withCaster(attaquant, victime, fn, ...) pose ce contexte à la main (threads créés par le code Content).
 ]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")

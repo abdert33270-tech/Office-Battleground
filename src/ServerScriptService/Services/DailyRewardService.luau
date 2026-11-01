@@ -1,13 +1,15 @@
 --[[
 	DailyRewardService — calendrier de connexion 7 jours (Config/DailyRewards), 100 % serveur (os.time()).
 	- Une réclamation par jour UTC (jour = os.time() // 86400).
-	- Plus de GraceHours (48 h) depuis la dernière réclamation => série perdue, retour au jour 1.
+	- Série gardée si on a réclamé il y a au plus GRACE_DAYS jours UTC (GraceHours 48 => 2 : on peut sauter UN jour),
+	  sinon retour au jour 1. Tout en jours entiers (os.time() lu une fois par requête) : rien d'ambigu à minuit pile.
+	- Chargement DataStore raté (DataService.loadFailed) : pas de réclamation (elle serait perdue), état unsaved = true.
 	- Après le jour 7 : nouveau cycle.
 	Données (DataService, sauvegardées) : data.Daily = { Streak (0-7, dernier jour réclamé du cycle), LastDay, LastClaim, Total }.
 	Attribut Player : DailyClaimable (bool) -> pastille rouge du bouton DAILY.
 	Remote "DailyReward" :
 		client -> serveur : "State" | "Claim"
-		serveur -> client : state = { day, claimed, claimable, nextAt?, expiresAt?, lost, total, now, result? }
+		serveur -> client : state = { day, claimed, claimable, nextAt?, expiresAt?, lost, total, now, unsaved?, result? }
 			day = jour à réclamer (1-7) ; claimed = cases déjà cochées dans le cycle affiché
 			result (après un Claim réussi) = { day, Cash, Crates }
 	API : DailyRewardService.getState(player) | claim(player) | reset(player, full?) (admin /resetdaily)
@@ -26,9 +28,17 @@ DailyRewardService.Priority = 66 -- après DataService (60) et SkinService (62)
 local DAY = 86400
 local remote
 
-local function today(): number
-	return os.time() // DAY
+local function dayOf(t: number): number
+	return t // DAY
 end
+
+local function today(): number
+	return dayOf(os.time())
+end
+
+-- jours de calendrier UTC qu'on peut manquer sans perdre la série : GraceHours 48 => on peut sauter 1 jour
+-- (réclamé lundi, mercredi garde la série, jeudi la perd). Calcul en jours entiers : pas d'effet de bord à minuit pile.
+local GRACE_DAYS = math.max(1, math.ceil((Config.GraceHours or 48) / 24))
 
 local function skinService()
 	local ok, mod = pcall(require, script.Parent.SkinService)
@@ -46,39 +56,35 @@ local function dailyOf(player)
 	return d.Daily
 end
 
--- état calculé (ne modifie rien)
-local function compute(daily)
+-- état calculé (ne modifie rien) ; now = os.time() lu UNE fois par l'appelant (claim et état cohérents autour de minuit)
+local function compute(daily, now: number?)
 	local n = #Config.Days
-	local now = os.time()
+	local t = now or os.time()
+	local day0 = dayOf(t)
 	local streak = math.clamp(math.floor(tonumber(daily.Streak) or 0), 0, n)
-	local lastDay = tonumber(daily.LastDay) or -1
-	local lastClaim = tonumber(daily.LastClaim) or 0
+	local lastDay = math.floor(tonumber(daily.LastDay) or -1)
 	local lost = false
-	if lastClaim <= 0 then
-		streak = 0
-	elseif now - lastClaim > Config.GraceHours * 3600 then
+	if lastDay < 0 then
+		streak = 0 -- première connexion
+	elseif day0 - lastDay > GRACE_DAYS then
 		lost = streak > 0
 		streak = 0
 	end
-	local claimable = today() > lastDay
-	local day, claimed
-	if claimable then
-		day = (streak % n) + 1
-		claimed = day - 1
-	else
-		day = (streak % n) + 1 -- prochain jour (demain)
-		claimed = streak
-	end
+	-- lastDay > day0 (horloge d'un autre serveur en avance de quelques secondes) : pas réclamable, rien de perdu
+	local claimable = day0 > lastDay
+	local day = (streak % n) + 1 -- jour à réclamer (aujourd'hui si claimable, sinon demain)
+	local claimed = claimable and (day - 1) or streak
 	return {
 		day = day,
 		claimed = claimed,
 		streak = streak,
 		claimable = claimable,
 		lost = lost,
-		nextAt = (not claimable) and (today() + 1) * DAY or nil,
-		expiresAt = (streak > 0 and lastClaim > 0) and (lastClaim + Config.GraceHours * 3600) or nil,
+		nextAt = (not claimable) and (math.max(day0, lastDay) + 1) * DAY or nil,
+		-- moment où la série sera perdue si on ne réclame pas d'ici là
+		expiresAt = (streak > 0 and lastDay >= 0) and (lastDay + GRACE_DAYS + 1) * DAY or nil,
 		total = tonumber(daily.Total) or 0,
-		now = now,
+		now = t,
 	}
 end
 
@@ -95,6 +101,10 @@ local function push(player, result)
 	if not st then
 		return
 	end
+	if DataService.loadFailed(player) then
+		st.claimable = false
+		st.unsaved = true
+	end
 	player:SetAttribute("DailyClaimable", st.claimable)
 	if remote and player.Parent then
 		st.result = result
@@ -108,7 +118,11 @@ function DailyRewardService.claim(player: Player)
 	if not daily then
 		return false, "Data not loaded yet"
 	end
-	local st = compute(daily)
+	if DataService.loadFailed(player) then
+		return false, "Your progress didn't load - rejoin to claim (nothing is lost)"
+	end
+	local now = os.time()
+	local st = compute(daily, now)
 	if not st.claimable then
 		return false, "Already claimed today"
 	end
@@ -117,8 +131,8 @@ function DailyRewardService.claim(player: Player)
 		return false, "Invalid day"
 	end
 	daily.Streak = st.day
-	daily.LastDay = today()
-	daily.LastClaim = os.time()
+	daily.LastDay = dayOf(now)
+	daily.LastClaim = now
 	daily.Total = (tonumber(daily.Total) or 0) + 1
 	local ss = skinService()
 	local cash = math.floor(tonumber(reward.Cash) or 0)
@@ -201,7 +215,7 @@ function DailyRewardService.init()
 			task.wait(30)
 			for _, p in ipairs(Players:GetPlayers()) do
 				local st = DailyRewardService.getState(p)
-				if st and p:GetAttribute("DailyClaimable") ~= st.claimable then
+				if st and not DataService.loadFailed(p) and p:GetAttribute("DailyClaimable") ~= st.claimable then
 					push(p)
 				end
 			end

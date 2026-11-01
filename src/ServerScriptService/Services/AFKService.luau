@@ -1,12 +1,18 @@
 --[[
 	AFKService — « AFK BREAK ROOM » : salle de pause sûre, loin de l'arène, qui paie du Cash (Config/AFK).
-	- Salle construite au démarrage en Parts simples (workspace.BreakRoom) : canapés (Seats), machine à café,
-	  distributeur, plantes, baies vitrées sur une skyline, lumières douces, enseigne, tableau des gains, porte EXIT.
-	- Entrée (remote "AFK" "Enter") validée serveur : données chargées, vivant, pas étourdi, pas touché depuis
-	  CombatLockout s, pas pendant un effondrement, recharge ToggleCooldown. L'objet tenu est lâché avant.
+	- Salle construite au démarrage en Parts simples (workspace.BreakRoom) : canapés, poufs et tabourets (Seats),
+	  machine à café (vapeur), distributeur, plantes, baies vitrées sur une skyline + nuages, lumières douces, enseigne,
+	  tableau des gains (PayoutHeader fixe + PayoutScreen rempli côté client), horloge, porte EXIT encadrée + dalle à chevrons.
+	  Ambiance animée côté client (AFKController) via attributs : AmbSway (Model de feuillage, pivot), AmbBlink/AmbPhase/
+	  AmbMode/AmbBaseT (lumières), AmbCloud (Model nuage, vitesse), AmbHand/AmbPivot (aiguilles), Parts « Window » (ville).
+	- Entrée (remote "AFK" "Enter") validée serveur : données chargées, vivant, pas étourdi, pas de coup REÇU NI DONNÉ
+	  depuis CombatLockout s (Signals.Hit attaquant + victime), pas pendant un effondrement, recharge ToggleCooldown.
+	  L'objet tenu est lâché avant.
 	- Dedans : attribut perso SafeZone = true (CombatService ignore les coups), paie PayAmount / PayInterval s,
 	  bonus BonusAmount toutes les BonusEvery s sans sortir, plafond DailyCap / jour UTC (data.AFK = {Day, Earned}).
-	- Sortie : remote "AFK" "Exit", ProximityPrompt sur la porte, ou dalle verte devant la porte.
+	- Sortie : remote "AFK" "Exit", ProximityPrompt sur la porte, ou dalle verte devant la porte. Retour sur un spawn
+	  de l'étage courant vérifié (hauteur de l'étage + sol dessous par raycast), sinon centre de l'étage ; pendant un
+	  effondrement on reste protégé dans la salle jusqu'à ce que l'étage soit posé (45 s max).
 	- Mort / réapparition / départ => session finie (le nouveau perso n'a pas SafeZone).
 	- Si un autre système déplace un joueur AFK hors de la salle (effondrement, réunion surprise...), il est remis dans la salle.
 	Attributs Player (HUD client) : AFKActive, AFKSince, AFKNextPay, AFKNextBonus (temps serveur GetServerTimeNow),
@@ -308,7 +314,7 @@ local function buildRoom()
 	for i, z0 in ipairs({ 26.6, 28, 29.4 }) do
 		for _, sx in ipairs({ -1, 1 }) do
 			-- bras du « ^ » pointant vers +Z (rotation Y : LookVector local Z -> (sin, 0, cos))
-			blink(part(m, Vector3.new(0.45, 0.1, 1.75), CFrame.new(sx * 0.6, 0.33, z0 + 0.6) * CFrame.Angles(0, math.rad(-45 * sx), 0), C(200, 255, 210), Enum.Material.Neon, { CanCollide = false }), 1.2, (i - 1) * 0.4, "chase")
+			blink(part(m, Vector3.new(0.45, 0.1, 1.75), CFrame.new(sx * 0.6, 0.33, z0 + 0.6) * CFrame.Angles(0, math.rad(-45 * sx), 0), C(200, 255, 210), Enum.Material.Neon, { CanCollide = false }), 1.2, -(i - 1) * 0.4, "chase") -- 1 -> 2 -> 3 vers la porte
 		end
 	end
 

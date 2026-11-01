@@ -1,6 +1,8 @@
 --[[
 	CodeService — codes promo (Config/Codes).
-	- Saisie insensible à la casse, espaces ignorés ; un code = une fois par joueur (data.Codes[CODE] = os.time()).
+	- Saisie insensible à la casse ; tout sauf lettres / chiffres ASCII ignoré (espaces, espaces insécables, tirets...) ;
+	  un code = une fois par joueur (data.Codes[CODE] = os.time()). Expires : valable jusqu'à cette seconde incluse.
+	- Chargement DataStore raté (DataService.loadFailed) : refusé (« rejoin »), rien n'est consommé.
 	- Expires (os.time UTC) et MaxUses (compteur global DataStore "OfficeBattlegrounds_CodeUses" ; repli mémoire).
 	- Anti-spam : 1 essai / 1,5 s ; 6 codes invalides de suite => bloqué 60 s.
 	Remote "RedeemCode" :
@@ -33,8 +35,12 @@ local function normalize(text)
 	if type(text) ~= "string" then
 		return nil
 	end
-	text = string.sub(text, 1, 40)
-	text = string.upper((string.gsub(text, "%s+", "")))
+	if #text > 200 then
+		return nil
+	end
+	-- garde lettres + chiffres ASCII : enlève espaces, tabulations, retours, espaces insécables / largeur nulle
+	-- (claviers mobiles, copier-coller) et ponctuation. Appliqué aussi aux codes de Config => toujours cohérent.
+	text = string.upper((string.gsub(text, "[^%w]", "")))
 	if text == "" or #text > 30 then
 		return nil
 	end
@@ -124,6 +130,10 @@ function CodeService.redeem(player: Player, raw)
 	local d = DataService.get(player)
 	if not d then
 		return false, "Your data is still loading, try again"
+	end
+	if DataService.loadFailed(player) then
+		-- profil en mémoire seulement : la récompense et le « déjà utilisé » seraient perdus à la déconnexion
+		return false, "Your progress didn't load - rejoin to redeem"
 	end
 	if type(d.Codes) ~= "table" then
 		d.Codes = {}

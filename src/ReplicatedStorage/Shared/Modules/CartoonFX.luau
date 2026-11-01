@@ -19,6 +19,12 @@
 	CartoonFX.dashFX(character, direction?)             poussière, traînée, lignes de vent, whoosh
 	CartoonFX.knockdown(character | pos)                poussière d'atterrissage au sol + « THUD »
 	CartoonFX.hitSpark(pos, dir?, power?, color?)        éclat blanc + étincelles dans l'axe du coup
+	CartoonFX.slowFlash(color?, dur?)                    teinte froide « ralenti » (parade parfaite)
+
+	POIDS DES COUPS (hit) : léger = PunchLight aigu + petite étincelle ; lourd / finisher = PunchHeavy + couche grave
+	(Thud + LowThump) + BigImpact, onde d'air (finisher / K.O. : Boom) ; r = "Slam" = sol fendu + poussière.
+	Garde : blockHit = Block + BlockThud mat ; guardBreak = GlassShatter + LowThump ; perfectBlock = Ting + ralenti.
+	Sons : jamais deux fois de suite le même fichier pour une clé, hauteur / volume selon Sounds.Variation.
 
 	FILTRE DE PERTINENCE (onomatopées + chiffres de dégâts) : chaque client ne voit que les mots des combats
 	où SON personnage est l'attaquant ou la victime.

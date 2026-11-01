@@ -191,6 +191,14 @@ do
 			-- portable sous le bras
 			P(LA, B, V(0.1, 0.95, 1.35), C(175, 180, 190), ME, -0.57, -0.35, 0.05),
 			P(LA, B, V(0.02, 0.28, 0.28), G, NE, -0.63, -0.35, 0.05),
+			-- v5 : casque audio autour du cou (coques sur le haut des épaules, arceau derrière la nuque)
+			P(T, CY, V(0.22, 0.5, 0.5), DARK, SP, -0.88, 1.1, 0.0),
+			P(T, CY, V(0.22, 0.5, 0.5), DARK, SP, 0.88, 1.1, 0.0),
+			P(T, B, V(1.6, 0.1, 0.12), DARK, SP, 0, 1.22, 0.42, -20, 0, 0),
+			-- v5 : fenêtre holographique flottante (refus d'accès qui clignote)
+			P(T, B, V(1.3, 0.75, 0.05), C(6, 18, 10), "Glass", -1.7, 2.0, -0.2, { Transparency = 0.35,
+				Text = { Text = "ACCESS\nDENIED", Font = "Code", Color = C(255, 80, 80), Face = "Both", Blink = 1.2 },
+				Anim = { Float = true, Seed = 33 } }),
 		}, shoeX),
 		Paint = join({
 			face(H, "Front", {

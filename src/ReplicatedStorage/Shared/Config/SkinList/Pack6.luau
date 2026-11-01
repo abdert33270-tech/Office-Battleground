@@ -358,6 +358,15 @@ S({ Id = "AIAssistant_Rare", Character = "AIAssistant", Rarity = "Rare", Name = 
 			P(H, B, V(1.26, 0.98, 0.06), SCR, SP, 0, 0.18, -0.65, { Text = { Text = "^_^", Font = "Code", Color = GRN }, Light = GRN }),
 			P(H, B, V(0.14, 0.08, 0.05), GRN, NE, 0.62, -0.48, -0.66, { Anim = { Pulse = 0.6, PulseSpeed = 2 } }),
 			P(H, B, V(0.5, 0.06, 0.05), BEIGE2, SP, -0.35, -0.48, -0.66),
+			-- v5 : grilles d'aération sur le dessus du moniteur
+			P(H, B, V(1.0, 0.04, 0.1), BEIGE2, SP, 0, 0.88, -0.25),
+			P(H, B, V(1.0, 0.04, 0.1), BEIGE2, SP, 0, 0.88, 0.05),
+			P(H, B, V(1.0, 0.04, 0.1), BEIGE2, SP, 0, 0.88, 0.35),
+			-- v5 : curseur pixel flottant à côté de l'écran
+			P(H, WE, V(0.06, 0.55, 0.38), WHT, SP, 1.3, 0.75, -0.3, 0, 90, 0, { Anim = { Float = true, Seed = 61 } }),
+			-- v5 : CD-ROM brillant pincé devant la main gauche
+			P(LA, CY, V(0.04, 0.9, 0.9), C(215, 220, 235), "Foil", 0, -1.15, -0.56, 0, 90, 0, { Reflect = 0.4 }),
+			P(LA, CY, V(0.05, 0.22, 0.22), GREY, SP, 0, -1.15, -0.565, 0, 90, 0),
 			-- disquette sur la poitrine
 			P(T, B, V(0.55, 0.55, 0.06), C(40, 60, 160), SP, -0.5, 0.45, -0.53),
 			P(T, B, V(0.3, 0.17, 0.07), C(190, 195, 205), ME, -0.5, 0.62, -0.535),

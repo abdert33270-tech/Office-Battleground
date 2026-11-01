@@ -14,6 +14,7 @@
 	      DataService.setGrade(player, gradeName) | DataService.gradeFor(xp) -> index, grade
 	      DataService.setLevel(player, n) | DataService.onLoaded : liste de hooks function(player, data)
 	      DataService.whenLoaded(fn) : ajoute un hook ET l'appelle pour les joueurs déjà chargés (services tardifs)
+      DataService.loadFailed(player) : chargement DataStore raté (session en mémoire, non sauvée)
 	Méta-systèmes (voir docs/Meta-systemes.md) : Daily {Streak, LastDay, LastClaim, Total} (DailyRewardService),
 	Codes {[CODE]=os.time()} (CodeService), Settings {[clé]=valeur} (SettingsService), AFK {Day, Earned} (AFKService).
 ]]
@@ -63,6 +64,13 @@ end
 function DataService.get(player: Player)
 	local p = profiles[player]
 	return p and p.data or nil
+end
+
+-- true si le DataStore existe mais que le chargement a échoué : profil par défaut en mémoire, jamais sauvé.
+-- Les récompenses « une fois » (quotidienne, codes) refusent alors pour ne pas les gaspiller. (Studio sans API => false)
+function DataService.loadFailed(player: Player): boolean
+	local p = profiles[player]
+	return p ~= nil and p.failed == true
 end
 
 -- hook de chargement pour un service qui démarre après DataService : appelé aussi pour les joueurs déjà chargés
@@ -264,8 +272,9 @@ local function load(player)
 	kos.Parent = ls
 	ls.Parent = player
 
-	local data, canSave = nil, false
+	local data, canSave, failed = nil, false, false
 	if store then
+		failed = true
 		for attempt = 1, 3 do
 			local ok, result = pcall(function()
 				return store:GetAsync(key(player))
@@ -273,11 +282,13 @@ local function load(player)
 			if ok then
 				data = result
 				canSave = true
+				failed = false
 				break
 			end
 			if string.find(tostring(result), "Studio access", 1, true) or string.find(tostring(result), "StudioAccessToApis", 1, true) then
 				-- Studio sans accès API : mémoire seule (active « Enable Studio Access to API Services » pour tester la sauvegarde)
 				store = nil
+				failed = false -- mode test assumé, pas une panne
 				warn("[DataService] Studio sans accès aux API : progression en mémoire seulement")
 				break
 			end
@@ -298,7 +309,10 @@ local function load(player)
 	if not player.Parent then
 		return
 	end
-	profiles[player] = { data = data, canSave = canSave, frac = 0 }
+	if failed then
+		warn("[DataService] données de " .. player.Name .. " non chargées : session en mémoire seulement (rien ne sera sauvé)")
+	end
+	profiles[player] = { data = data, canSave = canSave, frac = 0, failed = failed }
 	applyAttributes(player, data)
 	for _, hook in ipairs(DataService.onLoaded) do
 		task.spawn(hook, player, data)

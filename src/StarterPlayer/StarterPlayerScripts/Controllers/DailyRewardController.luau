@@ -140,9 +140,15 @@ local function tickText()
 		return
 	end
 	local now = workspace:GetServerTimeNow()
-	if state.claimable then
+	if state.unsaved then
+		-- chargement DataStore raté côté serveur : on ne réclame pas (ce serait perdu)
+		status.Text = "Your progress didn't load. Rejoin to claim!"
+		claimBtn.Label.Text = "REJOIN"
+	elseif state.claimable then
 		if state.lost then
 			status.Text = "Streak lost! Back to day 1 - claim it now."
+		elseif state.expiresAt and (state.claimed or 0) > 0 then
+			status.Text = "Day " .. state.day .. " is ready! Keep your streak: " .. fmtLong(state.expiresAt - now) .. " left"
 		else
 			status.Text = "Day " .. state.day .. " is ready! Streak: " .. (state.claimed or 0) .. " day" .. ((state.claimed or 0) == 1 and "" or "s")
 		end
