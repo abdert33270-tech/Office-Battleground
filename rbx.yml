@@ -1,0 +1,119 @@
+base: luau
+name: rbx
+globals:
+  game:
+    any: true
+  workspace:
+    any: true
+  script:
+    any: true
+  plugin:
+    any: true
+  shared:
+    any: true
+  Instance:
+    any: true
+  Vector3:
+    any: true
+  Vector2:
+    any: true
+  CFrame:
+    any: true
+  Color3:
+    any: true
+  UDim:
+    any: true
+  UDim2:
+    any: true
+  Enum:
+    any: true
+  Ray:
+    any: true
+  RaycastParams:
+    any: true
+  OverlapParams:
+    any: true
+  TweenInfo:
+    any: true
+  NumberSequence:
+    any: true
+  NumberSequenceKeypoint:
+    any: true
+  ColorSequence:
+    any: true
+  ColorSequenceKeypoint:
+    any: true
+  NumberRange:
+    any: true
+  Rect:
+    any: true
+  Region3:
+    any: true
+  Font:
+    any: true
+  PhysicalProperties:
+    any: true
+  BrickColor:
+    any: true
+  Random:
+    any: true
+  DateTime:
+    any: true
+  task:
+    any: true
+  typeof:
+    any: true
+  tick:
+    any: true
+  time:
+    any: true
+  wait:
+    any: true
+  delay:
+    any: true
+  spawn:
+    any: true
+  warn:
+    any: true
+  elapsedTime:
+    any: true
+  utf8:
+    any: true
+  buffer:
+    any: true
+  bit32:
+    any: true
+  debug:
+    any: true
+  settings:
+    any: true
+  UserSettings:
+    any: true
+  Faces:
+    any: true
+  Axes:
+    any: true
+  PathWaypoint:
+    any: true
+  require:
+    any: true
+  version:
+    any: true
+  Vector3int16:
+    any: true
+  Region3int16:
+    any: true
+  SharedTable:
+    any: true
+  gcinfo:
+    any: true
+  table:
+    any: true
+  string:
+    any: true
+  math:
+    any: true
+  os:
+    any: true
+  coroutine:
+    any: true
