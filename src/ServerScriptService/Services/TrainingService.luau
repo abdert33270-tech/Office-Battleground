@@ -171,7 +171,8 @@ function Npc.block(model: Model, on: boolean, allowParry: boolean?)
 	end
 	local f = combatFn("performBlock")
 	if f then
-		local ok = pcall(f, model, on)
+		-- performBlock(c, on, auto?) : auto = true -> pas de fenêtre de perfect block
+		local ok = pcall(f, model, on, not allowParry)
 		if ok and s.blocking == on then
 			return
 		end
@@ -200,9 +201,10 @@ function Npc.dash(model: Model, kind: string): boolean
 	end
 	local f = combatFn("performDash")
 	if f then
+		-- performDash(c, kind, dir?) -> "Dash" | "Evasive" | nil (refusé)
 		local ok, res = pcall(f, model, kind)
 		if ok then
-			return res ~= false
+			return res ~= nil and res ~= false
 		end
 	end
 	local root = model:FindFirstChild("HumanoidRootPart")
@@ -258,9 +260,9 @@ function Npc.evasive(model: Model): boolean
 	end
 	local f = combatFn("performDash")
 	if f then
-		local ok = pcall(f, model, "B")
-		if ok and not CharacterState.isStunned(model) then
-			return true
+		local ok, res = pcall(f, model, "B")
+		if ok then
+			return res == "Evasive"
 		end
 	end
 	local root = model:FindFirstChild("HumanoidRootPart")
