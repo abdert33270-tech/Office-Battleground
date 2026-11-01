@@ -1,32 +1,44 @@
 --[[
-	ProcAnim — animations R6 procédurales (client uniquement).
-	On modifie le C0 des Motor6D (épaules, hanches, RootJoint) par-dessus les animations par défaut.
+	ProcAnim v2 — animations R6 procédurales (client uniquement). Détails : docs/Animation-v2.md
+	On modifie le C0 des Motor6D (épaules, hanches, RootJoint, cou) ; les pistes Animator (saut, chute, escalade,
+	assis : StarterCharacterScripts/Animate) s'appliquent par-dessus (Transform).
 	Aucun asset d'animation à publier : tout est défini ici en keyframes.
 
 	Angles (radians), identiques pour les membres gauche et droit (le miroir est géré ici) :
 		p = pitch : vers l'avant (0 = le long du corps, 1.57 = tendu devant, 3.1 = au-dessus de la tête)
 		y = twist du membre, r = écarter sur le côté (négatif = vers l'extérieur)
-	Joints : RS / LS (épaules), RH / LH (hanches), RJ (buste : tw = rotation, ln = penché en avant, sd = penché sur le côté)
+	Joints : RS / LS (épaules), RH / LH (hanches),
+		RJ (buste : tw = rotation (+ = épaule droite en avant), ln = penché en avant, sd = penché à gauche,
+		    dy = hauteur du corps en studs (négatif = accroupi), dz = translation vers l'avant en studs (fente)),
+		N (cou : p = baisser la tête, y = tourner à gauche, r = pencher à gauche ; mêmes signes que tw / sd).
+	Keyframe : { t = temps, e = easing du segment qui ARRIVE sur cette clé : "out" (défaut) | "in" | "inout" | "linear" | "back" }
+	Joint absent d'une clé = pose de maintien (locomotion / block / objet…). Anciennes animations valides telles quelles.
+	Locomotion (v2) : garde de combat par archétype (M1Style.resolve) + respiration, cycle marche / course phasé par
+	la vitesse (AssemblyLinearVelocity), pour chaque personnage visible à moins de LOCO_RANGE studs. Une action
+	(play) remplace la locomotion joint par joint, avec fondu à l'entrée (clé t = 0) et à la sortie.
+	Tête : suit la cible pendant les M1 (setLookTarget / cible automatique la plus proche devant soi).
 	Le hit-stop gèle le temps de l'animation (ProcAnim.freeze).
 	Ajouter une animation = ajouter une entrée dans ANIMS (aucun autre code).
 ]]
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
 local ProcAnim = {}
 
 local LIMBS = { "RS", "LS", "RH", "LH" }
 local ZERO_LIMB = { p = 0, y = 0, r = 0 }
-local ZERO_RJ = { tw = 0, ln = 0, sd = 0 }
+local ZERO_RJ = { tw = 0, ln = 0, sd = 0, dy = 0, dz = 0 }
+local ZERO_N = { p = 0, y = 0, r = 0 }
 
 -- poses tenues en permanence
 local HOLD_POSES = {
 	Hand = { RS = { p = 0.45, y = 0.1 } },
 	TwoHands = { RS = { p = 2.7, y = 0.25 }, LS = { p = 2.7, y = 0.25 } },
-	Block = { RS = { p = 1.65, y = 0.95, r = 0.15 }, LS = { p = 1.65, y = 0.95, r = 0.15 }, RJ = { ln = 0.12 }, RH = { p = 0.25 }, LH = { p = -0.15 } },
-	Stunned = { RS = { p = 0.25, r = -0.25 }, LS = { p = 0.25, r = -0.25 }, RJ = { ln = 0.25, sd = 0.1 } },
-	GuardBroken = { RS = { p = 0.35, r = -0.45 }, LS = { p = 0.35, r = -0.45 }, RJ = { ln = 0.4, sd = 0.15 }, RH = { p = 0.15 }, LH = { p = -0.1 } },
+	Block = { RS = { p = 1.65, y = 0.95, r = 0.15 }, LS = { p = 1.65, y = 0.95, r = 0.15 }, RJ = { ln = 0.12, dy = -0.15 }, RH = { p = 0.25 }, LH = { p = -0.15 }, N = { p = 0.25 } },
+	Stunned = { RS = { p = 0.25, r = -0.25 }, LS = { p = 0.25, r = -0.25 }, RJ = { ln = 0.25, sd = 0.1, dy = -0.1 }, N = { p = 0.3, r = 0.15 } },
+	GuardBroken = { RS = { p = 0.35, r = -0.45 }, LS = { p = 0.35, r = -0.45 }, RJ = { ln = 0.4, sd = 0.15, dy = -0.2 }, RH = { p = 0.15 }, LH = { p = -0.1 }, N = { p = 0.4, r = 0.2 } },
 	-- ENDLAG (attribut EndlagUntil, coup lourd raté ou réussi) : essoufflé, bras ballants, buste plié -> « punissable »
-	Winded = { RS = { p = 0.15, r = -0.15 }, LS = { p = 0.15, r = -0.15 }, RJ = { ln = 0.42 }, RH = { p = 0.3 }, LH = { p = -0.2 } },
+	Winded = { RS = { p = 0.15, r = -0.15 }, LS = { p = 0.15, r = -0.15 }, RJ = { ln = 0.42, dy = -0.2 }, RH = { p = 0.3 }, LH = { p = -0.2 }, N = { p = 0.3 } },
 }
 
 -- générateurs d'animations répétitives (rafales, tremblements, course)
