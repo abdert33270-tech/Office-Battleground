@@ -183,6 +183,24 @@ local function freezeAnim(model, t)
 end
 
 -- valeurs de Config/Combat avec repli (la structure peut changer)
+-- animation de réaction d'une victime selon la direction de l'attaquant (ProcAnim.reactionFor)
+-- reaction = "Light" | "Heavy" | "Slam" | "Launch"
+function CartoonFX.reaction(victim, attacker, reaction)
+	if not victim then
+		return
+	end
+	local name
+	if type(ProcAnim.reactionFor) == "function" then
+		local ok, n = pcall(ProcAnim.reactionFor, victim, attacker, reaction)
+		name = ok and n or nil
+	end
+	if not name then
+		local r = reaction or "Light"
+		name = (r == "Launch" and "Launch") or ((r == "Heavy" or r == "Slam") and "HitHeavy") or (rng:NextNumber() < 0.5 and "HitLight" or "HitLight2")
+	end
+	anim(victim, name)
+end
+
 local function combatValue(group: string, key: string, default: number): number
 	local g = CombatConfig[group]
 	local v = type(g) == "table" and g[key]
@@ -1414,16 +1432,9 @@ function CartoonFX.hit(data)
 		end
 	end
 
-	-- réaction de la victime
+	-- réaction de la victime : DIRECTIONNELLE (attaquant à gauche / à droite / dans le dos, victime en l'air)
 	if data.v then
-		local r = data.r or "Light"
-		if r == "Launch" then
-			anim(data.v, "Launch")
-		elseif r == "Heavy" or r == "Slam" then
-			anim(data.v, "HitHeavy")
-		else
-			anim(data.v, rng:NextNumber() < 0.5 and "HitLight" or "HitLight2")
-		end
+		CartoonFX.reaction(data.v, data.a, data.r)
 	end
 
 	-- sons superposés : claque principale + corps (grave) + gros impact + matière + « oof »
@@ -1617,6 +1628,11 @@ function CartoonFX.blockHit(pos: Vector3, normal: Vector3?, data)
 		pe:Emit(qn(14))
 	else
 		CartoonFX.sparks(pos, 10, GUARD_BLUE)
+	end
+	-- le bloqueur glisse en arrière, garde tenue (perfect block / guard break ont leurs propres animations)
+	local blocker = data.v or data.character
+	if typeof(blocker) == "Instance" and blocker:IsA("Model") and blocker:GetAttribute("Blocking") then
+		anim(blocker, "BlockPush")
 	end
 	-- coup encaissé : bruit mat (bois / corps) + petit tintement métallique discret
 	CartoonFX.sound("Block", pos, 0.9)

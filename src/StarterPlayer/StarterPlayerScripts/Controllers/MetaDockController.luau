@@ -318,8 +318,8 @@ end
 
 function MetaDock.init(ctx)
 	ensure()
-	-- sélection de perso : fermée par son API (cache aussi le voile) ; la boutique de caisses plein écran
-	-- ferme les autres en s'ouvrant mais n'est jamais fermée par le registre (tirage en cours)
+	-- sélection de perso : fermée par son API (cache aussi le voile) ; la boutique de caisses plein écran est
+	-- « passive » (s'ouvre par-dessus la sélection, jamais fermée par le registre : tirage en cours)
 	adopt("CharacterSelect", "Root", {
 		name = "CharacterSelect",
 		close = function()
@@ -329,7 +329,7 @@ function MetaDock.init(ctx)
 			end
 		end,
 	})
-	adopt("CharacterSelect", "CrateShop", { name = "CrateShop", noClose = true })
+	adopt("CharacterSelect", "CrateShop", { name = "CrateShop", passive = true })
 	-- panneau ouvert : souris libre (passe après le shift-lock maison, qui la bloque à chaque image)
 	RunService:BindToRenderStep("OB_MetaMouse", Enum.RenderPriority.Camera.Value + 4, function()
 		if UIKit.anyPanelOpen() then

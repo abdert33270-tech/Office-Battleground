@@ -394,7 +394,7 @@ function HintController.init()
 		end
 		local k = input.KeyCode
 		local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-		if k == Enum.KeyCode.H or k == Enum.KeyCode.Question or (k == Enum.KeyCode.Slash and shift) or k == Enum.KeyCode.DPadUp then
+		if k == Enum.KeyCode.H or k == Enum.KeyCode.Question or (k == Enum.KeyCode.Slash and shift) or (k == Enum.KeyCode.DPadUp and game:GetService("GuiService").SelectedObject == nil) then
 			HintController.toggleControls()
 		end
 	end)

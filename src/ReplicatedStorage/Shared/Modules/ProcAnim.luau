@@ -1174,8 +1174,232 @@ ProcAnim.animFrames = animFrames
 
 ProcAnim.Anims = ANIMS
 
+local M1Style = require(script.Parent.M1Style)
+
 local states = {}
 local playHooks = {}
+
+------------------------------------------------------------------------
+-- LOCOMOTION v2 : garde de combat par archétype + respiration, marche / course phasées par la vitesse.
+-- Calculée sur CHAQUE client pour chaque personnage visible (rien n'est répliqué : les C0 sont locaux).
+------------------------------------------------------------------------
+local LOCO_RANGE = 120 -- au-delà : pas de locomotion procédurale (pose neutre, mise à jour espacée)
+local NEAR_RANGE = 60 -- au-delà : mise à jour une image sur deux (budget)
+local WALK_FULL = 8 -- vitesse (studs/s) où le cycle de marche est complet
+local RUN_FROM, RUN_SPAN = 18, 6 -- course complète à partir de RUN_FROM + RUN_SPAN studs/s
+
+-- gardes (pose au repos) par style de M1 (Config/M1Styles.Styles) ; écrites pour l'arme en main DROITE
+-- (miroir automatique si M1Style.hand = "Left"). breath = amplitude de respiration, bob = petit rebond (bagarreur).
+local GUARDS = {
+	Fists = { RS = { p = 1.05, y = 0.7, r = -0.1 }, LS = { p = 1.25, y = 0.75, r = -0.1 }, RJ = { tw = -0.22, ln = 0.1, dy = -0.12 },
+		RH = { p = -0.15, r = 0.12 }, LH = { p = 0.35, r = 0.12 }, N = { p = 0.1, y = 0.18 }, breath = 1, bob = 0 },
+	Brawler = { RS = { p = 0.95, y = 0.6, r = -0.05 }, LS = { p = 1.15, y = 0.7, r = -0.05 }, RJ = { tw = -0.3, ln = 0.18, dy = -0.22 },
+		RH = { p = -0.15, r = 0.18 }, LH = { p = 0.5, r = 0.18 }, N = { p = 0.15, y = 0.25 }, breath = 1.1, bob = 0.06 },
+	Blunt = { RS = { p = 1.45, y = 0.25, r = 0.1 }, LS = { p = 0.95, y = 0.8, r = -0.1 }, RJ = { tw = -0.15, ln = 0.08, dy = -0.1 },
+		RH = { p = -0.15, r = 0.12 }, LH = { p = 0.3, r = 0.12 }, N = { p = 0.08, y = 0.12 }, breath = 1, bob = 0 },
+	Heavy = { RS = { p = 0.5, y = 0.3, r = 0.15 }, LS = { p = 0.75, y = 0.6, r = -0.05 }, RJ = { tw = -0.1, ln = 0.2, dy = -0.25 },
+		RH = { p = 0.05, r = 0.22 }, LH = { p = 0.4, r = 0.22 }, N = { p = -0.05 }, breath = 1.4, bob = 0 },
+	Long = { RS = { p = 1.0, y = 0.5 }, LS = { p = 1.4, y = 0.3, r = -0.15 }, RJ = { tw = -0.45, ln = 0.06, dy = -0.12 },
+		RH = { p = -0.2, r = 0.1 }, LH = { p = 0.4, r = 0.1 }, N = { y = 0.35 }, breath = 0.9, bob = 0 },
+	Slap = { RS = { p = 0.6, y = 0.3, r = 0.25 }, LS = { p = 0.8, y = 0.4, r = 0.2 }, RJ = { tw = -0.1, ln = 0.05, sd = 0.05, dy = -0.05 },
+		RH = { p = -0.1, r = 0.1 }, LH = { p = 0.2, r = 0.1 }, N = { r = -0.1, y = 0.1 }, breath = 1.2, bob = 0.03 },
+	Claws = { RS = { p = 1.3, y = 0.2, r = 0.2 }, LS = { p = 1.3, y = 0.2, r = 0.2 }, RJ = { ln = 0.35, dy = -0.32 },
+		RH = { p = 0.15, r = 0.15 }, LH = { p = 0.7, r = 0.15 }, N = { p = -0.25 }, breath = 1.2, bob = 0.02 },
+	Tech = { RS = { p = 1.4, y = 0.05 }, LS = { p = 0.4, y = 0.5, r = 0.1 }, RJ = { tw = -0.2, ln = 0.05, dy = -0.06 },
+		RH = { p = -0.1, r = 0.08 }, LH = { p = 0.2, r = 0.08 }, N = { y = 0.15 }, breath = 0.8, bob = 0 },
+	Bacon = { RS = { p = -0.2, r = 0.25 }, LS = { p = 1.1, y = 0.7, r = -0.1 }, RJ = { tw = 0.15, ln = 0.08, dy = -0.1 },
+		RH = { p = -0.15, r = 0.12 }, LH = { p = 0.3, r = 0.12 }, N = { y = -0.1 }, breath = 1, bob = 0.02 },
+	-- zone AFK / repos : bras le long du corps, juste la respiration
+	Relaxed = { RS = { p = 0.05, r = 0.05 }, LS = { p = 0.05, r = 0.05 }, RJ = {}, RH = {}, LH = {}, N = {}, breath = 0.8, bob = 0 },
+}
+GUARDS.Splash = GUARDS.Blunt
+
+local function mirrorPose(pose)
+	local m = { breath = pose.breath, bob = pose.bob }
+	for k, v in pairs(pose) do
+		if MIRROR_SWAP[k] then
+			m[MIRROR_SWAP[k]] = v
+		elseif k == "RJ" then
+			m.RJ = { tw = -(v.tw or 0), ln = v.ln, sd = -(v.sd or 0), dy = v.dy, dz = v.dz }
+		elseif k == "N" then
+			m.N = { p = v.p, y = -(v.y or 0), r = -(v.r or 0) }
+		end
+	end
+	return m
+end
+local GUARDS_L = {}
+for id, g in pairs(GUARDS) do
+	GUARDS_L[id] = mirrorPose(g)
+end
+
+local function isFighter(character)
+	if Players:GetPlayerFromCharacter(character) then
+		return true
+	end
+	local parent = character.Parent
+	return parent ~= nil and parent.Name == "Dummies" and parent.Parent == workspace
+end
+
+-- style (archétype) et main de l'arme : relus une fois par seconde (objet ramassé, changement de personnage)
+local function refreshStyle(s, character, now)
+	if now < (s.styleAt or 0) then
+		return
+	end
+	s.styleAt = now + 1
+	local ok, style, source = pcall(M1Style.resolve, character)
+	local id = (ok and type(style) == "table" and style.Id) or "Fists"
+	if ok and source == "Item" then
+		-- objet tenu : la pose de l'objet (HoldPose) gère les bras, garde du personnage pour le reste
+		local okC, cs = pcall(M1Style.forCharacter, character:GetAttribute("CharacterName"))
+		id = (okC and type(cs) == "table" and cs.Id) or id
+	end
+	local okH, hand = pcall(M1Style.hand, character)
+	s.styleId = GUARDS[id] and id or "Fists"
+	s.leftHand = okH and hand == "Left"
+end
+
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+-- au sol ? personnage local : FloorMaterial / état du Humanoid ; autres : vitesse verticale + rayon (10 fois par seconde)
+local function grounded(s, character, hum, root, now)
+	local localChar = Players.LocalPlayer ~= nil and Players.LocalPlayer.Character == character
+	if localChar then
+		local st = hum:GetState()
+		if st == Enum.HumanoidStateType.Climbing or st == Enum.HumanoidStateType.Swimming then
+			s.onGround = false
+			return false
+		end
+		s.onGround = hum.FloorMaterial ~= Enum.Material.Air
+		return s.onGround
+	end
+	if math.abs(root.AssemblyLinearVelocity.Y) > 7 then
+		s.groundAt = 0
+		return false
+	end
+	if now >= (s.groundAt or 0) then
+		s.groundAt = now + 0.1
+		rayParams.FilterDescendantsInstances = { character }
+		local hit = workspace:Raycast(root.Position, Vector3.new(0, -(3.8 + math.max(hum.HipHeight, 0)), 0), rayParams)
+		s.onGround = hit ~= nil
+	end
+	return s.onGround ~= false
+end
+ProcAnim.isGrounded = function(character)
+	local s = states[character]
+	if s and s.onGround ~= nil and s.groundChecked then
+		return s.onGround
+	end
+	local hum = character and character:FindFirstChildOfClass("Humanoid")
+	return hum == nil or hum.FloorMaterial ~= Enum.Material.Air
+end
+
+local function lerpTable(a, b, alpha, zero)
+	local out = {}
+	for k in pairs(zero) do
+		local va, vb = (a and a[k]) or 0, (b and b[k]) or 0
+		out[k] = va + (vb - va) * alpha
+	end
+	return out
+end
+
+local LOCO_JOINTS = { RS = ZERO_LIMB, LS = ZERO_LIMB, RH = ZERO_LIMB, LH = ZERO_LIMB, RJ = ZERO_RJ, N = ZERO_N }
+
+-- pose de locomotion (ou nil = neutre : en l'air, assis, ulti, ragdoll, trop loin…)
+local function locomotion(s, character, dt, now, frozen)
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local cam = workspace.CurrentCamera
+	local allowed = s.loco and hum ~= nil and root ~= nil and hum.Health > 0 and not hum.Sit and not hum.PlatformStand
+		and not character:GetAttribute("UltAnchor") and not character:GetAttribute("UltActive") and not character:GetAttribute("UltHeld")
+		and not character:GetAttribute("Ragdolled")
+		and workspace:GetServerTimeNow() >= (character:GetAttribute("KnockdownUntil") or 0)
+	if allowed and cam and (cam.CFrame.Position - root.Position).Magnitude > LOCO_RANGE then
+		allowed = false
+	end
+	if allowed then
+		s.groundChecked = true
+		allowed = grounded(s, character, hum, root, now)
+	end
+	local target = allowed and 1 or 0
+	s.locoW = (s.locoW or 0) + (target - (s.locoW or 0)) * math.clamp(dt * 10, 0, 1)
+	if s.locoW < 0.01 or not root or not hum then
+		return nil
+	end
+	refreshStyle(s, character, now)
+	local safe = character:GetAttribute("SafeZone") == true
+	local g = safe and GUARDS.Relaxed or (s.leftHand and GUARDS_L or GUARDS)[s.styleId or "Fists"] or GUARDS.Fists
+
+	local v = root.AssemblyLinearVelocity
+	local flat = Vector3.new(v.X, 0, v.Z)
+	local rawSpeed = flat.Magnitude
+	s.speed = (s.speed or 0) + (rawSpeed - (s.speed or 0)) * math.clamp(dt * 8, 0, 1)
+	local sp = s.speed
+	local fwd, side = 1, 0
+	if rawSpeed > 0.5 then
+		local lv = root.CFrame:VectorToObjectSpace(flat / rawSpeed)
+		fwd, side = -lv.Z, lv.X
+	end
+	local w = math.clamp((sp - 1) / (WALK_FULL - 1), 0, 1)
+	local runW = math.clamp((sp - RUN_FROM) / RUN_SPAN, 0, 1)
+	if not frozen then
+		-- fréquence de foulée proportionnelle à la vitesse (marche 16 : ~1,6 cycle/s ; course 26 : ~2,4 cycles/s)
+		s.phase = ((s.phase or 0) + dt * (3 + sp * 0.45) * (w > 0 and 1 or 0)) % (math.pi * 2)
+		s.breath = ((s.breath or 0) + dt * (2.1 + runW * 1.5)) % (math.pi * 2)
+	end
+	local sinp = math.sin(s.phase or 0)
+	local b = math.sin(s.breath or 0)
+	local A = (g.breath or 1) * (1 - w * 0.6)
+
+	-- repos : garde + respiration (+ petit rebond du bagarreur)
+	local gRJ, gN = g.RJ or {}, g.N or {}
+	local bob = (g.bob or 0) * math.abs(math.sin((s.breath or 0) * 1.5))
+	local idle = {
+		RS = { p = (g.RS.p or 0) + 0.05 * b * A, y = g.RS.y or 0, r = (g.RS.r or 0) + 0.02 * b * A },
+		LS = { p = (g.LS.p or 0) + 0.05 * b * A, y = g.LS.y or 0, r = (g.LS.r or 0) + 0.02 * b * A },
+		RH = g.RH, LH = g.LH,
+		RJ = { tw = gRJ.tw or 0, ln = (gRJ.ln or 0) + 0.02 * b * A, sd = gRJ.sd or 0, dy = (gRJ.dy or 0) + 0.03 * b * A - bob, dz = 0 },
+		N = { p = (gN.p or 0) - 0.03 * b * A, y = gN.y or 0, r = gN.r or 0 },
+	}
+	if w <= 0.001 then
+		for j, zero in pairs(LOCO_JOINTS) do
+			idle[j] = lerpTable(nil, idle[j], s.locoW, zero)
+		end
+		return idle
+	end
+
+	-- marche / course (le bas du corps suit la vitesse, le haut garde la garde puis pompe des bras en course)
+	local stride = (0.5 + 0.4 * runW) * w
+	local swing = sinp * stride
+	local ln = 0.05 + 0.32 * runW + 0.08 * fwd * w
+	local legBase = ln -- jambes compensées : le buste penche, les jambes restent sous le corps
+	local spread = 0.4 * math.abs(side) * (sinp > 0 and sinp or sinp * 0.3) * w
+	local twist = -sinp * (0.07 + 0.08 * runW) * w * fwd
+	local walk = {
+		RH = { p = legBase + swing * fwd, r = spread },
+		LH = { p = legBase - swing * fwd, r = spread },
+		RJ = { tw = (gRJ.tw or 0) * (1 - runW) + twist, ln = ln, sd = -0.1 * side * w, dy = -(0.05 + 0.1 * runW) * sinp * sinp - 0.08 * runW, dz = 0.1 * runW },
+	}
+	local armSwing = sinp * 0.25 * w * fwd
+	local runArm = sinp * 1.05 * fwd
+	walk.RS = {
+		p = (idle.RS.p - armSwing) * (1 - runW) + (0.3 - runArm) * runW,
+		y = idle.RS.y * (1 - runW),
+		r = idle.RS.r * (1 - runW) + 0.12 * runW,
+	}
+	walk.LS = {
+		p = (idle.LS.p + armSwing) * (1 - runW) + (0.3 + runArm) * runW,
+		y = idle.LS.y * (1 - runW),
+		r = idle.LS.r * (1 - runW) + 0.12 * runW,
+	}
+	walk.N = { p = idle.N.p * (1 - runW) - (ln - (gRJ.ln or 0)) * 0.6, y = idle.N.y * (1 - runW) - twist * 0.8, r = idle.N.r * (1 - runW) }
+
+	local out = {}
+	for j, zero in pairs(LOCO_JOINTS) do
+		out[j] = lerpTable(nil, lerpTable(idle[j], walk[j], w, zero), s.locoW, zero)
+	end
+	return out
+end
 
 local function getMotors(character)
 	local torso = character:FindFirstChild("Torso")
@@ -1197,12 +1421,20 @@ local function getMotors(character)
 			return nil
 		end
 	end
+	local neck = torso:FindFirstChild("Neck")
+	if neck and neck:IsA("Motor6D") then
+		m.N = neck -- optionnel (tête absente / soudée : pas de canal N)
+	end
 	return m
+end
+
+local function motorsAlive(m)
+	return m.RS.Parent and m.LS.Parent and m.RH.Parent and m.LH.Parent and m.RJ.Parent and (m.N == nil or m.N.Parent ~= nil)
 end
 
 local function getState(character)
 	local s = states[character]
-	if s and s.motors.RS.Parent and s.motors.LS.Parent and s.motors.RH.Parent and s.motors.LH.Parent and s.motors.RJ.Parent then
+	if s and motorsAlive(s.motors) then
 		return s
 	end
 	local motors = getMotors(character)
@@ -1211,59 +1443,46 @@ local function getState(character)
 	end
 	s = {
 		motors = motors,
-		base = { RS = motors.RS.C0, LS = motors.LS.C0, RH = motors.RH.C0, LH = motors.LH.C0, RJ = motors.RJ.C0 },
+		base = { RS = motors.RS.C0, LS = motors.LS.C0, RH = motors.RH.C0, LH = motors.LH.C0, RJ = motors.RJ.C0, N = motors.N and motors.N.C0 },
 		track = nil, frozenUntil = 0, blend = nil, current = nil,
+		loco = isFighter(character), phase = math.random() * 6.28, breath = math.random() * 6.28,
+		ly = 0, lp = 0, lookW = 0,
 	}
 	states[character] = s
 	return s
 end
 
-local function lerpTable(a, b, alpha, zero)
-	local out = {}
-	for k in pairs(zero) do
-		local va, vb = (a and a[k]) or 0, (b and b[k]) or 0
-		out[k] = va + (vb - va) * alpha
-	end
-	return out
-end
-
-local function holdPose(character)
-	local pose = table.clone(HOLD_POSES[character:GetAttribute("HoldPose") or ""] or {})
-	-- course : buste penché, grands mouvements de bras et de jambes en opposition (cycle continu)
-	if character:GetAttribute("Running") and character:GetAttribute("HoldPose") ~= "TwoHands" then
-		local hum = character:FindFirstChildOfClass("Humanoid")
-		local moving = hum and hum.MoveDirection.Magnitude > 0.1 and hum.FloorMaterial ~= Enum.Material.Air
-		local t = os.clock() * 11
-		local s = moving and math.sin(t) or 0
-		local holding = character:GetAttribute("HoldPose") == "Hand"
-		pose.RJ = { ln = 0.38, tw = s * 0.12 }
-		pose.RS = holding and pose.RS or { p = s * 1.1 + 0.15, r = -0.12 }
-		pose.LS = { p = -s * 1.1 + 0.15, r = -0.12 }
-		pose.RH = { p = -s * 0.55 }
-		pose.LH = { p = s * 0.55 }
-		if not moving then
-			pose.RJ = { ln = 0.15 }
+local function holdPose(character, loco)
+	local pose = loco and table.clone(loco) or {}
+	local hp = HOLD_POSES[character:GetAttribute("HoldPose") or ""]
+	if hp then
+		for k, v in pairs(hp) do
+			pose[k] = v
 		end
 	end
 	local serverNow = workspace:GetServerTimeNow()
-	if character:GetAttribute("Blocking") then
-		for k, v in pairs(HOLD_POSES.Block) do
-			pose[k] = v
+	local function over(src, keepLegs)
+		for k, v in pairs(src) do
+			if not (keepLegs and (k == "RH" or k == "LH")) then
+				pose[k] = v
+			end
 		end
+	end
+	local walking = loco ~= nil and loco.walking == true
+	if character:GetAttribute("Blocking") then
+		over(HOLD_POSES.Block, walking) -- on peut marcher en garde : les jambes suivent la marche
 	elseif serverNow < (character:GetAttribute("GuardBrokenUntil") or 0) then
 		-- guard break : sonné, garde baissée (lisible de loin : « punissez-le ! »)
-		for k, v in pairs(HOLD_POSES.GuardBroken) do
-			pose[k] = v
-		end
+		over(HOLD_POSES.GuardBroken, false)
 	elseif serverNow < (character:GetAttribute("StunUntil") or 0) then
 		for k, v in pairs(HOLD_POSES.Stunned) do
-			if not pose[k] then
+			if not hp or not hp[k] then
 				pose[k] = v
 			end
 		end
 	elseif serverNow < (character:GetAttribute("EndlagUntil") or 0) then
 		for k, v in pairs(HOLD_POSES.Winded) do
-			if not pose[k] then
+			if not hp or not hp[k] then
 				pose[k] = v
 			end
 		end
@@ -1275,13 +1494,32 @@ local function full(pose)
 	return {
 		RS = pose.RS or ZERO_LIMB, LS = pose.LS or ZERO_LIMB,
 		RH = pose.RH or ZERO_LIMB, LH = pose.LH or ZERO_LIMB,
-		RJ = pose.RJ or ZERO_RJ,
+		RJ = pose.RJ or ZERO_RJ, N = pose.N or ZERO_N,
 	}
 end
 
-local function easeOut(x)
-	return 1 - (1 - x) * (1 - x)
-end
+-- easing du segment qui arrive sur une clé (champ e)
+local EASE = {
+	linear = function(x)
+		return x
+	end,
+	["in"] = function(x)
+		return x * x
+	end,
+	out = function(x)
+		return 1 - (1 - x) * (1 - x)
+	end,
+	inout = function(x)
+		return x < 0.5 and 2 * x * x or 1 - (-2 * x + 2) * (-2 * x + 2) / 2
+	end,
+	back = function(x) -- dépasse légèrement la clé puis revient (claquement d'impact)
+		local c1 = 1.70158
+		local c3 = c1 + 1
+		local u = x - 1
+		return 1 + c3 * u * u * u + c1 * u * u
+	end,
+}
+ProcAnim.Ease = EASE
 
 local function evalTrack(track, hold)
 	local frames = track.frames
@@ -1289,12 +1527,14 @@ local function evalTrack(track, hold)
 	for i = 1, #frames - 1 do
 		local a, b = frames[i], frames[i + 1]
 		if t <= b.t then
-			local alpha = easeOut(math.clamp((t - a.t) / math.max(b.t - a.t, 1e-3), 0, 1))
+			local ease = EASE[b.e or "out"] or EASE.out
+			local alpha = ease(math.clamp((t - a.t) / math.max(b.t - a.t, 1e-3), 0, 1))
 			local pose = {}
 			for _, j in ipairs(LIMBS) do
 				pose[j] = lerpTable(a[j] or hold[j], b[j] or hold[j], alpha, ZERO_LIMB)
 			end
 			pose.RJ = lerpTable(a.RJ or hold.RJ, b.RJ or hold.RJ, alpha, ZERO_RJ)
+			pose.N = lerpTable(a.N or hold.N, b.N or hold.N, alpha, ZERO_N)
 			return pose, false
 		end
 	end
@@ -1306,12 +1546,146 @@ local function limbOffset(j, mirror)
 	return CFrame.Angles(0, (j.y or 0) * s, 0) * CFrame.Angles(0, 0, (j.p or 0) * s) * CFrame.Angles(-(j.r or 0), 0, 0)
 end
 
+-- RootJoint : C0 = Angles(-pi/2, 0, pi) -> axes locaux du C0 dans le repère du HumanoidRootPart :
+-- X = -X (gauche), Y = +Z (arrière), Z = +Y (haut). Donc CFrame.new(0, -dz, dy) = dz vers l'avant, dy vers le haut,
+-- Angles(ln, 0, 0) = penché en avant (+), Angles(0, sd, 0) = penché à gauche (+), Angles(0, 0, tw) = rotation (+ = à gauche).
+-- Neck : même rotation de C0 (repère du Torse) -> Angles(0, 0, y) = tourner la tête à gauche, Angles(p, 0, 0) = baisser.
 local function apply(s, pose)
 	s.motors.RS.C0 = s.base.RS * limbOffset(pose.RS, false)
 	s.motors.LS.C0 = s.base.LS * limbOffset(pose.LS, true)
 	s.motors.RH.C0 = s.base.RH * limbOffset(pose.RH, false)
 	s.motors.LH.C0 = s.base.LH * limbOffset(pose.LH, true)
-	s.motors.RJ.C0 = s.base.RJ * CFrame.Angles(pose.RJ.ln or 0, pose.RJ.sd or 0, 0) * CFrame.Angles(0, 0, pose.RJ.tw or 0)
+	local rj = pose.RJ
+	s.motors.RJ.C0 = s.base.RJ * CFrame.new(0, -(rj.dz or 0), rj.dy or 0) * CFrame.Angles(rj.ln or 0, rj.sd or 0, 0) * CFrame.Angles(0, 0, rj.tw or 0)
+	local n = s.motors.N
+	if n and s.base.N and pose.N then
+		n.C0 = s.base.N * CFrame.Angles(0, 0, pose.N.y or 0) * CFrame.Angles(pose.N.p or 0, pose.N.r or 0, 0)
+	end
+end
+
+------------------------------------------------------------------------
+-- SUIVI DE LA TÊTE : vers la cible pendant les M1 (cible fournie par CombatController / lock-on, sinon automatique)
+------------------------------------------------------------------------
+local LOOK_YAW, LOOK_PITCH = 0.7, 0.45 -- débattement de la tête par rapport au HumanoidRootPart (petit)
+
+-- cible automatique : personnage le plus proche devant soi (autres joueurs : on ne connaît pas leur soft-lock)
+local function autoTarget(character, root)
+	local best, bestD = nil, 11
+	for other in pairs(states) do
+		if other ~= character and other.Parent then
+			local r = other:FindFirstChild("HumanoidRootPart")
+			if r then
+				local to = r.Position - root.Position
+				local d = to.Magnitude
+				if d > 0.5 and d < bestD and to.Unit:Dot(root.CFrame.LookVector) > 0.35 then
+					best, bestD = r, d
+				end
+			end
+		end
+	end
+	return best
+end
+
+local function headLook(s, character, pose, dt, now)
+	if not s.motors.N then
+		return
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local head = character:FindFirstChild("Head")
+	local target
+	if s.lookPart and now < (s.lookUntil or 0) and s.lookPart.Parent then
+		target = s.lookPart
+	elseif s.track and s.track.look then
+		if now >= (s.autoAt or 0) then
+			s.autoAt = now + 0.2
+			s.autoPart = root and autoTarget(character, root) or nil
+		end
+		target = s.autoPart
+	end
+	local wantW, yaw, pitch = 0, s.ly, s.lp
+	if target and root and head then
+		local d = root.CFrame:VectorToObjectSpace(target.Position - head.Position)
+		local yawRoot = math.atan2(-d.X, -d.Z)
+		if math.abs(yawRoot) < 1.9 then
+			local horiz = math.sqrt(d.X * d.X + d.Z * d.Z)
+			local pitchDown = math.atan2(-d.Y, math.max(horiz, 0.1))
+			-- la tête compense une partie de la rotation / inclinaison du buste (elle reste sur la cible)
+			yaw = math.clamp(math.clamp(yawRoot, -LOOK_YAW, LOOK_YAW) - (pose.RJ.tw or 0) * 0.6, -0.95, 0.95)
+			pitch = math.clamp(math.clamp(pitchDown, -LOOK_PITCH, LOOK_PITCH) - (pose.RJ.ln or 0) * 0.7, -0.6, 0.6)
+			wantW = 1
+		end
+	end
+	local k = math.clamp(dt * 12, 0, 1)
+	s.lookW += (wantW - s.lookW) * k
+	s.ly += (yaw - s.ly) * k
+	s.lp += (pitch - s.lp) * k
+	if s.lookW > 0.01 then
+		local n = pose.N or ZERO_N
+		local w = s.lookW
+		pose.N = { p = (n.p or 0) + (s.lp - (n.p or 0)) * w * 0.85, y = (n.y or 0) + (s.ly - (n.y or 0)) * w, r = n.r or 0 }
+	end
+end
+
+-- la tête de character regarde part pendant duration secondes (lock-on, soft-lock des M1)
+function ProcAnim.setLookTarget(character: Model, part: BasePart?, duration: number?)
+	local s = character and getState(character)
+	if not s then
+		return
+	end
+	s.lookPart = part
+	s.lookUntil = part and (os.clock() + (duration or 0.5)) or 0
+end
+
+------------------------------------------------------------------------
+-- RÉACTIONS DIRECTIONNELLES (CartoonFX.hit, CombatController.predictVisual)
+------------------------------------------------------------------------
+-- reaction : "Light" | "Heavy" | "Slam" | "Launch" (payload Hit.r). Renvoie le nom de l'animation de la victime.
+function ProcAnim.reactionFor(victim: Model?, attacker: Model?, reaction: string?): string
+	reaction = reaction or "Light"
+	if reaction == "Launch" then
+		return "Launch"
+	end
+	local heavy = reaction == "Heavy" or reaction == "Slam"
+	local vr = victim and victim:FindFirstChild("HumanoidRootPart")
+	local ar = attacker and attacker:FindFirstChild("HumanoidRootPart")
+	local airborne = victim ~= nil and not ProcAnim.isGrounded(victim)
+	if airborne and not heavy then
+		return "AirHit"
+	end
+	if vr and ar then
+		local d = Vector3.new(ar.Position.X - vr.Position.X, 0, ar.Position.Z - vr.Position.Z)
+		if d.Magnitude > 0.05 then
+			d = d.Unit
+			local f = d:Dot(vr.CFrame.LookVector)
+			local r = d:Dot(vr.CFrame.RightVector)
+			if f < -0.4 then
+				return "HitBack" -- attaquant derrière la victime
+			end
+			if not heavy then
+				if r > 0.5 then
+					return "HitLightR" -- attaquant sur sa droite
+				elseif r < -0.5 then
+					return "HitLightL"
+				end
+			end
+		end
+	end
+	if heavy then
+		return "HitHeavy"
+	end
+	return math.random() < 0.5 and "HitLight" or "HitLight2"
+end
+
+------------------------------------------------------------------------
+-- API
+------------------------------------------------------------------------
+local function wantsLook(name)
+	if type(name) ~= "string" then
+		return false
+	end
+	local base = string.match(name, "^(.+)_L$") or name
+	local meta = M1StylesData.Moves[base]
+	return meta ~= nil and meta.Kind ~= "Item"
 end
 
 function ProcAnim.play(character: Model, name: string, speed: number?)
@@ -1320,8 +1694,9 @@ function ProcAnim.play(character: Model, name: string, speed: number?)
 	if not frames or not s then
 		return
 	end
-	s.track = { frames = frames, t = 0, speed = speed or 1 }
+	s.track = { frames = frames, t = 0, speed = speed or 1, look = wantsLook(name) }
 	s.blend = nil
+	s.autoAt = 0
 	for _, fn in ipairs(playHooks) do
 		task.spawn(fn, character, name)
 	end
@@ -1334,13 +1709,14 @@ function ProcAnim.onPlay(fn)
 	end
 end
 
--- Ultimates / effets : jouer une piste de keyframes fournie directement (même format qu'une entrée de ANIMS)
+-- Ultimates / effets : jouer une piste de keyframes fournie directement (même format qu'une entrée de ANIMS).
+-- Les joints absents retombent sur une pose NEUTRE (pas de garde de locomotion) : les poses d'ulti restent exactes.
 function ProcAnim.playFrames(character: Model, frames, speed: number?)
 	local s = character and getState(character)
 	if type(frames) ~= "table" or #frames < 2 or not s then
 		return
 	end
-	s.track = { frames = frames, t = 0, speed = speed or 1 }
+	s.track = { frames = frames, t = 0, speed = speed or 1, neutral = true }
 	s.blend = nil
 end
 
@@ -1370,13 +1746,28 @@ end
 local BLEND_TIME = 0.12
 RunService.RenderStepped:Connect(function(dt)
 	local now = os.clock()
+	local cam = workspace.CurrentCamera
+	local camPos = cam and cam.CFrame.Position
 	for character, s in pairs(states) do
-		if not s.motors.RS.Parent or not s.motors.RJ.Parent or not character.Parent or s.motors.RS.Enabled == false then
-			if not character.Parent then
-				states[character] = nil
-			end
+		if not character.Parent then
+			states[character] = nil
 			continue
 		end
+		if not motorsAlive(s.motors) or s.motors.RS.Enabled == false or character:GetAttribute("Ragdolled") then
+			continue
+		end
+		-- budget : loin de la caméra et sans action, une image sur deux (le temps s'accumule)
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local far = camPos ~= nil and root ~= nil and (camPos - root.Position).Magnitude > NEAR_RANGE
+		local sdt = dt + (s.acc or 0)
+		if far and not s.track and not s.blend then
+			s.skip = not s.skip
+			if s.skip then
+				s.acc = sdt
+				continue
+			end
+		end
+		s.acc = 0
 		-- fin du renversé : animation de relevé (lisible : « il se relève, invulnérable un instant »)
 		local down = workspace:GetServerTimeNow() < (character:GetAttribute("KnockdownUntil") or 0)
 		if s.wasDown and not down then
@@ -1387,13 +1778,19 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 		end
 		s.wasDown = down
-		local hold = full(holdPose(character))
+		local frozen = now < s.frozenUntil
+		local loco = locomotion(s, character, sdt, now, frozen)
+		if loco then
+			loco.walking = (s.speed or 0) > 2
+		end
+		local hold = full(holdPose(character, loco))
 		local pose
 		if s.track then
-			if now >= s.frozenUntil then
-				s.track.t += dt * s.track.speed
+			if not frozen then
+				s.track.t += sdt * s.track.speed
 			end
-			local p, done = evalTrack(s.track, hold)
+			local base = s.track.neutral and full(holdPose(character, nil)) or hold
+			local p, done = evalTrack(s.track, base)
 			if done then
 				s.track = nil
 				s.blend = { from = s.current or hold, t = 0 }
@@ -1402,28 +1799,37 @@ RunService.RenderStepped:Connect(function(dt)
 				pose = p
 			end
 		elseif s.blend then
-			s.blend.t += dt
+			s.blend.t += sdt
 			local a = math.clamp(s.blend.t / BLEND_TIME, 0, 1)
+			a = a * a * (3 - 2 * a)
 			pose = {}
 			for _, j in ipairs(LIMBS) do
 				pose[j] = lerpTable(s.blend.from[j], hold[j], a, ZERO_LIMB)
 			end
 			pose.RJ = lerpTable(s.blend.from.RJ, hold.RJ, a, ZERO_RJ)
+			pose.N = lerpTable(s.blend.from.N, hold.N, a, ZERO_N)
 			if a >= 1 then
 				s.blend = nil
 			end
 		else
-			-- glisse doucement vers la pose de maintien (block, stun, objet…)
+			-- glisse doucement vers la pose de maintien (locomotion, block, stun, objet…)
 			local cur = s.current or hold
-			local a = math.clamp(dt * 14, 0, 1)
+			local a = math.clamp(sdt * 14, 0, 1)
 			pose = {}
 			for _, j in ipairs(LIMBS) do
 				pose[j] = lerpTable(cur[j], hold[j], a, ZERO_LIMB)
 			end
 			pose.RJ = lerpTable(cur.RJ, hold.RJ, a, ZERO_RJ)
+			pose.N = lerpTable(cur.N, hold.N, a, ZERO_N)
 		end
 		s.current = pose
-		apply(s, pose)
+		-- la tête par-dessus (le suivi n'est pas stocké dans current : pas d'accumulation)
+		local shown = pose
+		if s.motors.N then
+			shown = table.clone(pose)
+			headLook(s, character, shown, sdt, now)
+		end
+		apply(s, shown)
 	end
 end)
 

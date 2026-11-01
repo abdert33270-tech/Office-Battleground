@@ -9,7 +9,8 @@
 		UIKit.registerPanel(obj, opts?) -> entrée   obj = GuiObject ; opts = { name, close = fn, noClose = bool }
 			Dès que obj devient visible (quel que soit le code qui l'ouvre), tous les autres panneaux enregistrés se ferment.
 			close = fermeture spéciale (ex. CharacterSelectController.close) ; noClose = jamais fermé par le registre
-			(il ferme seulement les autres en s'ouvrant : boutique de caisses plein écran).
+			(il ferme seulement les autres en s'ouvrant) ; passive = ni fermé ni fermant, compté par anyPanelOpen
+			(boutique de caisses plein écran : elle s'ouvre PAR-DESSUS la sélection de perso, qui doit rester derrière).
 		UIKit.openPanel(obj) | UIKit.closePanel(obj) | UIKit.togglePanel(obj) | UIKit.closeAllPanels(except?)
 		UIKit.anyPanelOpen() -> bool, nom   (ShiftLockController : souris libre)
 		UIKit.isPanel(obj) -> bool
@@ -209,13 +210,16 @@ function UIKit.registerPanel(obj: GuiObject, opts)
 		return old
 	end
 	opts = opts or {}
-	local e = { obj = obj, name = opts.name or obj.Name, close = opts.close, noClose = opts.noClose == true }
+	local passive = opts.passive == true
+	local e = { obj = obj, name = opts.name or obj.Name, close = opts.close, noClose = opts.noClose == true or passive }
 	table.insert(registry, e)
-	obj:GetPropertyChangedSignal("Visible"):Connect(function()
-		if obj.Visible then
-			UIKit.closeAllPanels(obj)
-		end
-	end)
+	if not passive then
+		obj:GetPropertyChangedSignal("Visible"):Connect(function()
+			if obj.Visible then
+				UIKit.closeAllPanels(obj)
+			end
+		end)
+	end
 	obj.Destroying:Connect(function()
 		local i = table.find(registry, e)
 		if i then

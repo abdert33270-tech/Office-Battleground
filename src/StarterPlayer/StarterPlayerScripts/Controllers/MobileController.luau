@@ -8,6 +8,15 @@
 	Appelle ctx.CombatController : attack, pickup, throw, dash, setBlock, ability, transform.
 	Les boutons n'existent que si l'appareil est tactile (test PC : ReplicatedStorage.DebugTouch = true).
 	Taille : échelle bornée pour que le plus petit bouton fasse toujours >= 44 px à l'écran.
+	Disposition (passe mobile) : arc du pouce droit centré sur le bouton SAUT de Roblox (lu dans
+	PlayerGui.TouchGui...JumpButton, sinon règle de Roblox : petit écran (côté min <= 500) 70 px à (-95,-90) du coin,
+	sinon 120 px à (-170,-210)). Positions = centre du saut + décalage en « unités design » x échelle k.
+	  arc intérieur : HIT (gros) à gauche du saut, attaques 1 / 2 / 3 en quart de cercle autour ;
+	  arc extérieur : PICK UP, BLOCK, OT (ULT prend la place d'OT quand l'ultime est prêt) ; DASH juste au-dessus du saut.
+	Zones laissées libres (vérifié à 667x375 et 844x390, k = 0,7) : tout le bord gauche jusqu'à 330 px du bord droit
+	(joystick dynamique = 40 % gauche, dock fusionné = 260x140 en bas à gauche), la colonne RUN / LOCK
+	(x 14-78 px du bord droit, ~150-250 px du bas), et ~90 px en haut (HUD). Pas d'échelle utilisateur (UIScale)
+	ici : les boutons sont placés au pixel près autour des commandes Roblox (ScreenGui ignoré par SettingsController).
 ]]
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -148,35 +157,82 @@ function Mobile.init(ctx)
 		Name = "Holder",
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.fromScale(1, 1),
-		Size = UDim2.fromOffset(420, 420),
+		Size = UDim2.fromOffset(600, 600),
 		BackgroundTransparency = 1,
 		Parent = gui,
 	})
-	-- échelle : plus petit bouton (68) * 0.7 = 48 px minimum à l'écran
+	-- échelle : plus petit bouton (70) * 0.7 = 49 px minimum à l'écran. Le holder est ancré au coin bas-droit :
+	-- un enfant à (x, y) du coin apparaît à (x, y) * k du coin de l'écran.
 	local scale = UIKit.new("UIScale", { Name = "AutoScale", Parent = holder })
+
+	-- décalages (unités design) depuis le CENTRE du bouton saut ; tailles en unités design
+	local LAYOUT = {
+		M1 = { -143, -10, 118 },
+		A1 = { -234, -63, 80 },
+		A2 = { -171, -171, 80 },
+		A3 = { -83, -229, 80 },
+		Dash = { -3, -100, 70 },
+		Grab = { -347, -49, 78 },
+		Block = { -303, -174, 70 },
+		OT = { -221, -281, 78 },
+		ULT = { -221, -281, 98 }, -- même place qu'OT (OT caché quand l'ultime est prêt)
+	}
+	local C_ATT = Color3.fromRGB(90, 140, 255)
+	local m1 = round(holder, "M1", "HIT", LAYOUT.M1[3], Vector2.zero, Color3.fromRGB(240, 70, 60), "Melee")
+	local a1 = round(holder, "A1", "1", LAYOUT.A1[3], Vector2.zero, C_ATT, "Melee")
+	local a2 = round(holder, "A2", "2", LAYOUT.A2[3], Vector2.zero, C_ATT, "Melee")
+	local a3 = round(holder, "A3", "3", LAYOUT.A3[3], Vector2.zero, C_ATT, "Melee")
+	local dash = round(holder, "Dash", "DASH", LAYOUT.Dash[3], Vector2.zero, Color3.fromRGB(120, 210, 255), "Dash")
+	local block = round(holder, "Block", "BLOCK", LAYOUT.Block[3], Vector2.zero, Color3.fromRGB(160, 160, 175), "Guard")
+	local grab = round(holder, "Grab", "PICK UP", LAYOUT.Grab[3], Vector2.zero, Color3.fromRGB(255, 200, 40), "Grab")
+	local ot = round(holder, "OT", "OT", LAYOUT.OT[3], Vector2.zero, Color3.fromRGB(255, 140, 30), "Bolt")
+	local ult = round(holder, "ULT", "ULT!", LAYOUT.ULT[3], Vector2.zero, Color3.fromRGB(255, 80, 40), "Ult")
+	ult.Visible = false
+
+	-- centre du bouton saut, en px depuis le coin bas-droit (négatif)
+	local function jumpCenter(vp)
+		local pg = player:FindFirstChild("PlayerGui")
+		local tg = pg and pg:FindFirstChild("TouchGui")
+		local jb = tg and tg:FindFirstChild("JumpButton", true)
+		if jb and jb:IsA("GuiObject") and jb.AbsoluteSize.X > 0 then
+			local c = jb.AbsolutePosition + jb.AbsoluteSize / 2
+			-- AbsolutePosition est relative au ScreenGui ; son coin bas-droit = celui de l'écran
+			local root = tg:IsA("ScreenGui") and tg.AbsoluteSize or vp
+			local d = Vector2.new(c.X - root.X, c.Y - root.Y)
+			if d.X < 0 and d.Y < 0 and d.X > -260 and d.Y > -320 then -- valeur plausible (sinon : règle de Roblox)
+				return d, jb.AbsoluteSize.X
+			end
+		end
+		local small = math.min(vp.X, vp.Y) <= 500
+		if small then
+			return Vector2.new(-60, -55), 70
+		end
+		return Vector2.new(-110, -150), 120
+	end
+	local halo
 	local function rescale()
 		local cam = workspace.CurrentCamera
 		local vp = cam and cam.ViewportSize or Vector2.new(844, 390)
-		local v = math.clamp(math.min(vp.Y / 560, vp.X / 1000), 0.7, 1.2)
-		scale:SetAttribute("Base", v)
-		scale.Scale = v
+		local k = math.clamp(math.min(vp.Y / 560, vp.X / 1000), 0.7, 1.2)
+		scale:SetAttribute("Base", k)
+		scale.Scale = k
+		local j = jumpCenter(vp)
+		for name, l in pairs(LAYOUT) do
+			local b = buttons[name]
+			if b then
+				-- position dans le holder (unités design) = (centre du saut en px) / k + décalage design
+				b.Position = UDim2.new(1, j.X / k + l[1], 1, j.Y / k + l[2])
+			end
+		end
+		if halo then
+			halo.Position = ult.Position
+		end
 	end
 	rescale()
 	if workspace.CurrentCamera then
 		workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
 	end
-
-	-- Le saut Roblox est dans le coin (~ -95, -90). On s'organise autour.
-	local m1 = round(holder, "M1", "HIT", 118, Vector2.new(-215, -100), Color3.fromRGB(240, 70, 60), "Melee")
-	local a1 = round(holder, "A1", "1", 80, Vector2.new(-332, -86), Color3.fromRGB(90, 140, 255), "Melee")
-	local a2 = round(holder, "A2", "2", 80, Vector2.new(-308, -192), Color3.fromRGB(90, 140, 255), "Melee")
-	local a3 = round(holder, "A3", "3", 80, Vector2.new(-215, -240), Color3.fromRGB(90, 140, 255), "Melee")
-	local dash = round(holder, "Dash", "DASH", 70, Vector2.new(-95, -188), Color3.fromRGB(120, 210, 255), "Dash")
-	local block = round(holder, "Block", "BLOCK", 70, Vector2.new(-118, -270), Color3.fromRGB(160, 160, 175), "Guard")
-	local grab = round(holder, "Grab", "PICK UP", 78, Vector2.new(-400, -178), Color3.fromRGB(255, 200, 40), "Grab")
-	local ot = round(holder, "OT", "OT", 78, Vector2.new(-322, -292), Color3.fromRGB(255, 140, 30), "Bolt")
-	local ult = round(holder, "ULT", "ULT!", 98, Vector2.new(-215, -352), Color3.fromRGB(255, 80, 40), "Ult")
-	ult.Visible = false
+	task.delay(2, rescale) -- TouchGui (bouton saut) créé par Roblox après nous
 	grab.Label.TextColor3 = Color3.new(1, 1, 1)
 	for _, b in ipairs({ m1, a1, a2, a3, dash, block, ot, ult }) do
 		bigIcon(b)
@@ -193,7 +249,7 @@ function Mobile.init(ctx)
 	local ultStroke = ult:FindFirstChildOfClass("UIStroke")
 	local ultScale = UIKit.new("UIScale", { Name = "Pulse", Parent = ult:FindFirstChild("Label") })
 	-- halo derrière le bouton ULT (frère : dessiné dessous)
-	local halo = UIKit.new("Frame", { Name = "UltHalo", AnchorPoint = Vector2.new(0.5, 0.5), Position = ult.Position, Size = UDim2.fromOffset(124, 124), BackgroundColor3 = Color3.fromRGB(255, 200, 60), BackgroundTransparency = 1, Visible = false, ZIndex = 0, Parent = holder })
+	halo = UIKit.new("Frame", { Name = "UltHalo", AnchorPoint = Vector2.new(0.5, 0.5), Position = ult.Position, Size = UDim2.fromOffset(124, 124), BackgroundColor3 = Color3.fromRGB(255, 200, 60), BackgroundTransparency = 1, Visible = false, ZIndex = 0, Parent = holder })
 	UIKit.corner(halo, UDim.new(0.5, 0))
 
 	if hud then
@@ -293,6 +349,7 @@ function Mobile.init(ctx)
 			ultWas = ready
 			ult.Visible = ready
 			halo.Visible = ready
+			ot.Visible = not ready -- l'ULT prend la place du bouton OT
 			local ps = ult:FindFirstChild("PressScale")
 			if ready and ps then
 				ps.Scale = 0.3
