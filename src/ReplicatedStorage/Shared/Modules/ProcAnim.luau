@@ -1141,12 +1141,14 @@ local MIRROR_SWAP = { RS = "LS", LS = "RS", RH = "LH", LH = "RH" }
 local function mirrorFrames(frames)
 	local out = {}
 	for i, f in ipairs(frames) do
-		local m = { t = f.t }
+		local m = { t = f.t, e = f.e }
 		for k, v in pairs(f) do
 			if MIRROR_SWAP[k] then
 				m[MIRROR_SWAP[k]] = v
 			elseif k == "RJ" then
-				m.RJ = { tw = -(v.tw or 0), ln = v.ln or 0, sd = -(v.sd or 0) }
+				m.RJ = { tw = -(v.tw or 0), ln = v.ln or 0, sd = -(v.sd or 0), dy = v.dy, dz = v.dz }
+			elseif k == "N" then
+				m.N = { p = v.p or 0, y = -(v.y or 0), r = -(v.r or 0) }
 			end
 		end
 		out[i] = m

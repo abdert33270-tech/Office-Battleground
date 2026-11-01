@@ -1,7 +1,10 @@
 --[[
 	HUDController — interface de jeu (anglais, cartoon, lisible sur téléphone).
 	PV, jauge OVERTIME, XP/grade, icônes d'attaques + recharges (PC), étage + minuteur de phase,
-	kill feed, bannières, toasts, compteur de combo, écran « YOU'RE FIRED! », tâches du jour, boutique (bientôt).
+	kill feed (+ titre de carrière), bannières, toasts, compteur de combo, écran « YOU'RE FIRED! ».
+	Panneaux (dans le dock unique MetaDockController, un seul ouvert à la fois via le registre UIKit) :
+		"TasksPanel" (tâches du jour + contrats de la semaine, relance gratuite), "CombosPanel", "ShopPanel" (boutique honnête).
+	Couleurs : jetons UITheme.HUD (local C) et UITheme.Colors ; pas de Color3 en dur hors cas particuliers.
 	Niveau : pastille LV sur le portrait, jauge XP = progression vers le niveau suivant (attributs Level / LevelXP /
 	LevelNeed), popup « LEVEL UP! » + son (remote LevelUp {level, from, cash, grade}).
 
@@ -9,7 +12,7 @@
 		HUD.bindCooldown(frame, key)  key = "1"|"2"|"3"|"Dash"|"DashStrike"|"Evasive" (lit CD<key> / CDMax<key> sur le perso)
 		HUD.toast(text, color?, duration?)
 		HUD.banner({text, sub, color, duration, style})
-		HUD.addMenuButton(text, color, callback, order) -> bouton
+		HUD.addMenuButton(text, color, callback, order) -> bouton   (délégué à MetaDock.addButton)
 		HUD.attackName(id) -> nom affiché
 		HUD.currentKit() -> fiche du perso (Config/Characters), nom
 ]]
@@ -20,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
 local UIKit = require(script.Parent.UIKit)
+local C = UIKit.Theme.HUD -- jetons de couleur du HUD (UITheme.HUD)
 local Config = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config")
 local Characters = require(Config.Characters)
 local Grades = require(Config.Grades)
@@ -86,7 +90,7 @@ end
 
 local function charColor(charName)
 	local kit = charName and Characters[charName]
-	return kit and kit.Color or Color3.fromRGB(235, 235, 235)
+	return kit and kit.Color or C.Silver
 end
 
 ------------------------------------------------------------------------
@@ -131,7 +135,7 @@ local function readyBurst(frame)
 	if fc then
 		UIKit.corner(ring, fc.CornerRadius)
 	end
-	local s = UIKit.stroke(ring, 4, Color3.fromRGB(255, 240, 120), true)
+	local s = UIKit.stroke(ring, 4, C.Glow, true)
 	UIKit.tween(ring, 0.35, { Size = UDim2.new(1, 24, 1, 24) }, Enum.EasingStyle.Quad)
 	UIKit.tween(s, 0.35, { Transparency = 1, Thickness = 1 })
 	task.delay(0.36, function()
@@ -150,7 +154,7 @@ local function spark(container, color)
 		return
 	end
 	local s = UIKit.new("Frame", {
-		BackgroundColor3 = color or Color3.fromRGB(255, 230, 80),
+		BackgroundColor3 = color or UIKit.Colors.Yellow,
 		BorderSizePixel = 0,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.new(math.random(), 0, 0.5, math.random(-8, 8)),
@@ -237,7 +241,7 @@ function HUD.bindCooldown(frame: GuiObject, key: string)
 	-- éclair blanc quand l'attaque redevient prête
 	local flash = UIKit.new("Frame", {
 		Name = "ReadyFlash",
-		BackgroundColor3 = Color3.new(1, 1, 1),
+		BackgroundColor3 = UIKit.White,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Size = UDim2.fromScale(1, 1),
@@ -316,7 +320,7 @@ function HUD.toast(text: string, color: Color3?, duration: number?)
 	})
 	UIKit.corner(pill, UDim.new(0, 6))
 	UIKit.stroke(pill, 3, UIKit.Black, true)
-	grad(pill, Color3.new(1, 1, 1), Color3.fromRGB(165, 165, 180))
+	grad(pill, UIKit.White, C.Steel)
 	UIKit.new("UIPadding", { PaddingLeft = UDim.new(0, 46), PaddingRight = UDim.new(0, 16), PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10), Parent = pill })
 	-- médaillon « ! » coloré à gauche
 	local badge = UIKit.new("Frame", { Name = "Accent", AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = accent, Position = UDim2.new(0, -38, 0.5, 0), Size = UDim2.fromOffset(28, 28), Parent = pill })
@@ -353,10 +357,10 @@ end
 -- Bannières
 ------------------------------------------------------------------------
 local BANNER_COLORS = {
-	Event = Color3.fromRGB(255, 205, 40),
-	Floor = Color3.fromRGB(235, 60, 50),
-	Overtime = Color3.fromRGB(255, 120, 20),
-	Big = Color3.fromRGB(255, 255, 255),
+	Event = C.Gold,
+	Floor = UIKit.Colors.Red,
+	Overtime = UIKit.Colors.Orange,
+	Big = UIKit.White,
 }
 
 local function showBanner(data)
@@ -397,7 +401,7 @@ local function showBanner(data)
 		for i = 0, n - 1 do
 			for _, y in ipairs({ 6, H - 12 }) do
 				local lamp = UIKit.new("Frame", {
-					BackgroundColor3 = Color3.new(1, 1, 1),
+					BackgroundColor3 = UIKit.White,
 					BackgroundTransparency = 0.25,
 					BorderSizePixel = 0,
 					Position = UDim2.fromOffset(13 + i * 26 - 3, y),
@@ -453,7 +457,7 @@ local function showBanner(data)
 	UIKit.new("UIGradient", {
 		Rotation = 90,
 		Color = style == "Big" and ColorSequence.new(UIKit.Theme.lighten(color, 0.55), color)
-			or ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(255, 236, 170)),
+			or ColorSequence.new(UIKit.White, C.Cream),
 		Parent = title,
 	})
 	if data.sub then
@@ -517,21 +521,21 @@ local function bar(parent, name, pos, size, color, label)
 	UIKit.corner(back, UDim.new(0, 4))
 	UIKit.stroke(back, 3, UIKit.Black, true)
 	-- segment « PV perdus » (clair) qui attend puis se vide
-	local trail = UIKit.new("Frame", { Name = "Trail", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(255, 236, 214), BorderSizePixel = 0, ZIndex = 2, Parent = back })
+	local trail = UIKit.new("Frame", { Name = "Trail", Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.Peach, BorderSizePixel = 0, ZIndex = 2, Parent = back })
 	UIKit.corner(trail, UDim.new(0, 4))
 	local fill = UIKit.new("Frame", { Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = color, BorderSizePixel = 0, ZIndex = 3, Parent = back })
 	UIKit.corner(fill, UDim.new(0, 4))
 	UIKit.Theme.bevel(fill, 0.6, 0.7)
-	UIKit.new("Frame", { Name = "Shine", BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.5, BorderSizePixel = 0, Position = UDim2.new(0, 3, 0, 3), Size = UDim2.new(1, -6, 0, 3), ZIndex = 3, Parent = fill })
+	UIKit.new("Frame", { Name = "Shine", BackgroundColor3 = UIKit.White, BackgroundTransparency = 0.5, BorderSizePixel = 0, Position = UDim2.new(0, 3, 0, 3), Size = UDim2.new(1, -6, 0, 3), ZIndex = 3, Parent = fill })
 	-- bord lumineux au bout de la jauge
-	UIKit.new("Frame", { Name = "Edge", AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 3, 1, 0), BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 3, Parent = fill })
+	UIKit.new("Frame", { Name = "Edge", AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 3, 1, 0), BackgroundColor3 = UIKit.White, BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 3, Parent = fill })
 	-- creux sombre en haut (profondeur)
-	UIKit.new("Frame", { Name = "Well", BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.55, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 2), ZIndex = 4, Parent = back })
+	UIKit.new("Frame", { Name = "Well", BackgroundColor3 = UIKit.Colors.Black, BackgroundTransparency = 0.55, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 2), ZIndex = 4, Parent = back })
 	local ticks = UIKit.new("Frame", { Name = "Ticks", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 4, Parent = back })
 	for i = 1, 9 do
 		UIKit.new("Frame", { BackgroundColor3 = UIKit.Colors.Shadow, BackgroundTransparency = 0.62, BorderSizePixel = 0, Position = UDim2.new(i / 10, -1, 0, 0), Size = UDim2.new(0, 2, 1, 0), ZIndex = 4, Parent = ticks })
 	end
-	local flash = UIKit.new("Frame", { Name = "Flash", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5, Parent = back })
+	local flash = UIKit.new("Frame", { Name = "Flash", Size = UDim2.fromScale(1, 1), BackgroundColor3 = UIKit.White, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5, Parent = back })
 	UIKit.corner(flash, UDim.new(0, 4))
 	local text = UIKit.label({ Name = "Text", Text = label or "", Size = UDim2.new(1, -16, 0.6, 0), Position = UDim2.new(0, 8, 0.2, 0), ZIndex = 6, Stroke = 2, TextXAlignment = Enum.TextXAlignment.Left })
 	text.Parent = back
@@ -582,21 +586,21 @@ local function refreshPortrait()
 end
 
 local function buildPortrait(parent)
-	local box = UIKit.new("Frame", { Name = "PortraitBox", Position = UDim2.fromOffset(12, 12), Size = UDim2.fromOffset(86, 86), BackgroundColor3 = Color3.fromRGB(70, 62, 120), ZIndex = 2, Parent = parent })
+	local box = UIKit.new("Frame", { Name = "PortraitBox", Position = UDim2.fromOffset(12, 12), Size = UDim2.fromOffset(86, 86), BackgroundColor3 = UIKit.Colors.PanelLight, ZIndex = 2, Parent = parent })
 	UIKit.corner(box, UDim.new(0, 6))
 	refs.portraitStroke = UIKit.stroke(box, 3, UIKit.Black, true)
-	grad(box, Color3.new(1, 1, 1), Color3.fromRGB(90, 90, 110))
+	grad(box, UIKit.White, C.Dusk)
 	-- rayons de fond (look « carte de joueur »)
 	for i = 0, 3 do
-		UIKit.new("Frame", { BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.86, BorderSizePixel = 0, Position = UDim2.new(0, 6 + i * 22, 0, 0), Size = UDim2.new(0, 9, 1, 0), ZIndex = 2, Parent = box })
+		UIKit.new("Frame", { BackgroundColor3 = UIKit.White, BackgroundTransparency = 0.86, BorderSizePixel = 0, Position = UDim2.new(0, 6 + i * 22, 0, 0), Size = UDim2.new(0, 9, 1, 0), ZIndex = 2, Parent = box })
 	end
 	local vp = UIKit.new("ViewportFrame", {
 		Name = "Portrait",
 		BackgroundTransparency = 1,
 		Size = UDim2.fromScale(1, 1),
 		ZIndex = 3,
-		Ambient = Color3.fromRGB(190, 190, 205),
-		LightColor = Color3.new(1, 1, 1),
+		Ambient = C.Silver,
+		LightColor = UIKit.White,
 		LightDirection = Vector3.new(-0.6, -1, -0.8),
 		Parent = box,
 	})
@@ -605,15 +609,15 @@ local function buildPortrait(parent)
 	cam.Parent = vp
 	vp.CurrentCamera = cam
 	refs.portrait, refs.portraitCam, refs.portraitBox = vp, cam, box
-	UIKit.new("Frame", { Name = "Gloss", BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.86, BorderSizePixel = 0, Position = UDim2.fromOffset(4, 4), Size = UDim2.new(1, -8, 0.28, 0), ZIndex = 4, Parent = box })
+	UIKit.new("Frame", { Name = "Gloss", BackgroundColor3 = UIKit.White, BackgroundTransparency = 0.86, BorderSizePixel = 0, Position = UDim2.fromOffset(4, 4), Size = UDim2.new(1, -8, 0.28, 0), ZIndex = 4, Parent = box })
 end
 
 -- jauge OVERTIME : dégradé qui défile, lueur + étincelles quand elle est pleine, pastille « PRESS G »
 local function buildOvertime(f)
-	local glow = UIKit.new("Frame", { Name = "OTGlow", Position = UDim2.new(0, 6, 0, 100), Size = UDim2.new(1, -12, 0, 40), BackgroundColor3 = Color3.fromRGB(255, 210, 60), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 1, Parent = f })
+	local glow = UIKit.new("Frame", { Name = "OTGlow", Position = UDim2.new(0, 6, 0, 100), Size = UDim2.new(1, -12, 0, 40), BackgroundColor3 = C.Gold, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 1, Parent = f })
 	UIKit.corner(glow, UDim.new(0, 9))
 	refs.otGlow = glow
-	local ot = bar(f, "OT", UDim2.new(0, 50, 0, 105), UDim2.new(1, -62, 0, 30), Color3.new(1, 1, 1), "OVERTIME")
+	local ot = bar(f, "OT", UDim2.new(0, 50, 0, 105), UDim2.new(1, -62, 0, 30), UIKit.White, "OVERTIME")
 	refs.ot = ot
 	refs.otStroke = ot:FindFirstChildOfClass("UIStroke")
 	ot.Trail.Visible = false
@@ -624,7 +628,7 @@ local function buildOvertime(f)
 	end
 	refs.otFlow = UIKit.new("UIGradient", { Name = "Flow", Rotation = 0, Parent = ot.Fill })
 	-- bande sombre en bas de la jauge (relief)
-	UIKit.new("Frame", { Name = "Lip", AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0.3, 0), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.72, BorderSizePixel = 0, ZIndex = 3, Parent = ot.Fill })
+	UIKit.new("Frame", { Name = "Lip", AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0.3, 0), BackgroundColor3 = UIKit.Colors.Black, BackgroundTransparency = 0.72, BorderSizePixel = 0, ZIndex = 3, Parent = ot.Fill })
 	-- segments (10 crans)
 	local segs = UIKit.new("Frame", { Name = "Segments", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 4, Parent = ot })
 	for i = 1, 9 do
@@ -632,16 +636,16 @@ local function buildOvertime(f)
 	end
 	ot.Text.TextXAlignment = Enum.TextXAlignment.Center
 	-- médaillon éclair à gauche
-	local badge = UIKit.new("Frame", { Name = "OTBadge", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 30, 0, 120), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = Color3.fromRGB(255, 140, 30), ZIndex = 5, Parent = f })
+	local badge = UIKit.new("Frame", { Name = "OTBadge", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 30, 0, 120), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = UIKit.Colors.Orange, ZIndex = 5, Parent = f })
 	UIKit.corner(badge, UDim.new(0, 7))
 	UIKit.stroke(badge, 3, UIKit.Black, true)
 	UIKit.Theme.bevel(badge, 0.62, 0.7)
 	local ib = UIKit.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.78, 0.78), BackgroundTransparency = 1, ZIndex = 6, Parent = badge })
-	UIKit.icon("Bolt", ib, Color3.fromRGB(255, 240, 120), 6)
+	UIKit.icon("Bolt", ib, C.Glow, 6)
 	refs.otBadge = badge
 	refs.otSparks = UIKit.new("Frame", { Name = "OTSparks", BackgroundTransparency = 1, Position = UDim2.new(0, 50, 0, 105), Size = UDim2.new(1, -62, 0, 30), ZIndex = 9, Parent = f })
 	-- pastille « PRESS G » qui dépasse à droite de la carte
-	local prompt = UIKit.new("Frame", { Name = "OTPrompt", AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(1, 10, 0, 120), Size = UDim2.fromOffset(118, 38), BackgroundColor3 = Color3.fromRGB(255, 200, 40), Visible = false, ZIndex = 8, Parent = f })
+	local prompt = UIKit.new("Frame", { Name = "OTPrompt", AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(1, 10, 0, 120), Size = UDim2.fromOffset(118, 38), BackgroundColor3 = C.Gold, Visible = false, ZIndex = 8, Parent = f })
 	UIKit.corner(prompt, UDim.new(0, 6))
 	UIKit.stroke(prompt, 3, UIKit.Black, true)
 	UIKit.Theme.bevel(prompt, 0.7, 0.72)
@@ -653,7 +657,7 @@ local function buildOvertime(f)
 	refs.otPrompt = prompt
 	refs.otPromptScale = UIKit.new("UIScale", { Parent = prompt })
 	-- ruban de l'ultime sous la carte : [G] NOM DE L'ULTIME !
-	local tag = UIKit.new("Frame", { Name = "UltTag", Position = UDim2.new(0, 10, 1, 8), Size = UDim2.new(1, -20, 0, 32), BackgroundColor3 = Color3.fromRGB(255, 90, 40), Visible = false, ZIndex = 8, Parent = f })
+	local tag = UIKit.new("Frame", { Name = "UltTag", Position = UDim2.new(0, 10, 1, 8), Size = UDim2.new(1, -20, 0, 32), BackgroundColor3 = C.Fire, Visible = false, ZIndex = 8, Parent = f })
 	UIKit.corner(tag, UDim.new(0, 6))
 	refs.ultTagStroke = UIKit.stroke(tag, 3, UIKit.Black, true)
 	UIKit.Theme.bevel(tag, 0.68, 0.7)
@@ -669,7 +673,7 @@ local function buildStatus()
 		AnchorPoint = Vector2.new(0, 0),
 		Position = UDim2.new(0, 14, 0, 62),
 		Size = UDim2.fromOffset(384, 148),
-		Accent = Color3.fromRGB(90, 170, 110),
+		Accent = UIKit.Colors.Green,
 		Parent = gui,
 	})
 	UIKit.autoScale(f)
@@ -677,10 +681,10 @@ local function buildStatus()
 	refs.statusStroke = f:FindFirstChildOfClass("UIStroke")
 	buildPortrait(f)
 	-- pastille de niveau sur le coin du portrait
-	local lb = UIKit.new("Frame", { Name = "LevelBadge", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(88, 88), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = Color3.fromRGB(255, 200, 40), ZIndex = 7, Parent = f })
+	local lb = UIKit.new("Frame", { Name = "LevelBadge", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(88, 88), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = C.Gold, ZIndex = 7, Parent = f })
 	UIKit.corner(lb, UDim.new(0.5, 0))
 	UIKit.stroke(lb, 3, UIKit.Black, true)
-	grad(lb, Color3.new(1, 1, 1), Color3.fromRGB(200, 140, 40))
+	grad(lb, UIKit.White, C.Amber)
 	local lbt = UIKit.label({ Text = "LV", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.27), Size = UDim2.fromScale(0.5, 0.24), Stroke = 1.5, ZIndex = 8 })
 	lbt.Parent = lb
 	refs.levelNum = UIKit.label({ Name = "Num", Text = "1", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.63), Size = UDim2.fromScale(0.74, 0.42), Stroke = 2, ZIndex = 8 })
@@ -693,11 +697,11 @@ local function buildStatus()
 	refs.gradeStroke = UIKit.stroke(chip, 2, UIKit.Black, true)
 	refs.grade = UIKit.label({ Text = "TRAINEE", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, -12, 0.58, 0), Stroke = 2, ZIndex = 4 })
 	refs.grade.Parent = chip
-	refs.hp = bar(f, "HP", UDim2.new(0, 110, 0, 40), UDim2.new(1, -122, 0, 34), Color3.fromRGB(90, 220, 90), "100")
+	refs.hp = bar(f, "HP", UDim2.new(0, 110, 0, 40), UDim2.new(1, -122, 0, 34), C.HP, "100")
 	refs.hp.Text.TextXAlignment = Enum.TextXAlignment.Right
 	local tag = UIKit.label({ Name = "Tag", Text = "HP", Size = UDim2.new(0, 36, 0.5, 0), Position = UDim2.new(0, 8, 0.25, 0), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 2, ZIndex = 6 })
 	tag.Parent = refs.hp
-	refs.xp = bar(f, "XP", UDim2.new(0, 110, 0, 81), UDim2.new(1, -122, 0, 15), Color3.fromRGB(170, 110, 255), "")
+	refs.xp = bar(f, "XP", UDim2.new(0, 110, 0, 81), UDim2.new(1, -122, 0, 15), C.XP, "")
 	refs.xp.Trail.Visible = false
 	refs.xp.Ticks.Visible = false
 	refs.xp.Text.TextXAlignment = Enum.TextXAlignment.Right
@@ -712,7 +716,7 @@ local function buildVignette()
 	local v = UIKit.new("Frame", { Name = "LowHP", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 0, Parent = gui })
 	refs.vigEdges = {}
 	for _, e in ipairs({ { 0, 0, 1, 0.2, 90 }, { 0, 0.8, 1, 0.2, -90 }, { 0, 0, 0.14, 1, 0 }, { 0.86, 0, 0.14, 1, 180 } }) do
-		local f = UIKit.new("Frame", { BackgroundColor3 = Color3.fromRGB(215, 20, 20), BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromScale(e[1], e[2]), Size = UDim2.fromScale(e[3], e[4]), ZIndex = 0, Parent = v })
+		local f = UIKit.new("Frame", { BackgroundColor3 = C.Vignette, BackgroundTransparency = 1, BorderSizePixel = 0, Position = UDim2.fromScale(e[1], e[2]), Size = UDim2.fromScale(e[3], e[4]), ZIndex = 0, Parent = v })
 		UIKit.new("UIGradient", { Rotation = e[5], Transparency = NumberSequence.new(0, 1), Parent = f })
 		table.insert(refs.vigEdges, f)
 	end
@@ -733,28 +737,28 @@ local function buildUltPrompt()
 	local touch = UIKit.isTouch()
 	local p = UIKit.new("Frame", { Name = "UltPrompt", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, touch and -118 or -160), Size = UDim2.fromOffset(540, 70), BackgroundTransparency = 1, Visible = false, ZIndex = 12, Parent = gui })
 	UIKit.autoScale(p)
-	local ribbon = UIKit.new("Frame", { Name = "Ribbon", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, 0, 0, 58), BackgroundColor3 = Color3.fromRGB(255, 120, 30), Rotation = -2, ZIndex = 12, Parent = p })
+	local ribbon = UIKit.new("Frame", { Name = "Ribbon", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, 0, 0, 58), BackgroundColor3 = UIKit.Colors.Orange, Rotation = -2, ZIndex = 12, Parent = p })
 	UIKit.corner(ribbon, UDim.new(0, 6))
 	refs.ultRibbonStroke = UIKit.stroke(ribbon, 4, UIKit.Black, true)
 	refs.ultRibbonGrad = UIKit.new("UIGradient", {
 		Rotation = 0,
 		Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Color3.fromRGB(185, 185, 185)),
-			ColorSequenceKeypoint.new(0.44, Color3.fromRGB(205, 205, 205)),
-			ColorSequenceKeypoint.new(0.5, Color3.new(1, 1, 1)),
-			ColorSequenceKeypoint.new(0.56, Color3.fromRGB(205, 205, 205)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(185, 185, 185)),
+			ColorSequenceKeypoint.new(0, C.Steel),
+			ColorSequenceKeypoint.new(0.44, C.Silver),
+			ColorSequenceKeypoint.new(0.5, UIKit.White),
+			ColorSequenceKeypoint.new(0.56, C.Silver),
+			ColorSequenceKeypoint.new(1, C.Steel),
 		}),
 		Parent = ribbon,
 	})
 	refs.ultPulse = UIKit.new("UIScale", { Name = "Pulse", Parent = ribbon })
-	UIKit.new("Frame", { Name = "Shine", BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.6, BorderSizePixel = 0, Position = UDim2.new(0, 6, 0, 5), Size = UDim2.new(1, -12, 0, 4), ZIndex = 13, Parent = ribbon })
+	UIKit.new("Frame", { Name = "Shine", BackgroundColor3 = UIKit.White, BackgroundTransparency = 0.6, BorderSizePixel = 0, Position = UDim2.new(0, 6, 0, 5), Size = UDim2.new(1, -12, 0, 4), ZIndex = 13, Parent = ribbon })
 	local kw = touch and 64 or 46
 	UIKit.Theme.keycap({ Text = touch and "ULT" or "G", AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 12, 0.5, 0), Size = UDim2.fromOffset(kw, 42), Color = UIKit.Colors.Yellow, ZIndex = 14, Parent = ribbon })
 	refs.ultName = UIKit.label({ Text = "ULTIMATE!", AnchorPoint = Vector2.new(0, 0), Position = UDim2.new(0, kw + 24, 0, 8), Size = UDim2.new(1, -(kw + 36), 0, 28), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 3, ZIndex = 14 })
-	grad(refs.ultName, Color3.new(1, 1, 1), Color3.fromRGB(255, 226, 90))
+	grad(refs.ultName, UIKit.White, UIKit.Colors.Yellow)
 	refs.ultName.Parent = ribbon
-	local sub = UIKit.label({ Text = touch and "ULTIMATE READY - TAP ULT!" or "ULTIMATE READY - PRESS G!", Font = UIKit.Body, Position = UDim2.new(0, kw + 24, 0, 38), Size = UDim2.new(1, -(kw + 36), 0, 13), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(255, 244, 210), Stroke = 2, ZIndex = 14 })
+	local sub = UIKit.label({ Text = touch and "ULTIMATE READY - TAP ULT!" or "ULTIMATE READY - PRESS G!", Font = UIKit.Body, Position = UDim2.new(0, kw + 24, 0, 38), Size = UDim2.new(1, -(kw + 36), 0, 13), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = C.Cream, Stroke = 2, ZIndex = 14 })
 	sub.Parent = ribbon
 	refs.ultRibbon = ribbon
 	refs.ultSparks = UIKit.new("Frame", { Name = "Sparks", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 15, Parent = p })
@@ -777,11 +781,11 @@ local function buildFloor()
 	refs.floor = f
 	refs.floorStroke = f:FindFirstChildOfClass("UIStroke")
 	refs.floorNum = UIKit.label({ Text = "FLOOR 30", Size = UDim2.new(1, -24, 0, 30), Position = UDim2.new(0, 12, 0, 10), TextColor3 = UIKit.Colors.Yellow, Stroke = 3, ZIndex = 2 })
-	UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(255, 250, 200), Color3.fromRGB(255, 190, 40)), Parent = refs.floorNum })
+	UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(C.Cream, C.Amber), Parent = refs.floorNum })
 	refs.floorNum.Parent = f
 	refs.floorName = UIKit.label({ Text = "", Font = UIKit.Body, Size = UDim2.new(1, -24, 0, 18), Position = UDim2.new(0, 12, 0, 43), TextColor3 = UIKit.Colors.Muted, Stroke = 2, ZIndex = 2 })
 	refs.floorName.Parent = f
-	refs.phase = UIKit.label({ Text = "", Font = UIKit.Body, Size = UDim2.new(1, -24, 0, 20), Position = UDim2.new(0, 12, 0, 63), TextColor3 = Color3.fromRGB(200, 230, 255), Stroke = 2, ZIndex = 2 })
+	refs.phase = UIKit.label({ Text = "", Font = UIKit.Body, Size = UDim2.new(1, -24, 0, 20), Position = UDim2.new(0, 12, 0, 63), TextColor3 = C.Sky, Stroke = 2, ZIndex = 2 })
 	refs.phase.Parent = f
 end
 
@@ -808,12 +812,20 @@ local function addFeed(entry)
 	local function name(n, char, id)
 		local c = charColor(char)
 		if id == player.UserId then
-			c = Color3.fromRGB(255, 230, 80)
+			c = UIKit.Colors.Yellow
 		end
-		return '<font color="' .. UIKit.hex(c) .. '">' .. UIKit.escape(n or "?") .. "</font>"
+		local out = '<font color="' .. UIKit.hex(c) .. '">' .. UIKit.escape(n or "?") .. "</font>"
+		-- titre de carrière (attribut Player "Title", TaskService)
+		local p = type(id) == "number" and id ~= 0 and Players:GetPlayerByUserId(id) or nil
+		local title = p and p:GetAttribute("Title")
+		if type(title) == "string" and title ~= "" then
+			local tc = p:GetAttribute("TitleColor")
+			out ..= ' <font size="12" color="' .. UIKit.hex(typeof(tc) == "Color3" and tc or UIKit.Colors.Muted) .. '">[' .. UIKit.escape(string.upper(title)) .. "]</font>"
+		end
+		return out
 	end
-	local left, right, chipText, chipColor, icon = "", "", "K.O.", Color3.fromRGB(225, 50, 50), "Skull"
-	local bg = Color3.fromRGB(28, 25, 48)
+	local left, right, chipText, chipColor, icon = "", "", "K.O.", UIKit.Colors.Red, "Skull"
+	local bg = UIKit.Colors.PanelDark
 	if entry.kind == "Fired" then
 		left = name(entry.killer, entry.killerChar, entry.killerId)
 		right = name(entry.victim, entry.victimChar, entry.victimId)
@@ -821,20 +833,20 @@ local function addFeed(entry)
 	elseif entry.kind == "HR" then
 		left = '<font color="#C79BFF">HR</font>'
 		right = name(entry.victim, entry.victimChar, entry.victimId)
-		chipText, chipColor = "LET GO", Color3.fromRGB(150, 90, 210)
+		chipText, chipColor = "LET GO", C.Violet
 	elseif entry.kind == "Streak" then
 		left = name(entry.killer, entry.killerChar, entry.killerId)
 		right = '<font color="#FFE15A">EMPLOYEE OF THE MONTH!</font>'
-		chipText, chipColor, icon = "STREAK", Color3.fromRGB(235, 170, 20), "Ult"
-		bg = Color3.fromRGB(110, 78, 10)
+		chipText, chipColor, icon = "STREAK", C.Gold, "Ult"
+		bg = C.Bronze
 	else
 		right = name(entry.victim, entry.victimChar, entry.victimId)
-		chipText, chipColor = "RESIGNED", Color3.fromRGB(110, 110, 130)
+		chipText, chipColor = "RESIGNED", C.SlotGrey
 	end
 	if entry.victimId == player.UserId and entry.victimId ~= 0 then
-		bg = Color3.fromRGB(125, 24, 30)
+		bg = C.DeepRed
 	elseif entry.killerId == player.UserId and entry.killerId ~= 0 and entry.kind == "Fired" then
-		bg = Color3.fromRGB(28, 96, 44)
+		bg = C.DeepGreen
 	end
 	local row = UIKit.new("Frame", {
 		BackgroundColor3 = bg,
@@ -846,7 +858,7 @@ local function addFeed(entry)
 	})
 	UIKit.corner(row, UDim.new(0, 5))
 	UIKit.stroke(row, 2.5, UIKit.Black, true)
-	grad(row, Color3.new(1, 1, 1), Color3.fromRGB(165, 165, 180))
+	grad(row, UIKit.White, C.Steel)
 	UIKit.new("UIPadding", { PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 10), Parent = row })
 	UIKit.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = row })
 	local function txt(t, order)
@@ -864,7 +876,7 @@ local function addFeed(entry)
 	UIKit.new("UIPadding", { PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 6), Parent = chip })
 	UIKit.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = chip })
 	local ib = UIKit.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(18, 18), LayoutOrder = 1, Parent = chip })
-	UIKit.icon(icon, ib, Color3.new(1, 1, 1))
+	UIKit.icon(icon, ib, UIKit.White)
 	local cl = UIKit.label({ Text = chipText, TextScaled = false, TextSize = 10, Size = UDim2.fromOffset(0, 14), AutomaticSize = Enum.AutomaticSize.X, LayoutOrder = 2, Stroke = 1.5 })
 	cl.Parent = chip
 	txt(right, 3)
@@ -909,11 +921,11 @@ local function buildCombo()
 	refs.comboScale = UIKit.new("UIScale", { Parent = inner })
 	refs.comboNum = UIKit.label({ Text = "2", Size = UDim2.fromScale(0.55, 0.7), Stroke = 5, TextXAlignment = Enum.TextXAlignment.Right })
 	refs.comboNum.Parent = inner
-	UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(150, 150, 150)), Parent = refs.comboNum })
+	UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(UIKit.White, C.Steel), Parent = refs.comboNum })
 	refs.comboHits = UIKit.label({ Text = "HITS!", Size = UDim2.fromScale(0.43, 0.38), Position = UDim2.fromScale(0.57, 0.28), Stroke = 3, TextXAlignment = Enum.TextXAlignment.Left })
 	refs.comboHits.Parent = inner
-	UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(160, 160, 160)), Parent = refs.comboHits })
-	refs.comboSub = UIKit.label({ Text = "", Size = UDim2.fromScale(1, 0.26), Position = UDim2.fromScale(0, 0.72), Stroke = 3, TextColor3 = Color3.fromRGB(255, 120, 220) })
+	UIKit.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(UIKit.White, C.Steel), Parent = refs.comboHits })
+	refs.comboSub = UIKit.label({ Text = "", Size = UDim2.fromScale(1, 0.26), Position = UDim2.fromScale(0, 0.72), Stroke = 3, TextColor3 = UIKit.Colors.Pink })
 	refs.comboSub.Parent = inner
 end
 
@@ -925,7 +937,7 @@ local function onCombo(n)
 		comboHide += 1
 		refs.combo.Visible = true
 		refs.comboNum.Text = tostring(n)
-		local col = n >= 12 and Color3.fromRGB(255, 90, 230) or n >= 8 and Color3.fromRGB(255, 70, 60) or n >= 5 and Color3.fromRGB(255, 150, 40) or Color3.fromRGB(255, 230, 60)
+		local col = n >= 12 and UIKit.Colors.Pink or n >= 8 and C.HPLow or n >= 5 and UIKit.Colors.Orange or UIKit.Colors.Yellow
 		refs.comboNum.TextColor3 = col
 		refs.comboHits.TextColor3 = col
 		local target = 1 + math.min(n, 25) * 0.035
@@ -959,7 +971,7 @@ local function slot(parent, key, order, color)
 	local f = UIKit.new("Frame", {
 		Name = "Slot" .. key,
 		Size = UDim2.fromOffset(82, 82),
-		BackgroundColor3 = color or Color3.fromRGB(60, 70, 100),
+		BackgroundColor3 = color or C.SlotBlue,
 		LayoutOrder = order,
 		Parent = parent,
 	})
@@ -969,14 +981,14 @@ local function slot(parent, key, order, color)
 		Name = "Bevel",
 		Rotation = 90,
 		Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
-			ColorSequenceKeypoint.new(0.62, Color3.fromRGB(212, 212, 212)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(140, 140, 140)),
+			ColorSequenceKeypoint.new(0, UIKit.White),
+			ColorSequenceKeypoint.new(0.62, C.Silver),
+			ColorSequenceKeypoint.new(1, C.Steel),
 		}),
 		Parent = f,
 	})
 	-- creux sombre pour l'icône
-	local well = UIKit.new("Frame", { Name = "Well", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 4), Size = UDim2.new(1, -12, 0, 54), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.62, ZIndex = 2, Parent = f })
+	local well = UIKit.new("Frame", { Name = "Well", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 4), Size = UDim2.new(1, -12, 0, 54), BackgroundColor3 = UIKit.Colors.Black, BackgroundTransparency = 0.62, ZIndex = 2, Parent = f })
 	UIKit.corner(well, UDim.new(0, 5))
 	local holder = UIKit.new("Frame", { Name = "IconHolder", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(54, 54), BackgroundTransparency = 1, ZIndex = 3, Parent = well })
 	UIKit.Theme.shine(f, 2)
@@ -1026,7 +1038,7 @@ local function setAttackIcon(holder, key, color, fallbackKind)
 		warn("[HUD] attack icon " .. tostring(key) .. ": " .. tostring(err))
 		holder:ClearAllChildren()
 	end
-	UIKit.icon(fallbackKind or "Melee", holder, Color3.new(1, 1, 1))
+	UIKit.icon(fallbackKind or "Melee", holder, UIKit.White)
 end
 
 local function attackKind(id)
@@ -1055,7 +1067,7 @@ local function buildAbilities()
 	})
 	refs.abilities = f
 	refs.slots = {}
-	local dash, dashName, _, dashIcon = slot(f, "Q", 0, Color3.fromRGB(70, 90, 130))
+	local dash, dashName, _, dashIcon = slot(f, "Q", 0, C.SlotBlue)
 	dashName.Text = "DASH"
 	setAttackIcon(dashIcon, "Dash", nil, "Dash")
 	HUD.bindCooldown(dash, "Dash")
@@ -1064,14 +1076,14 @@ local function buildAbilities()
 		refs.slots[i] = { frame = sf, name = nm, stroke = st, icon = ic }
 		HUD.bindCooldown(sf, tostring(i))
 	end
-	local g, gName, gStroke, gIcon = slot(f, "G", 4, Color3.fromRGB(70, 40, 20))
+	local g, gName, gStroke, gIcon = slot(f, "G", 4, C.Coffee)
 	refs.gSlot, refs.gName, refs.gStroke, refs.gIcon = g, gName, gStroke, gIcon
 	refs.gFill = UIKit.new("Frame", {
 		Name = "GFill",
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.fromScale(0, 1),
 		Size = UDim2.fromScale(1, 0),
-		BackgroundColor3 = Color3.fromRGB(255, 140, 30),
+		BackgroundColor3 = UIKit.Colors.Orange,
 		ZIndex = 1,
 		Parent = g,
 	})
@@ -1079,18 +1091,18 @@ local function buildAbilities()
 	gName.Text = "OVERTIME"
 	setAttackIcon(gIcon, "Transform", nil, "Bolt")
 	-- système ABA : DASH STRIKE (dash avant + clic) et EVASIVE (Q pendant un combo), avec leurs recharges
-	local dk, dkName, _, dkIcon = slot(f, "Q+M1", 5, Color3.fromRGB(130, 55, 55))
+	local dk, dkName, _, dkIcon = slot(f, "Q+M1", 5, C.Brick)
 	dkName.Text = "DASH STRIKE"
 	setAttackIcon(dkIcon, "Dropkick", nil, "Boot")
 	HUD.bindCooldown(dk, "DashStrike")
 	refs.dkSlot = dk
-	local ev, evName, _, evIcon = slot(f, "Q", 6, Color3.fromRGB(150, 120, 30))
+	local ev, evName, _, evIcon = slot(f, "Q", 6, C.Mustard)
 	ev.Name = "SlotEvasive"
 	evName.Text = "EVASIVE"
 	if AttackIcon and AttackIcon.has and AttackIcon.has("Evasive") then
 		setAttackIcon(evIcon, "Evasive", nil, "Bolt")
 	else
-		setIcon(evIcon, "Bolt", Color3.new(1, 1, 1))
+		setIcon(evIcon, "Bolt", UIKit.White)
 	end
 	HUD.bindCooldown(ev, "Evasive")
 	refs.evSlot = ev
@@ -1111,7 +1123,7 @@ local function buildAbilities()
 	})
 	UIKit.corner(tipBox, UDim.new(0, 6))
 	UIKit.stroke(tipBox, 3, UIKit.Black, true)
-	grad(tipBox, Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 185))
+	grad(tipBox, UIKit.White, C.Steel)
 	UIKit.new("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8), Parent = tipBox })
 	local tip = UIKit.new("TextLabel", {
 		Name = "Tip",
@@ -1201,175 +1213,170 @@ local function buildAbilities()
 	hook(ev, "EVA")
 end
 
--- bandeau de titre coloré en haut d'un panneau
-local function header(f, text, color, height, z, icon)
-	local hgt = height or 44
-	local h = UIKit.new("Frame", {
-		Name = "Header",
-		BackgroundColor3 = color,
-		Position = UDim2.fromOffset(8, 8),
-		Size = UDim2.new(1, -16, 0, hgt),
-		ZIndex = z or 1,
-		Parent = f,
-	})
-	UIKit.corner(h, UDim.new(0, 5))
-	UIKit.stroke(h, 3, UIKit.Black, true)
-	UIKit.Theme.bevel(h, 0.74, 0.72)
-	UIKit.Theme.shine(h, z)
-	local tx = 12
-	if icon then
-		local ib = UIKit.new("Frame", { Name = "IconBox", AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 8, 0.46, 0), Size = UDim2.fromOffset(hgt - 14, hgt - 14), BackgroundTransparency = 1, ZIndex = (z or 1) + 1, Parent = h })
-		UIKit.icon(icon, ib, Color3.new(1, 1, 1), (z or 1) + 1)
-		tx = hgt
-	end
-	local t = UIKit.label({ Name = "Title", Text = text, MaxText = 30, Size = UDim2.new(1, -(tx + 70), 0.6, 0), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, tx, 0.46, 0), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 3, ZIndex = (z or 1) + 1 })
-	t.Parent = h
-	return h, t
-end
-
+-- Boutons de menu : délégués au dock unique (MetaDockController) ; un seul panneau ouvert (registre UIKit)
 local MENU_ICONS = { CHARACTER = "Person", TASKS = "Tasks", COMBOS = "List", SHOP = "Shop", ADMIN = "Admin", CRATES = "Crate", CRATE = "Crate" }
-local function buildMenu()
-	local touch = UIKit.isTouch()
-	local f = UIKit.new("Frame", {
-		Name = "Menu",
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 14, 0.5, touch and 30 or 10),
-		Size = touch and UDim2.fromOffset(140, 220) or UDim2.fromOffset(170, 300),
-		BackgroundTransparency = 1,
-		Parent = gui,
-	})
-	if touch then
-		-- téléphone : tuiles carrées sur 2 colonnes, jamais plus petites que ~48 px à l'écran
-		local s = UIKit.new("UIScale", { Name = "AutoScale", Parent = f })
-		local function upd()
-			local cam = workspace.CurrentCamera
-			local vp = cam and cam.ViewportSize or Vector2.new(844, 390)
-			local v = math.clamp(math.min(vp.Y / 480, vp.X / 900), 0.8, 1.15)
-			s:SetAttribute("Base", v)
-			s.Scale = v
+local MENU_ORDER = { CHARACTER = 2, TASKS = 4, COMBOS = 5, SHOP = 6, ADMIN = 95 }
+local dockMod
+local function getDock()
+	if dockMod == nil then
+		local m = script.Parent:FindFirstChild("MetaDockController")
+		local ok, mod = false, nil
+		if m then
+			ok, mod = pcall(require, m)
 		end
-		upd()
-		if workspace.CurrentCamera then
-			workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(upd)
-		end
-		UIKit.new("UIGridLayout", { CellSize = UDim2.fromOffset(62, 62), CellPadding = UDim2.fromOffset(8, 8), FillDirectionMaxCells = 2, SortOrder = Enum.SortOrder.LayoutOrder, Parent = f })
-	else
-		UIKit.autoScale(f)
-		UIKit.new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Center, Parent = f })
+		dockMod = ok and type(mod) == "table" and mod or false
 	end
-	refs.menu = f
+	return dockMod or nil
 end
 
 function HUD.addMenuButton(text: string, color: Color3, callback, order: number?)
-	local touch = UIKit.isTouch()
-	local b = UIKit.button({
-		Text = text,
-		Color = color,
-		Size = touch and UDim2.fromOffset(62, 62) or UDim2.fromOffset(164, 46),
-		LayoutOrder = order or 50,
-		Parent = refs.menu,
-	})
-	local first = string.upper(string.match(text, "^(%a+)") or "")
-	local box = UIKit.new("Frame", { Name = "IconBox", BackgroundColor3 = UIKit.Theme.darken(color, 0.4), ZIndex = b.ZIndex + 1, Parent = b })
-	UIKit.corner(box, UDim.new(0, 5))
-	if touch then
-		box.AnchorPoint = Vector2.new(0.5, 0)
-		box.Position = UDim2.new(0.5, 0, 0, 6)
-		box.Size = UDim2.fromOffset(32, 30)
-		box.BackgroundTransparency = 1
-		b.Label.Position = UDim2.new(0.5, 0, 1, -11)
-		b.Label.Size = UDim2.new(1, -6, 0, 11)
-	else
-		UIKit.stroke(box, 2, UIKit.Black, true)
-		box.AnchorPoint = Vector2.new(0, 0.5)
-		box.Position = UDim2.new(0, 6, 0.46, 0)
-		box.Size = UDim2.fromOffset(32, 32)
-		b.Label.AnchorPoint = Vector2.new(0, 0.5)
-		b.Label.Position = UDim2.new(0, 46, 0.45, 0)
-		b.Label.Size = UDim2.new(1, -54, 0.4, 0)
-		b.Label.TextXAlignment = Enum.TextXAlignment.Left
+	local dock = getDock()
+	if not dock then
+		warn("[HUD] MetaDockController manquant : bouton " .. tostring(text) .. " ignoré")
+		return nil
 	end
-	local inner = UIKit.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.8, 0.8), BackgroundTransparency = 1, ZIndex = b.ZIndex + 2, Parent = box })
-	UIKit.icon(MENU_ICONS[first] or "Ult", inner, Color3.new(1, 1, 1), b.ZIndex + 2)
-	b.Activated:Connect(callback)
-	return b
+	local first = string.upper(string.match(text, "^(%a+)") or "MENU")
+	local id = string.sub(first, 1, 1) .. string.lower(string.sub(first, 2))
+	local o = MENU_ORDER[first] or math.clamp(math.floor((order or 50) / 10), 1, 9)
+	return dock.addButton(id, text, color, MENU_ICONS[first] or "Ult", callback, o)
 end
 
--- Tâches du jour
-local function buildTasks()
-	local f = UIKit.panel({
-		Name = "Tasks",
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, UIKit.isTouch() and 170 or 196, 0.5, 10),
-		Size = UDim2.fromOffset(390, 246),
-		Visible = false,
-		Accent = Color3.fromRGB(110, 220, 120),
-		ZIndex = 20,
-		Parent = gui,
-	})
-	UIKit.autoScale(f)
-	refs.tasks = f
-	header(f, "DAILY TASKS", Color3.fromRGB(80, 180, 90), 38, 21, "Tasks")
-	refs.taskRows = {}
-	for i = 1, 3 do
-		local row = UIKit.new("Frame", {
-			Position = UDim2.new(0, 12, 0, 56 + (i - 1) * 60),
-			Size = UDim2.new(1, -24, 0, 54),
-			BackgroundColor3 = UIKit.Colors.PanelDark,
-			BackgroundTransparency = 0.15,
-			ZIndex = 21,
-			Parent = f,
-		})
-		UIKit.corner(row, UDim.new(0, 5))
-		UIKit.stroke(row, 2, UIKit.Black, true)
-		local check = UIKit.new("Frame", { Name = "Check", Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = UIKit.Colors.Slot, ZIndex = 22, Parent = row })
-		UIKit.corner(check, UDim.new(0, 4))
-		UIKit.stroke(check, 2, UIKit.Black, true)
-		local mark = UIKit.icon("Check", check, Color3.fromRGB(150, 255, 160), 23)
-		mark.Visible = false
-		local t = UIKit.label({ Text = "", Font = UIKit.Body, Size = UDim2.new(1, -118, 0, 18), Position = UDim2.new(0, 40, 0, 10), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 1.5, ZIndex = 22 })
-		t.Parent = row
-		local reward = UIKit.label({ Text = "", Size = UDim2.new(0, 70, 0, 16), Position = UDim2.new(1, -78, 0, 11), TextColor3 = Color3.fromRGB(205, 160, 255), TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 22 })
-		reward.Parent = row
-		local b = bar(row, "Bar", UDim2.new(0, 40, 0, 32), UDim2.new(1, -48, 0, 14), Color3.fromRGB(110, 230, 120), "")
-		b.Trail.Visible = false
-		b.Ticks.Visible = false
-		b.Text.TextXAlignment = Enum.TextXAlignment.Center
-		b.Text.Size = UDim2.new(1, -8, 0.8, 0)
-		b.Text.Position = UDim2.new(0, 4, 0.1, 0)
-		refs.taskRows[i] = { row = row, text = t, reward = reward, bar = b, mark = mark, check = check }
-	end
+local function remoteNamed(name)
+	local rem = ReplicatedStorage:FindFirstChild("Remotes")
+	return rem and rem:FindFirstChild(name)
 end
 
-local function refreshTasks()
-	local raw = player:GetAttribute("Tasks")
+local function decode(raw)
 	local ok, list = pcall(function()
 		return raw and HttpService:JSONDecode(raw) or {}
 	end)
-	if not ok then
-		list = {}
+	return ok and type(list) == "table" and list or {}
+end
+
+-- Tâches du jour + contrats de la semaine (TaskService) : 2 sections, comptes à rebours, relance gratuite
+local function taskRow(parent, y, weekly, index)
+	local row = UIKit.new("Frame", {
+		Name = (weekly and "Weekly" or "Daily") .. index,
+		Position = UDim2.fromOffset(0, y),
+		Size = UDim2.new(1, 0, 0, 52),
+		BackgroundColor3 = UIKit.Colors.PanelDark,
+		BackgroundTransparency = 0.15,
+		ZIndex = 21,
+		Parent = parent,
+	})
+	UIKit.corner(row, UDim.new(0, 5))
+	UIKit.stroke(row, 2, UIKit.Black, true)
+	local check = UIKit.new("Frame", { Name = "Check", Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = UIKit.Colors.Slot, ZIndex = 22, Parent = row })
+	UIKit.corner(check, UDim.new(0, 4))
+	UIKit.stroke(check, 2, UIKit.Black, true)
+	local mark = UIKit.icon("Check", check, C.Mint, 23)
+	mark.Visible = false
+	local t = UIKit.label({ Text = "", Font = UIKit.Body, Size = UDim2.new(1, -200, 0, 18), Position = UDim2.new(0, 40, 0, 7), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 1.5, ZIndex = 22 })
+	t.Parent = row
+	local reward = UIKit.label({ Text = "", Font = UIKit.Body, Size = UDim2.new(0, 150, 0, 16), Position = UDim2.new(1, -158, 0, 8), TextColor3 = weekly and C.Gold or C.Lilac, TextXAlignment = Enum.TextXAlignment.Right, Stroke = 1.5, ZIndex = 22 })
+	reward.Parent = row
+	local b = bar(row, "Bar", UDim2.new(0, 40, 0, 31), UDim2.new(1, weekly and -48 or -132, 0, 14), weekly and C.Gold or C.HP, "")
+	b.Trail.Visible = false
+	b.Ticks.Visible = false
+	b.Text.TextXAlignment = Enum.TextXAlignment.Center
+	b.Text.Size = UDim2.new(1, -8, 0.8, 0)
+	b.Text.Position = UDim2.new(0, 4, 0.1, 0)
+	local rr
+	if not weekly then
+		rr = UIKit.button({ Name = "Reroll", Text = "REROLL", Color = UIKit.Colors.Blue, Position = UDim2.new(1, -84, 0, 25), Size = UDim2.fromOffset(78, 24), Visible = false, ZIndex = 23, Parent = row })
+		rr.Activated:Connect(function()
+			local r = remoteNamed("TaskRequest")
+			if r then
+				r:FireServer("Reroll", index)
+				rr.Visible = false
+			end
+		end)
 	end
+	return { row = row, text = t, reward = reward, bar = b, mark = mark, check = check, reroll = rr }
+end
+
+local function buildTasks()
+	local dock = getDock()
+	if not dock then
+		return
+	end
+	local f, body = dock.panel("TasksPanel", "TASKS & CONTRACTS", UIKit.Colors.Green, Vector2.new(560, 510), "Tasks")
+	refs.tasks = f
+	local function head(y, text, color)
+		local l = UIKit.label({ Text = text, Position = UDim2.fromOffset(0, y), Size = UDim2.new(0.55, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = color, Stroke = 2.5, ZIndex = 22 })
+		l.Parent = body
+		local cd = UIKit.label({ Text = "", Font = UIKit.Body, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, y + 2), Size = UDim2.new(0.45, 0, 0, 16), TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = UIKit.Colors.Muted, Stroke = 1.5, ZIndex = 22 })
+		cd.Parent = body
+		return cd
+	end
+	refs.dailyClock = head(0, "DAILY TASKS", UIKit.Colors.Green)
+	refs.weeklyClock = head(212, "WEEKLY CONTRACTS", C.Gold)
+	refs.taskRows, refs.weekRows = {}, {}
+	for i = 1, 3 do
+		refs.taskRows[i] = taskRow(body, 26 + (i - 1) * 58, false, i)
+		refs.weekRows[i] = taskRow(body, 238 + (i - 1) * 58, true, i)
+	end
+	local note = UIKit.label({ Text = "1 free reroll a day  -  contracts pay Cash + Briefcases", Font = UIKit.Body, Position = UDim2.fromOffset(0, 414), Size = UDim2.new(1, 0, 0, 16), TextColor3 = UIKit.Colors.Muted, Stroke = 1.5, ZIndex = 22 })
+	note.Parent = body
+	refs.rerollNote = note
+end
+
+local function tickTaskClocks()
+	if not refs.tasks or not refs.tasks.Visible then
+		return
+	end
+	local t = now()
+	local d = tonumber(player:GetAttribute("TasksReset"))
+	local w = tonumber(player:GetAttribute("TasksWeeklyReset"))
+	refs.dailyClock.Text = d and ("NEW TASKS IN " .. UIKit.fmtLong(d - t)) or ""
+	refs.weeklyClock.Text = w and ("RESETS IN " .. UIKit.fmtLong(w - t)) or ""
+end
+
+local function fillRows(rows, list, weekly, rerolls)
 	local done = 0
-	for i, r in ipairs(refs.taskRows) do
+	for i, r in ipairs(rows) do
 		local e = list[i]
 		r.row.Visible = e ~= nil
 		if e then
 			if e.d then
 				done += 1
 			end
-			r.text.Text = e.t
-			r.text.TextColor3 = e.d and Color3.fromRGB(140, 255, 150) or UIKit.White
-			r.reward.Text = "+" .. e.x .. " XP"
+			r.text.Text = tostring(e.t or "")
+			r.text.TextColor3 = e.d and C.Mint or UIKit.White
+			if weekly then
+				r.reward.Text = "+" .. HUD.fmtMoney(e.c or 0) .. ((e.b or 0) > 0 and (" +" .. e.b .. " CASE") or "")
+			else
+				r.reward.Text = "+" .. tostring(e.x or 0) .. " XP"
+			end
 			r.mark.Visible = e.d == true
-			r.check.BackgroundColor3 = e.d and Color3.fromRGB(40, 120, 55) or UIKit.Colors.Slot
-			local pct = math.clamp(e.p / math.max(e.g, 1), 0, 1)
+			r.check.BackgroundColor3 = e.d and C.DeepGreen or UIKit.Colors.Slot
+			local pct = math.clamp((tonumber(e.p) or 0) / math.max(tonumber(e.g) or 1, 1), 0, 1)
 			UIKit.tween(r.bar.Fill, 0.4, { Size = UDim2.fromScale(math.max(pct, 0.001), 1) }, Enum.EasingStyle.Quad)
-			r.bar.Text.Text = e.p .. " / " .. e.g
+			r.bar.Text.Text = tostring(e.p or 0) .. " / " .. tostring(e.g or 0)
+			if r.reroll then
+				r.reroll.Visible = (rerolls or 0) > 0 and not e.d
+			end
 		end
 	end
-	if refs.tasksButton then
-		refs.tasksButton.Label.Text = "TASKS " .. done .. "/" .. #list
+	return done
+end
+
+local function refreshTasks()
+	if not refs.taskRows then
+		return
 	end
+	local list = decode(player:GetAttribute("Tasks"))
+	local weekly = decode(player:GetAttribute("TasksWeekly"))
+	local rerolls = tonumber(player:GetAttribute("TaskRerolls")) or 0
+	local done = fillRows(refs.taskRows, list, false, rerolls)
+	local wdone = fillRows(refs.weekRows, weekly, true, 0)
+	refs.rerollNote.Text = (rerolls > 0 and (rerolls .. " free reroll left today") or "Reroll used - back tomorrow") .. "  -  contracts pay Cash + Briefcases"
+	local dock = getDock()
+	if dock then
+		dock.setText("Tasks", "TASKS " .. done .. "/" .. #list)
+		dock.setBadge("Tasks", done < #list or wdone < #weekly, tostring((#list - done) + (#weekly - wdone)))
+	end
+	tickTaskClocks()
 end
 
 -- Liste des combos (pour apprendre)
@@ -1386,51 +1393,41 @@ local COMBO_LIST = {
 	{ "COMBO + ITEM", "ITEM FINISHER", "Punch twice then hit with an item: huge damage (\"CHAIR COMBO!\")." },
 }
 local function buildCombos()
-	local f = UIKit.panel({
-		Name = "Combos",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(640, 570),
-		Visible = false,
-		ZIndex = 20,
-		Parent = gui,
-	})
-	UIKit.autoScale(f)
+	local dock = getDock()
+	if not dock then
+		return
+	end
+	local f, body = dock.panel("CombosPanel", "COMBOS", UIKit.Colors.Blue, Vector2.new(640, 582), "List")
 	refs.combos = f
-	header(f, "COMBOS", Color3.fromRGB(70, 150, 235), 46, 21, "List")
-	local close = UIKit.button({ Text = "X", Color = Color3.fromRGB(235, 60, 50), Size = UDim2.fromOffset(46, 46), Position = UDim2.new(1, -58, 0, 10), ZIndex = 22, Parent = f })
-	close.Activated:Connect(function()
-		UIKit.close(f)
-	end)
 	for i, c in ipairs(COMBO_LIST) do
-		local y = 60 + (i - 1) * 50
+		local y = (i - 1) * 50
 		local rowBg = UIKit.new("Frame", {
 			BackgroundColor3 = i % 2 == 0 and UIKit.Colors.PanelDark or UIKit.Colors.Slot,
 			BackgroundTransparency = 0.25,
 			BorderSizePixel = 0,
-			Position = UDim2.new(0, 10, 0, y - 2),
-			Size = UDim2.new(1, -20, 0, 47),
+			Position = UDim2.new(0, 0, 0, y),
+			Size = UDim2.new(1, 0, 0, 47),
 			ZIndex = 21,
-			Parent = f,
+			Parent = body,
 		})
 		UIKit.corner(rowBg, UDim.new(0, 3))
 		local chip = UIKit.new("Frame", {
 			BackgroundColor3 = UIKit.Colors.Cyan,
-			Position = UDim2.new(0, 16, 0, y + 2),
+			Position = UDim2.new(0, 6, 0, y + 4),
 			Size = UDim2.fromOffset(0, 20),
 			AutomaticSize = Enum.AutomaticSize.X,
 			ZIndex = 22,
-			Parent = f,
+			Parent = body,
 		})
 		UIKit.corner(chip, UDim.new(0, 3))
 		UIKit.stroke(chip, 2, UIKit.Black, true)
 		UIKit.new("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6), Parent = chip })
 		local keys = UIKit.label({ Text = c[1], Font = UIKit.Body, TextScaled = false, TextSize = 14, Size = UDim2.fromOffset(0, 20), AutomaticSize = Enum.AutomaticSize.X, TextColor3 = UIKit.Colors.Ink, Stroke = false, ZIndex = 23 })
 		keys.Parent = chip
-		local name = UIKit.label({ Text = c[2], Size = UDim2.new(0, 230, 0, 16), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -18, 0, y + 4), TextColor3 = UIKit.Colors.Yellow, TextXAlignment = Enum.TextXAlignment.Right, Stroke = 2, ZIndex = 22 })
-		name.Parent = f
-		local desc = UIKit.label({ Text = c[3], Font = UIKit.Body, Size = UDim2.new(1, -36, 0, 16), Position = UDim2.new(0, 18, 0, y + 26), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(225, 225, 240), Stroke = 1.5, ZIndex = 22 })
-		desc.Parent = f
+		local name = UIKit.label({ Text = c[2], Size = UDim2.new(0, 230, 0, 16), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, y + 6), TextColor3 = UIKit.Colors.Yellow, TextXAlignment = Enum.TextXAlignment.Right, Stroke = 2, ZIndex = 22 })
+		name.Parent = body
+		local desc = UIKit.label({ Text = c[3], Font = UIKit.Body, Size = UDim2.new(1, -16, 0, 16), Position = UDim2.new(0, 8, 0, y + 28), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = C.Silver, Stroke = 1.5, ZIndex = 22 })
+		desc.Parent = body
 	end
 end
 
@@ -1453,7 +1450,7 @@ local function buildCash()
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -14, 0, 12),
 		Size = UDim2.fromOffset(186, 44),
-		BackgroundColor3 = Color3.fromRGB(40, 150, 64),
+		BackgroundColor3 = C.CashGreen,
 		Parent = gui,
 	})
 	UIKit.autoScale(f)
@@ -1462,10 +1459,10 @@ local function buildCash()
 	UIKit.Theme.bevel(f, 0.72, 0.72)
 	UIKit.Theme.shine(f)
 	local coin = UIKit.new("Frame", { Name = "Bill", AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, -10, 0.5, 0), Size = UDim2.fromOffset(48, 48), BackgroundTransparency = 1, ZIndex = 3, Parent = f })
-	UIKit.icon("Cash", coin, Color3.fromRGB(160, 240, 130), 3)
+	UIKit.icon("Cash", coin, UIKit.Colors.Cash, 3)
 	refs.cashBill = coin
 	refs.cashText = UIKit.label({ Text = "$0", Position = UDim2.fromOffset(44, 7), Size = UDim2.new(1, -56, 1, -14), TextXAlignment = Enum.TextXAlignment.Right, Stroke = 2.5, ZIndex = 2 })
-	grad(refs.cashText, Color3.new(1, 1, 1), Color3.fromRGB(200, 255, 190))
+	grad(refs.cashText, UIKit.White, C.Mint)
 	refs.cashText.Parent = f
 	refs.cash = f
 	refs.cashShown = tonumber(player:GetAttribute("Cash")) or 0
@@ -1495,7 +1492,7 @@ local function cashPopup(d)
 		Position = UDim2.new(0, -12, y, 0),
 		Size = UDim2.fromOffset(260, 26),
 		TextXAlignment = Enum.TextXAlignment.Right,
-		TextColor3 = amt > 0 and Color3.fromRGB(140, 255, 140) or Color3.fromRGB(255, 110, 110),
+		TextColor3 = amt > 0 and C.Mint or C.HPLow,
 		Stroke = 2.5,
 		ZIndex = 4,
 	})
@@ -1549,7 +1546,7 @@ local function levelUpPopup(d)
 	if old then
 		old:Destroy()
 	end
-	local GOLD = Color3.fromRGB(255, 210, 50)
+	local GOLD = C.Gold
 	local holder = UIKit.new("Frame", { Name = "LevelUp", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(460, 250), BackgroundTransparency = 1, ZIndex = 40, Parent = gui })
 	UIKit.autoScale(holder)
 	-- rayons qui tournent
@@ -1561,27 +1558,27 @@ local function levelUpPopup(d)
 	-- onde de choc
 	local ring = UIKit.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.46), Size = UDim2.fromOffset(60, 60), BackgroundTransparency = 1, ZIndex = 41, Parent = holder })
 	UIKit.corner(ring, UDim.new(0.5, 0))
-	local ringStroke = UIKit.stroke(ring, 8, Color3.fromRGB(255, 255, 200), true)
+	local ringStroke = UIKit.stroke(ring, 8, C.Cream, true)
 	UIKit.tween(ring, 0.55, { Size = UDim2.fromOffset(520, 520) })
 	UIKit.tween(ringStroke, 0.55, { Transparency = 1, Thickness = 1 })
 	-- carte centrale
-	local card = UIKit.new("Frame", { Name = "Card", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(330, 190), BackgroundColor3 = Color3.fromRGB(60, 40, 120), ZIndex = 42, Parent = holder })
+	local card = UIKit.new("Frame", { Name = "Card", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(330, 190), BackgroundColor3 = C.DeepPurple, ZIndex = 42, Parent = holder })
 	UIKit.corner(card, UDim.new(0, 10))
 	UIKit.stroke(card, 4, UIKit.Black, true)
-	grad(card, Color3.fromRGB(150, 110, 255), Color3.fromRGB(70, 40, 150))
+	grad(card, UIKit.Colors.Purple, C.DeepPurple)
 	UIKit.Theme.shine(card, 43)
 	local title = UIKit.label({ Text = "LEVEL UP!", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.fromOffset(400, 58), TextColor3 = GOLD, Stroke = 5, ZIndex = 45 })
-	grad(title, Color3.fromRGB(255, 250, 190), Color3.fromRGB(255, 170, 30))
+	grad(title, C.Cream, C.Amber)
 	title.Parent = card
-	local lvTag = UIKit.label({ Text = "LV", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(0.5, -58, 0.47, 6), Size = UDim2.fromOffset(60, 30), TextColor3 = Color3.fromRGB(230, 220, 255), Stroke = 3, ZIndex = 44 })
+	local lvTag = UIKit.label({ Text = "LV", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(0.5, -58, 0.47, 6), Size = UDim2.fromOffset(60, 30), TextColor3 = C.Lilac, Stroke = 3, ZIndex = 44 })
 	lvTag.Parent = card
-	local num = UIKit.label({ Name = "Num", Text = tostring(from), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.47), Size = UDim2.fromOffset(120, 74), TextColor3 = Color3.new(1, 1, 1), Stroke = 5, ZIndex = 44 })
+	local num = UIKit.label({ Name = "Num", Text = tostring(from), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.47), Size = UDim2.fromOffset(120, 74), TextColor3 = UIKit.White, Stroke = 5, ZIndex = 44 })
 	num.Parent = card
-	local pill = UIKit.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.fromOffset(230, 40), BackgroundColor3 = Color3.fromRGB(50, 175, 70), ZIndex = 44, Parent = card })
+	local pill = UIKit.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.fromOffset(230, 40), BackgroundColor3 = C.CashGreen, ZIndex = 44, Parent = card })
 	UIKit.corner(pill, UDim.new(0, 8))
 	UIKit.stroke(pill, 3, UIKit.Black, true)
 	UIKit.Theme.bevel(pill, 0.7, 0.72)
-	local reward = UIKit.label({ Text = "+" .. fmtMoney(cash) .. " CASH", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, -20, 0.6, 0), TextColor3 = Color3.fromRGB(200, 255, 190), Stroke = 2.5, ZIndex = 45 })
+	local reward = UIKit.label({ Text = "+" .. fmtMoney(cash) .. " CASH", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, -20, 0.6, 0), TextColor3 = C.Mint, Stroke = 2.5, ZIndex = 45 })
 	reward.Parent = pill
 	local pscale = UIKit.new("UIScale", { Scale = 0, Parent = pill })
 	UIKit.pop(holder, 1.18)
@@ -1615,88 +1612,153 @@ end
 HUD.levelUpPopup = levelUpPopup
 
 local function skinRequest(...)
-	local rem = ReplicatedStorage:FindFirstChild("Remotes")
-	local rf = rem and rem:FindFirstChild("SkinRequest")
+	local rf = remoteNamed("SkinRequest")
 	if not rf then
-		HUD.toast("The shop is still loading, try again!", Color3.fromRGB(255, 110, 110))
+		HUD.toast("The shop is still loading, try again!", C.HPLow)
 		return
 	end
 	local args = table.pack(...)
 	task.spawn(function()
-		local ok, res, reason = pcall(function()
+		pcall(function()
 			return rf:InvokeServer(table.unpack(args, 1, args.n))
 		end)
-		if ok and res == false and reason == "COMING_SOON" then
-			HUD.toast("Coming soon!", Color3.fromRGB(255, 220, 60))
-		end
 	end)
 end
 
--- Boutique : « Skin Crates » (les 7 caisses -> CRATE SHOP) + « Cash & Briefcases » ( offres Robux -> COMING SOON tant que ProductId = 0) + cosmétiques (bientôt)
-local function buildShop(ctx)
-	local f = UIKit.panel({
-		Name = "Shop",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(660, 440),
-		Visible = false,
-		ZIndex = 20,
-		Parent = gui,
-	})
-	UIKit.autoScale(f)
+-- Boutique HONNÊTE : seulement ce qui s'achète vraiment. Jamais vide :
+--   portefeuille (Cash, mallettes, persos) + JOBS (écran de sélection) + caisses de skins en Cash,
+--   puis offres Robux / cosmétiques seulement si ProductId ~= 0 (Config/Skins.Products, Config/Shop). Aucune section « SOON ».
+local Skins, Unlocks
+local function shopConfigs()
+	if Skins == nil then
+		local sm = Config:FindFirstChild("Skins")
+		local ok, mod = false, nil
+		if sm then
+			ok, mod = pcall(require, sm)
+		end
+		Skins = ok and type(mod) == "table" and mod or false
+	end
+	if Unlocks == nil then
+		local um = Config:FindFirstChild("Unlocks")
+		local ok, mod = false, nil
+		if um then
+			ok, mod = pcall(require, um)
+		end
+		Unlocks = ok and type(mod) == "table" and mod or false
+	end
+	return Skins or nil, Unlocks or nil
+end
+
+local ownedJobs = nil -- {[charId]=true} (UnlockState / UnlockRequest "State")
+local ctxRef
+local fillShop
+
+local function openJobs()
+	local cs = ctxRef and ctxRef.CharacterSelectController
+	if cs and cs.open then
+		UIKit.closeAllPanels()
+		cs.open(false)
+	else
+		HUD.toast("Job select is still loading, try again!", C.HPLow)
+	end
+end
+
+local function openCrates(crateId)
+	local cs = ctxRef and ctxRef.CharacterSelectController
+	if cs and cs.openBriefcase then
+		UIKit.closeAllPanels()
+		cs.openBriefcase(crateId)
+	end
+end
+
+local function buildShop()
+	local dock = getDock()
+	if not dock then
+		return
+	end
+	local f, body = dock.panel("ShopPanel", "SHOP", C.Amber, Vector2.new(660, 490), "Shop")
 	refs.shop = f
-	header(f, "SHOP", Color3.fromRGB(235, 160, 30), 48, 21, "Shop")
-	local soon = UIKit.label({ Text = "Cosmetics only - never pay-to-win!", Font = UIKit.Body, Size = UDim2.new(1, -32, 0, 22), Position = UDim2.new(0, 16, 0, 62), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = UIKit.Colors.Muted, Stroke = 1.5, ZIndex = 21 })
-	soon.Parent = f
-	local close = UIKit.button({ Text = "X", Color = Color3.fromRGB(235, 60, 50), Size = UDim2.fromOffset(46, 46), Position = UDim2.new(1, -58, 0, 10), ZIndex = 22, Parent = f })
-	close.Activated:Connect(function()
-		UIKit.close(f)
-	end)
+	local sub = UIKit.label({ Text = "Cosmetics only - never pay-to-win!", Font = UIKit.Body, Size = UDim2.new(1, 0, 0, 18), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = UIKit.Colors.Muted, Stroke = 1.5, ZIndex = 21 })
+	sub.Parent = body
 	local list = UIKit.new("ScrollingFrame", {
-		Position = UDim2.new(0, 16, 0, 84),
-		Size = UDim2.new(1, -32, 1, -96),
+		Name = "List",
+		Position = UDim2.fromOffset(0, 24),
+		Size = UDim2.new(1, 0, 1, -24),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ScrollBarThickness = 6,
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(),
 		ZIndex = 21,
-		Parent = f,
+		Parent = body,
 	})
+	refs.shopList = list
+	f:GetPropertyChangedSignal("Visible"):Connect(function()
+		if not f.Visible then
+			return
+		end
+		fillShop()
+		task.spawn(function()
+			local rf = remoteNamed("UnlockRequest")
+			if not rf then
+				return
+			end
+			local ok, st = pcall(function()
+				return rf:InvokeServer("State")
+			end)
+			if ok and type(st) == "table" and type(st.Owned) == "table" then
+				ownedJobs = st.Owned
+				if f.Visible then
+					fillShop()
+				end
+			end
+		end)
+	end)
+end
+
+fillShop = function()
+	local list = refs.shopList
+	if not list then
+		return
+	end
+	list:ClearAllChildren()
 	UIKit.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = list })
+	local S, U = shopConfigs()
 	local function section(order, text)
-		local head = UIKit.label({ Text = text, Size = UDim2.new(1, -10, 0, 28), TextColor3 = Color3.fromRGB(255, 220, 60), TextXAlignment = Enum.TextXAlignment.Left, Stroke = 3, LayoutOrder = order, ZIndex = 22 })
+		if Shop.isHiddenSection(text) then
+			return nil
+		end
+		local head = UIKit.label({ Text = text, Size = UDim2.new(1, -10, 0, 26), TextColor3 = UIKit.Colors.Yellow, TextXAlignment = Enum.TextXAlignment.Left, Stroke = 3, LayoutOrder = order, ZIndex = 22 })
 		head.Parent = list
 		local box = UIKit.new("Frame", { Size = UDim2.new(1, -10, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = order + 1, ZIndex = 21, Parent = list })
 		UIKit.new("UIGridLayout", { CellSize = UDim2.fromOffset(190, 150), CellPadding = UDim2.fromOffset(12, 12), SortOrder = Enum.SortOrder.LayoutOrder, Parent = box })
 		return box
 	end
-	local function card(box, order, color, swatchText, name, sub, btnText, btnColor, onClick)
-		local c = UIKit.new("Frame", { BackgroundColor3 = Color3.fromRGB(56, 52, 92), LayoutOrder = order, ZIndex = 22, Parent = box })
+	local function card(box, order, color, icon, swatchText, name, subText, btnText, btnColor, onClick)
+		local c = UIKit.new("Frame", { BackgroundColor3 = UIKit.Colors.Slot, LayoutOrder = order, ZIndex = 22, Parent = box })
 		UIKit.corner(c, UDim.new(0, 8))
 		UIKit.stroke(c, 3, UIKit.Black, true)
-		grad(c, Color3.new(1, 1, 1), Color3.fromRGB(150, 150, 170))
+		grad(c, UIKit.White, C.Steel)
 		local sw = UIKit.new("Frame", { Position = UDim2.new(0, 8, 0, 8), Size = UDim2.new(1, -16, 0, 50), BackgroundColor3 = color, ZIndex = 23, Parent = c })
 		UIKit.corner(sw, UDim.new(0, 6))
 		UIKit.Theme.bevel(sw, 0.72, 0.72)
 		UIKit.stroke(sw, 2, UIKit.Black, true)
 		UIKit.Theme.shine(sw, 23)
 		local ib = UIKit.new("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 6, 0.5, 0), Size = UDim2.fromOffset(36, 36), BackgroundTransparency = 1, ZIndex = 24, Parent = sw })
-		UIKit.icon(string.find(swatchText, "$", 1, true) and "Cash" or "Crate", ib, Color3.new(1, 1, 1), 24)
+		UIKit.icon(icon, ib, UIKit.White, 24)
 		local st = UIKit.label({ Text = swatchText, Size = UDim2.new(1, -56, 0.56, 0), Position = UDim2.new(0, 48, 0.22, 0), ZIndex = 24 })
 		st.Parent = sw
 		local nm = UIKit.label({ Text = name, Font = UIKit.Body, Size = UDim2.new(1, -16, 0, 19), Position = UDim2.new(0, 8, 0, 63), ZIndex = 23 })
 		nm.Parent = c
-		local sl = UIKit.label({ Text = sub, Font = UIKit.Body, Size = UDim2.new(1, -16, 0, 14), Position = UDim2.new(0, 8, 0, 85), TextColor3 = Color3.fromRGB(200, 230, 200), ZIndex = 23 })
+		local sl = UIKit.label({ Text = subText, Font = UIKit.Body, Size = UDim2.new(1, -16, 0, 14), Position = UDim2.new(0, 8, 0, 85), TextColor3 = C.Mint, ZIndex = 23 })
 		sl.Parent = c
 		local b = UIKit.button({ Text = btnText, Color = btnColor, Position = UDim2.new(0, 8, 1, -46), Size = UDim2.new(1, -16, 0, 38), ZIndex = 23, Parent = c })
 		if onClick then
 			b.Activated:Connect(onClick)
 		else
 			b.Active = false
-			b.Label.TextColor3 = Color3.fromRGB(200, 200, 210)
+			b.Label.TextColor3 = C.Silver
 		end
-		-- survol : la carte grossit légèrement
 		local cs = UIKit.new("UIScale", { Parent = c })
 		c.MouseEnter:Connect(function()
 			UIKit.tween(cs, 0.12, { Scale = 1.04 }, Enum.EasingStyle.Back)
@@ -1707,67 +1769,93 @@ local function buildShop(ctx)
 		return c
 	end
 
-	-- 1) Cash & Briefcases
-	local Skins
-	local sm = Config:FindFirstChild("Skins")
-	if sm then
-		local ok, mod = pcall(require, sm)
-		Skins = ok and type(mod) == "table" and mod or nil
+	-- 1) Portefeuille (toujours là)
+	local cash = tonumber(player:GetAttribute("Cash")) or 0
+	local crates = tonumber(player:GetAttribute("Crates")) or 0
+	local total, owned = 0, 0
+	for _, id in ipairs(Characters.Order or {}) do
+		total += 1
+		if (ownedJobs and ownedJobs[id]) or (not ownedJobs and U and U.isFree(id)) then
+			owned += 1
+		end
 	end
-	-- caisses de skins (Config/Skins.Crates) : ouvre la CRATE SHOP sur la caisse choisie
-	local crateBox = section(10, "SKIN CRATES")
-	local crateList = Skins and type(Skins.Crates) == "table" and Skins.Crates or {
-		{ Id = "Briefcase", Name = "Mystery Briefcase", Price = Skins and Skins.Crate and Skins.Crate.Price or 300, Color = Color3.fromRGB(70, 130, 255), Odds = { Rare = 70, Epic = 25, Legendary = 5 } },
-	}
+	local wallet = section(1, "YOUR STUFF")
+	card(wallet, 1, C.CashGreen, "Cash", HUD.fmtMoney(cash), "Your Cash", "Earn it fighting & tasks", "EARN MORE", UIKit.Colors.Green, function()
+		if refs.tasks then
+			UIKit.openPanel(refs.tasks)
+		end
+	end)
+	card(wallet, 2, UIKit.Colors.Blue, "Crate", "x" .. crates, "Free Briefcases", "From dailies & contracts", crates > 0 and "OPEN ONE" or "GET SOME", crates > 0 and C.Gold or UIKit.Colors.Blue, function()
+		if crates > 0 then
+			openCrates("Briefcase")
+		elseif refs.tasks then
+			UIKit.openPanel(refs.tasks)
+		end
+	end)
+	card(wallet, 3, UIKit.Colors.Purple, "Person", owned .. "/" .. total, "Jobs Unlocked", ownedJobs and "Unlock more with Cash" or "Checking...", "BROWSE JOBS", UIKit.Colors.Purple, openJobs)
+
+	-- 2) JOBS : persos à débloquer (Cash ; Robux seulement si le Game Pass existe) -> écran de sélection
+	local jobs = section(10, "JOBS")
+	local n = 0
+	if U then
+		for _, id in ipairs(Characters.Order or {}) do
+			local e = U.get(id)
+			local kit = Characters[id]
+			local buyable = e.Tier == "Cash" or (e.Tier == "Robux" and (tonumber(e.GamePassId) or 0) ~= 0)
+			if kit and buyable and not (ownedJobs and ownedJobs[id]) and n < 6 then
+				n += 1
+				local can = e.Tier ~= "Cash" or cash >= (e.Price or 0)
+				card(jobs, n, kit.Color or UIKit.Colors.Slot, "Person", U.priceText(id), kit.DisplayName or id, e.Tier == "Cash" and (can and "You can afford it!" or "Keep earning Cash") or "Game Pass", "VIEW JOB", can and UIKit.Colors.Green or UIKit.Colors.Blue, openJobs)
+			end
+		end
+	end
+	if n == 0 then
+		card(jobs, 1, UIKit.Colors.Purple, "Person", "ALL", ownedJobs and "Every job unlocked!" or "Your jobs", "Pick who you play", "OPEN JOBS", UIKit.Colors.Purple, openJobs)
+	end
+
+	-- 3) Caisses de skins (Cash) : ouvre la CRATE SHOP sur la caisse choisie
+	local crateBox = section(20, "SKIN CRATES")
+	local crateList = S and type(S.Crates) == "table" and S.Crates or {}
 	for i, cd in ipairs(crateList) do
 		local o = cd.Odds or {}
 		local swatch = (o.Rare or 0) == 0 and "EPIC+" or (cd.Pool and (#cd.Pool .. " JOBS") or "ALL JOBS")
-		local sub = string.format("Epic %d%%  -  Legendary %d%%", o.Epic or 0, o.Legendary or 0)
-		card(crateBox, i, cd.Color or Color3.fromRGB(150, 90, 40), swatch, cd.Name or cd.Id, sub, "OPEN - " .. fmtMoney(cd.Price or 0), Color3.fromRGB(255, 185, 30), function()
-			local cs = ctx and ctx.CharacterSelectController
-			if cs and cs.openBriefcase then
-				f.Visible = false
-				cs.openBriefcase(cd.Id)
-			end
+		local odds = string.format("Epic %d%%  -  Legendary %d%%", o.Epic or 0, o.Legendary or 0)
+		card(crateBox, i, cd.Color or C.Amber, "Crate", swatch, cd.Name or cd.Id, odds, "OPEN - " .. HUD.fmtMoney(cd.Price or 0), C.Amber, function()
+			openCrates(cd.Id)
 		end)
 	end
-	local box = section(12, "CASH & BRIEFCASES")
-	for i, p in ipairs(Skins and Skins.Products or {}) do
-		local isCash = (tonumber(p.Cash) or 0) > 0
-		local swatch = isCash and ("+" .. fmtMoney(p.Cash)) or ("x" .. tostring(p.Crates or 1))
-		local sub = isCash and (fmtMoney(p.Cash) .. " cash") or (tostring(p.Crates or 1) .. " free briefcase" .. ((p.Crates or 1) > 1 and "s" or ""))
-		local live = (tonumber(p.ProductId) or 0) ~= 0
-		card(
-			box,
-			i,
-			isCash and Color3.fromRGB(40, 150, 70) or Color3.fromRGB(190, 120, 40),
-			swatch,
-			p.Name or p.Id,
-			sub,
-			live and ("R$ " .. tostring(p.Robux or "?")) or "COMING SOON",
-			live and Color3.fromRGB(70, 200, 90) or Color3.fromRGB(95, 100, 115),
-			live and function()
+
+	-- 4) Offres Robux : seulement les produits créés sur le site (ProductId ~= 0)
+	local live = {}
+	for _, p in ipairs(S and S.Products or {}) do
+		if (tonumber(p.ProductId) or 0) ~= 0 then
+			table.insert(live, p)
+		end
+	end
+	if #live > 0 then
+		local box = section(30, "CASH & BRIEFCASES")
+		for i, p in ipairs(live) do
+			local isCash = (tonumber(p.Cash) or 0) > 0
+			local swatch = isCash and ("+" .. HUD.fmtMoney(p.Cash)) or ("x" .. tostring(p.Crates or 1))
+			local subText = isCash and (HUD.fmtMoney(p.Cash) .. " cash") or (tostring(p.Crates or 1) .. " free briefcase" .. ((p.Crates or 1) > 1 and "s" or ""))
+			card(box, i, isCash and C.CashGreen or C.Amber, isCash and "Cash" or "Crate", swatch, p.Name or p.Id, subText, "R$ " .. tostring(p.Robux or "?"), UIKit.Colors.Green, function()
 				skinRequest("Buy", p.Id)
-			end or nil
-		)
+			end)
+		end
 	end
 
-	-- 2) Cosmétiques (bientôt)
-	local box2 = section(20, "COSMETICS (SOON)")
-	for i, item in ipairs(Shop.Items) do
-		local c = UIKit.new("Frame", { BackgroundColor3 = Color3.fromRGB(45, 50, 70), LayoutOrder = i, ZIndex = 22, Parent = box2 })
-		UIKit.corner(c)
-		UIKit.stroke(c, 3, UIKit.Black, true)
-		local sw = UIKit.new("Frame", { Position = UDim2.new(0, 10, 0, 10), Size = UDim2.new(1, -20, 0, 60), BackgroundColor3 = item.Color, ZIndex = 23, Parent = c })
-		UIKit.corner(sw, UDim.new(0, 4))
-		UIKit.Theme.bevel(sw, 0.75, 0.75)
-		UIKit.stroke(sw, 2, UIKit.Black, true)
-		local cat = UIKit.label({ Text = item.Category, Font = UIKit.Body, Size = UDim2.new(1, -20, 0, 20), Position = UDim2.new(0, 10, 0, 30), ZIndex = 24 })
-		cat.Parent = c
-		local nm = UIKit.label({ Text = item.Name, Font = UIKit.Body, Size = UDim2.new(1, -20, 0, 22), Position = UDim2.new(0, 10, 0, 76), ZIndex = 23 })
-		nm.Parent = c
-		local pr = UIKit.label({ Text = "R$ " .. item.Price .. "  ·  SOON", Font = UIKit.Body, Size = UDim2.new(1, -20, 0, 22), Position = UDim2.new(0, 10, 0, 112), TextColor3 = Color3.fromRGB(170, 230, 170), ZIndex = 23 })
-		pr.Parent = c
+	-- 5) Cosmétiques : seulement les fiches en vente (Config/Shop, ProductId ~= 0)
+	local items = Shop.liveItems()
+	if #items > 0 then
+		local box = section(40, "COSMETICS")
+		for i, item in ipairs(items) do
+			card(box, i, item.Color or UIKit.Colors.Slot, "Shop", string.upper(item.Category or ""), item.Name, item.Desc or "Cosmetic", "R$ " .. tostring(item.Price), UIKit.Colors.Green, function()
+				local mps = game:GetService("MarketplaceService")
+				pcall(function()
+					mps:PromptProductPurchase(player, item.ProductId)
+				end)
+			end)
+		end
 	end
 end
 
@@ -1776,7 +1864,7 @@ local function showFired()
 	local f = UIKit.new("Frame", {
 		Name = "Fired",
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.fromRGB(60, 0, 0),
+		BackgroundColor3 = C.Blood,
 		BackgroundTransparency = 1,
 		ZIndex = 30,
 		Parent = gui,
@@ -1799,9 +1887,9 @@ local function showFired()
 		ZIndex = 31,
 		Parent = holder,
 	})
-	local border = UIKit.stroke(stamp, 10, Color3.fromRGB(230, 30, 30), true)
+	local border = UIKit.stroke(stamp, 10, UIKit.Colors.Red, true)
 	UIKit.corner(stamp, UDim.new(0, 4))
-	local text = UIKit.label({ Text = "YOU'RE FIRED!", Size = UDim2.fromScale(0.92, 0.8), Position = UDim2.fromScale(0.04, 0.1), TextColor3 = Color3.fromRGB(240, 40, 40), Stroke = 3, ZIndex = 32 })
+	local text = UIKit.label({ Text = "YOU'RE FIRED!", Size = UDim2.fromScale(0.92, 0.8), Position = UDim2.fromScale(0.04, 0.1), TextColor3 = UIKit.Colors.Red, Stroke = 3, ZIndex = 32 })
 	text.Parent = stamp
 	local sc = UIKit.new("UIScale", { Scale = 3, Parent = text })
 	local sc2 = UIKit.new("UIScale", { Scale = 1, Parent = stamp })
@@ -1815,7 +1903,7 @@ local function showFired()
 	local by = UIKit.label({ Text = "", Font = UIKit.Body, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.4, 100), Size = UDim2.fromOffset(600, 34), ZIndex = 31 })
 	by.Parent = f
 	UIKit.autoScale(by)
-	local count = UIKit.label({ Text = "", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.4, 140), Size = UDim2.fromOffset(400, 30), ZIndex = 31, TextColor3 = Color3.fromRGB(255, 220, 60) })
+	local count = UIKit.label({ Text = "", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.4, 140), Size = UDim2.fromOffset(400, 30), ZIndex = 31, TextColor3 = UIKit.Colors.Yellow })
 	count.Parent = f
 	UIKit.autoScale(count)
 	task.spawn(function()
@@ -1837,11 +1925,11 @@ end
 ------------------------------------------------------------------------
 local function hpColor(r)
 	if r > 0.6 then
-		return Color3.fromRGB(90, 220, 90)
+		return C.HP
 	elseif r > 0.3 then
-		return Color3.fromRGB(255, 210, 40)
+		return C.Gold
 	end
-	return Color3.fromRGB(255, 70, 60)
+	return C.HPLow
 end
 
 local PHASE_TEXT = {
@@ -1872,11 +1960,11 @@ local function update(dt)
 			refs.shakeAmp = math.clamp(dmg / 3, 2, 7)
 			refs.vigFlash = math.clamp(dmg / 25, 0.25, 0.75)
 		elseif refs.lastHP and hum.Health > refs.lastHP + 0.5 then
-			refs.hp.Flash.BackgroundColor3 = Color3.fromRGB(150, 255, 150)
+			refs.hp.Flash.BackgroundColor3 = C.Heal
 			refs.hp.Flash.BackgroundTransparency = 0.4
 			UIKit.tween(refs.hp.Flash, 0.4, { BackgroundTransparency = 1 })
 			task.delay(0.4, function()
-				refs.hp.Flash.BackgroundColor3 = Color3.new(1, 1, 1)
+				refs.hp.Flash.BackgroundColor3 = UIKit.White
 			end)
 		end
 		refs.lastHP = hum.Health
@@ -1889,10 +1977,10 @@ local function update(dt)
 		refs.hp.Fill.Size = UDim2.fromScale(math.max(refs.hpShown, 0.001), 1)
 		refs.hp.Trail.Size = UDim2.fromScale(math.max(refs.trailShown, 0.001), 1)
 		local low = r <= 0.3 and hum.Health > 0
-		refs.hp.Fill.BackgroundColor3 = low and Color3.fromRGB(255, 50, 45):Lerp(Color3.fromRGB(255, 150, 120), pulse) or hpColor(r)
+		refs.hp.Fill.BackgroundColor3 = low and C.HPLow:Lerp(C.Peach, pulse) or hpColor(r)
 		local shownHP = math.abs(refs.hpShown - r) < 0.004 and math.ceil(hum.Health) or math.ceil(refs.hpShown * hum.MaxHealth)
 		refs.hp.Text.Text = math.max(shownHP, 0) .. " / " .. math.floor(hum.MaxHealth)
-		refs.statusStroke.Color = low and Color3.fromRGB(110, 0, 0):Lerp(Color3.fromRGB(255, 60, 50), pulse) or UIKit.Black
+		refs.statusStroke.Color = low and C.Blood:Lerp(C.HPLow, pulse) or UIKit.Black
 		refs.vigFlash = math.max(0, (refs.vigFlash or 0) - dt * 2.4)
 		setVignette(math.max(low and (0.2 + 0.22 * pulse) or 0, refs.vigFlash))
 	else
@@ -1908,7 +1996,7 @@ local function update(dt)
 	end
 	refs.charName.Text = kit and string.upper(kit.DisplayName) or string.upper(player.DisplayName)
 	refs.charName.TextColor3 = kit and kit.Color or UIKit.White
-	refs.portraitBox.BackgroundColor3 = kit and kit.Color or Color3.fromRGB(70, 62, 120)
+	refs.portraitBox.BackgroundColor3 = kit and kit.Color or UIKit.Colors.PanelLight
 
 	-- Overtime / ultime
 	local transformed = c and c:GetAttribute("Transformed") == true
@@ -1921,19 +2009,19 @@ local function update(dt)
 		local dur = kit and kit.Transformation and kit.Transformation.Duration or 20
 		local left = math.max(0, (c:GetAttribute("TransformUntil") or t) - t)
 		fillR = left / dur
-		c0, c1 = Color3.fromRGB(255, 45, 35), Color3.fromRGB(255, 200, 40)
+		c0, c1 = C.Fire, C.Gold
 		label = (ultReady and "ULT READY!  " or "OVERTIME!  ") .. math.ceil(left) .. "s"
 	elseif ready then
 		fillR = 1
-		c0, c1 = Color3.fromRGB(255, 150, 20), Color3.fromRGB(255, 245, 140)
+		c0, c1 = UIKit.Colors.Orange, C.Glow
 		label = "OVERTIME READY!"
 		if not otTipShown then
 			otTipShown = true
-			HUD.toast(touch and "Your OVERTIME meter is full! Tap OT to transform!" or "Your OVERTIME meter is full! Press G to transform!", Color3.fromRGB(255, 180, 60), 5)
+			HUD.toast(touch and "Your OVERTIME meter is full! Tap OT to transform!" or "Your OVERTIME meter is full! Press G to transform!", C.Amber, 5)
 		end
 	else
 		fillR = ot / 100
-		c0, c1 = Color3.fromRGB(225, 105, 20), Color3.fromRGB(255, 175, 50)
+		c0, c1 = UIKit.Colors.Orange, C.Amber
 		label = "OVERTIME " .. math.floor(ot) .. "%"
 	end
 	refs.otShown += (math.clamp(fillR, 0, 1) - refs.otShown) * math.min(1, dt * 10)
@@ -1943,21 +2031,21 @@ local function update(dt)
 	refs.otFlow.Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, c0),
 		ColorSequenceKeypoint.new(0.4, c0:Lerp(c1, 0.6)),
-		ColorSequenceKeypoint.new(0.5, Color3.new(1, 1, 1):Lerp(c1, band)),
+		ColorSequenceKeypoint.new(0.5, UIKit.White:Lerp(c1, band)),
 		ColorSequenceKeypoint.new(0.6, c0:Lerp(c1, 0.6)),
 		ColorSequenceKeypoint.new(1, c0),
 	})
 	refs.otFlow.Offset = Vector2.new((clock * (hot and 1.3 or 0.45)) % 2 - 1, 0)
 	local glowOn = ready or ultReady
 	refs.otGlow.BackgroundTransparency = glowOn and (0.2 + 0.5 * (1 - pulse)) or (transformed and 0.75 or 1)
-	refs.otGlow.BackgroundColor3 = ultReady and Color3.fromRGB(255, 80, 40) or Color3.fromRGB(255, 210, 60)
-	refs.otStroke.Color = glowOn and Color3.new(1, 1, 1):Lerp(Color3.fromRGB(255, 220, 60), pulse) or (transformed and Color3.fromRGB(255, 140, 40) or UIKit.Black)
+	refs.otGlow.BackgroundColor3 = ultReady and C.Fire or C.Gold
+	refs.otStroke.Color = glowOn and UIKit.White:Lerp(UIKit.Colors.Yellow, pulse) or (transformed and UIKit.Colors.Orange or UIKit.Black)
 	refs.ot.Text.Text = label
 	refs.otBadge.Rotation = glowOn and math.sin(clock * 12) * 9 or 0
-	refs.otBadge.BackgroundColor3 = ultReady and Color3.fromRGB(255, 70, 40) or Color3.fromRGB(255, 140, 30)
+	refs.otBadge.BackgroundColor3 = ultReady and C.Fire or UIKit.Colors.Orange
 	if glowOn and clock - (refs.sparkT or 0) > 0.05 then
 		refs.sparkT = clock
-		spark(refs.otSparks, ultReady and Color3.fromRGB(255, 120, 60) or Color3.fromRGB(255, 235, 90))
+		spark(refs.otSparks, ultReady and C.Fire or UIKit.Colors.Yellow)
 	end
 	refs.otPrompt.Visible = ready
 	if ready then
@@ -1966,8 +2054,8 @@ local function update(dt)
 	refs.ultTag.Visible = ultReady
 	if ultReady then
 		refs.ultTagLabel.Text = string.upper(tostring(ultName or "ULTIMATE")) .. "!"
-		refs.ultTag.BackgroundColor3 = (kit and kit.Color or Color3.fromRGB(255, 90, 40)):Lerp(Color3.fromRGB(255, 90, 40), 0.35)
-		refs.ultTagStroke.Color = Color3.new(1, 1, 1):Lerp(Color3.fromRGB(255, 220, 60), pulse)
+		refs.ultTag.BackgroundColor3 = (kit and kit.Color or C.Fire):Lerp(C.Fire, 0.35)
+		refs.ultTagStroke.Color = UIKit.White:Lerp(UIKit.Colors.Yellow, pulse)
 	end
 	-- invite centrale de l'ultime (apparaît avec un « pop », pulse tant qu'elle est prête)
 	if ultReady ~= refs.ultShown then
@@ -1987,13 +2075,13 @@ local function update(dt)
 			refs.ultIcon.Rotation = math.sin(clock * 3) * 5
 		end
 		refs.ultPulse.Scale = 1 + 0.05 * pulse
-		refs.ultRibbon.BackgroundColor3 = kit and kit.Color or Color3.fromRGB(255, 120, 30)
+		refs.ultRibbon.BackgroundColor3 = kit and kit.Color or UIKit.Colors.Orange
 		refs.ultRibbon.Rotation = -2 + math.sin(clock * 3) * 1.2
 		refs.ultRibbonGrad.Offset = Vector2.new((clock * 0.9) % 2 - 1, 0)
-		refs.ultRibbonStroke.Color = Color3.new(1, 1, 1):Lerp(Color3.fromRGB(255, 220, 60), pulse)
+		refs.ultRibbonStroke.Color = UIKit.White:Lerp(UIKit.Colors.Yellow, pulse)
 		if clock - (refs.ultSparkT or 0) > 0.04 then
 			refs.ultSparkT = clock
-			spark(refs.ultSparks, math.random() < 0.5 and Color3.fromRGB(255, 240, 120) or (kit and kit.Color or Color3.new(1, 1, 1)))
+			spark(refs.ultSparks, math.random() < 0.5 and C.Glow or (kit and kit.Color or UIKit.White))
 		end
 	end
 
@@ -2008,7 +2096,7 @@ local function update(dt)
 	local g, nextG = Grades.List[gi], Grades.List[gi + 1]
 	refs.grade.Text = string.upper(g.Name)
 	refs.grade.TextColor3 = g.Color
-	refs.gradeStroke.Color = g.Color:Lerp(Color3.new(0, 0, 0), 0.55)
+	refs.gradeStroke.Color = g.Color:Lerp(UIKit.Colors.Black, 0.55)
 	-- jauge = progression vers le niveau suivant (grade affiché dans la pastille)
 	local lvl = player:GetAttribute("Level") or 1
 	local into = player:GetAttribute("LevelXP") or 0
@@ -2037,19 +2125,19 @@ local function update(dt)
 	-- Attaques (PC)
 	if refs.abilities.Visible then
 		local list = kit and (transformed and kit.TransAttacks or kit.Attacks) or {}
-		local base = kit and kit.Color or Color3.fromRGB(60, 70, 100)
+		local base = kit and kit.Color or C.SlotBlue
 		for i, s in ipairs(refs.slots) do
 			local id = list[i]
 			s.name.Text = id and string.upper(HUD.attackName(id)) or "-"
 			setAttackIcon(s.icon, id or "Hit", kit and kit.Color, id and attackKind(id) or "Melee")
-			s.frame.BackgroundColor3 = transformed and Color3.fromRGB(255, 70, 40):Lerp(Color3.fromRGB(255, 160, 40), pulse) or base:Lerp(Color3.new(0, 0, 0), 0.2)
-			s.stroke.Color = transformed and Color3.fromRGB(255, 230, 60) or UIKit.Black
+			s.frame.BackgroundColor3 = transformed and C.Fire:Lerp(UIKit.Colors.Orange, pulse) or base:Lerp(UIKit.Colors.Black, 0.2)
+			s.stroke.Color = transformed and UIKit.Colors.Yellow or UIKit.Black
 		end
 		refs.gFill.Size = UDim2.fromScale(1, transformed and 1 or math.clamp(ot / 100, 0, 1))
-		refs.gFill.BackgroundColor3 = ultReady and Color3.fromRGB(255, 70, 40):Lerp(Color3.fromRGB(255, 200, 60), pulse)
-			or (ready or transformed) and Color3.fromRGB(255, 140, 30):Lerp(Color3.fromRGB(255, 240, 120), pulse)
-			or Color3.fromRGB(200, 100, 30)
-		refs.gStroke.Color = glowOn and Color3.new(1, 1, 1):Lerp(Color3.fromRGB(255, 230, 60), pulse) or UIKit.Black
+		refs.gFill.BackgroundColor3 = ultReady and C.Fire:Lerp(C.Gold, pulse)
+			or (ready or transformed) and UIKit.Colors.Orange:Lerp(C.Glow, pulse)
+			or C.Amber
+		refs.gStroke.Color = glowOn and UIKit.White:Lerp(UIKit.Colors.Yellow, pulse) or UIKit.Black
 		refs.gName.Text = ultReady and "ULT!" or transformed and "ACTIVE!" or ready and "READY!" or "OVERTIME"
 		setAttackIcon(refs.gIcon, (ultReady and charName) and ("Ult:" .. charName) or "Transform", ultReady and kit and kit.Color or nil, ultReady and "Ult" or "Bolt")
 		local gs = refs.gSlot:FindFirstChild("SlotScale")
@@ -2087,9 +2175,9 @@ local function update(dt)
 		end
 		refs.phase.Text = txt
 		local danger = phase == "Warning" or phase == "Collapse"
-		refs.phase.TextColor3 = danger and Color3.fromRGB(255, 60, 50):Lerp(Color3.fromRGB(255, 230, 60), pulse) or Color3.fromRGB(200, 230, 255)
+		refs.phase.TextColor3 = danger and C.HPLow:Lerp(UIKit.Colors.Yellow, pulse) or C.Sky
 		if refs.floorStroke then
-			refs.floorStroke.Color = danger and Color3.fromRGB(120, 0, 0):Lerp(Color3.fromRGB(255, 60, 50), pulse) or UIKit.Black
+			refs.floorStroke.Color = danger and C.Blood:Lerp(C.HPLow, pulse) or UIKit.Black
 		end
 	end
 end
@@ -2131,6 +2219,7 @@ function HUD.init(ctx)
 		end)
 	end
 
+	ctxRef = ctx
 	gui = UIKit.screen("HUD", 5)
 	HUD.gui = gui
 	buildVignette()
@@ -2166,23 +2255,57 @@ function HUD.init(ctx)
 	buildCombo()
 	buildAbilities()
 	buildUltPrompt()
-	buildMenu()
 	buildTasks()
 	buildCash()
-	buildShop(ctx)
+	buildShop()
 	buildCombos()
 
-	refs.tasksButton = HUD.addMenuButton("TASKS 0/3", Color3.fromRGB(110, 200, 110), function()
-		UIKit.toggle(refs.tasks)
+	-- un seul dock (MetaDockController) ; ouvrir un panneau ferme les autres (registre UIKit)
+	HUD.addMenuButton("TASKS 0/3", UIKit.Colors.Green, function()
+		if refs.tasks then
+			UIKit.togglePanel(refs.tasks)
+		end
 	end, 20)
-	HUD.addMenuButton("COMBOS", Color3.fromRGB(120, 200, 255), function()
-		UIKit.toggle(refs.combos)
+	HUD.addMenuButton("COMBOS", UIKit.Colors.Cyan, function()
+		if refs.combos then
+			UIKit.togglePanel(refs.combos)
+		end
 	end, 25)
-	HUD.addMenuButton("SHOP", Color3.fromRGB(255, 200, 40), function()
-		UIKit.toggle(refs.shop)
+	HUD.addMenuButton("SHOP", C.Gold, function()
+		if refs.shop then
+			UIKit.togglePanel(refs.shop)
+		end
 	end, 30)
-	player:GetAttributeChangedSignal("Tasks"):Connect(refreshTasks)
+	for _, attr in ipairs({ "Tasks", "TasksWeekly", "TaskRerolls" }) do
+		player:GetAttributeChangedSignal(attr):Connect(refreshTasks)
+	end
 	refreshTasks()
+	task.spawn(function()
+		while true do
+			task.wait(0.5)
+			pcall(tickTaskClocks)
+		end
+	end)
+	-- boutique ouverte : suit le Cash, les mallettes et les déblocages
+	local function shopDirty()
+		if refs.shop and refs.shop.Visible then
+			fillShop()
+		end
+	end
+	player:GetAttributeChangedSignal("Cash"):Connect(shopDirty)
+	player:GetAttributeChangedSignal("Crates"):Connect(shopDirty)
+	task.spawn(function()
+		local rem = ReplicatedStorage:WaitForChild("Remotes", 30)
+		local ev = rem and rem:WaitForChild("UnlockState", 60)
+		if ev then
+			ev.OnClientEvent:Connect(function(st)
+				if type(st) == "table" and type(st.Owned) == "table" then
+					ownedJobs = st.Owned
+					shopDirty()
+				end
+			end)
+		end
+	end)
 
 	if player.Character then
 		task.spawn(hookCharacter, player.Character)
@@ -2234,7 +2357,7 @@ function HUD.init(ctx)
 			if entry.kind == "Fired" and entry.killerId == player.UserId and not likeShown then
 				likeShown = true
 				task.delay(2.5, function()
-					HUD.toast("Having fun? Leave a LIKE on the game page!", Color3.fromRGB(120, 230, 255), 6)
+					HUD.toast("Having fun? Leave a LIKE on the game page!", C.Sky, 6)
 				end)
 			end
 		end)
