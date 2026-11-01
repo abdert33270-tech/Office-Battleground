@@ -384,6 +384,10 @@ S({ Id = "DeliveryGuy_Rare", Character = "DeliveryGuy", Rarity = "Rare", Name = 
 		P(T, B, V(0.22, 0.18, 0.09), ORNG, SP, 0, 0.25, -0.56),
 		-- téléphone au poignet
 		P(LA, B, V(0.52, 0.75, 0.08), C(25, 25, 30), SP, 0, -0.5, -0.56, { Text = { Text = "ETA\n2 MIN", Font = "Code", Color = C(80, 255, 140) } }),
+		-- sac de commande kraft tenu à la main droite (rabat plié + ticket agrafé)
+		P(RA, B, V(0.7, 0.8, 0.5), C(196, 156, 104), SP, 0, -1.42, -0.12, { Text = { Text = "HOT!", Font = "Bangers", Face = "Front", Color = C(200, 40, 30) } }),
+		P(RA, B, V(0.72, 0.12, 0.52), C(160, 122, 78), SP, 0, -1.04, -0.12),
+		P(RA, B, V(0.26, 0.36, 0.02), WH, SP, 0.18, -1.3, -0.38, 0, 0, -8),
 		-- mitaines
 		P(RA, B, V(1.06, 0.34, 1.06), C(30, 32, 38), SP, 0, -0.84, 0),
 		P(LA, B, V(1.06, 0.34, 1.06), C(30, 32, 38), SP, 0, -0.84, 0),
@@ -540,13 +544,14 @@ S({ Id = "DeliveryGuy_Legendary", Character = "DeliveryGuy", Rarity = "Legendary
 
 -- ===================== RECEPTIONIST =====================
 local BLUSH_P, PLUM, MINT, AUB, TIGHT = C(255, 150, 200), C(96, 40, 92), C(120, 222, 192), C(150, 52, 38), C(48, 40, 52)
+local LEMON = C(255, 226, 128) -- v5 : chemisier jaune citron années 60 (la base est rose)
 local coil = {}
 for i = 0, 2 do
 	coil[#coil + 1] = P(LA, CY, V(0.06, 0.22, 0.22), MINT, SP, -0.58, -0.45 + i * 0.32, -0.22 + i * 0.08, 0, 0, 90)
 end
 S({ Id = "Receptionist_Rare", Character = "Receptionist", Rarity = "Rare", Name = "Retro Phone Diva",
 	Desc = "Hold, please. Forever. Your call is very important to her nails.",
-	Outfit = { Shirt = BLUSH_P, Pants = TIGHT },
+	Outfit = { Shirt = LEMON, Pants = TIGHT },
 	HideHair = true, HideFace = true,
 	Parts = join(coil, {
 		-- choucroute rétro + bandeau menthe à noeud

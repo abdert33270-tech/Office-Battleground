@@ -3,7 +3,8 @@
 	Source de vérité : attribut Player "Settings" (JSON) répliqué par SettingsService (serveur, sauvegardé dans DataService).
 	API (client) :
 		ClientSettings.get(key)            -> valeur (défaut si absente)
-		ClientSettings.set(key, value)     -> applique tout de suite en local + envoie au serveur (remote "Settings")
+		ClientSettings.set(key, value)     -> applique tout de suite en local + envoie au serveur (remote "Settings"),
+		                                      regroupé par clé (dernière valeur, 0,15 s après le dernier changement, <= 8 / s)
 		ClientSettings.resetAll()          -> remet toutes les valeurs par défaut (menu SETTINGS)
 		ClientSettings.Changed             -> BindableEvent:Event (key, value)
 		ClientSettings.DEFAULTS / ClientSettings.SCHEMA (pour construire le menu)
@@ -70,7 +71,68 @@ function ClientSettings.get(key)
 	return v
 end
 
+-- Envoi au serveur : regroupé par clé (on n'envoie que la dernière valeur, SEND_DELAY s après le dernier clic)
+-- et limité à SEND_RATE / s (le serveur coupe au-delà de 12 / s). Tant qu'une écriture locale n'est pas confirmée
+-- par l'attribut répliqué, pull() ignore cette clé (sinon un vieux JSON ferait « sauter » le bouton en arrière).
+local SEND_DELAY = 0.15
+local SEND_RATE = 8
+local CONFIRM_TIMEOUT = 3
 local remote
+local pending = {} -- [key] = value à envoyer
+local awaiting = {} -- [key] = { value, untilT } : envoyé, pas encore revenu dans l'attribut
+local serverValues = {} -- [key] = dernière valeur lue dans l'attribut
+local lastChange = 0
+local flushScheduled = false
+local tokens, tokensAt = SEND_RATE, 0
+
+local function findRemote()
+	if not remote then
+		local folder = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+		remote = folder and folder:FindFirstChild("Settings")
+	end
+	return remote
+end
+
+local flush
+local function schedule(delay)
+	if flushScheduled then
+		return
+	end
+	flushScheduled = true
+	task.delay(delay, function()
+		flushScheduled = false
+		flush()
+	end)
+end
+
+function flush()
+	local now = os.clock()
+	if now - lastChange < SEND_DELAY then
+		return schedule(SEND_DELAY - (now - lastChange) + 0.01)
+	end
+	local r = findRemote()
+	if not r then
+		return schedule(0.5)
+	end
+	tokens = math.min(SEND_RATE, tokens + (now - tokensAt) * SEND_RATE)
+	tokensAt = now
+	for key, value in pairs(pending) do
+		if serverValues[key] == value then
+			-- revenu à la valeur déjà sauvegardée : rien à envoyer
+			pending[key] = nil
+			awaiting[key] = nil
+		elseif tokens >= 1 then
+			tokens -= 1
+			pending[key] = nil
+			awaiting[key] = { value = value, untilT = now + CONFIRM_TIMEOUT }
+			r:FireServer(key, value)
+		end
+	end
+	if next(pending) ~= nil then
+		schedule(1 / SEND_RATE + 0.02)
+	end
+end
+
 function ClientSettings.set(key, value)
 	value = ClientSettings.sanitize(key, value)
 	if value == nil then
@@ -82,13 +144,9 @@ function ClientSettings.set(key, value)
 	values[key] = value
 	changed:Fire(key, value)
 	if RunService:IsClient() then
-		if not remote then
-			local folder = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-			remote = folder and folder:FindFirstChild("Settings")
-		end
-		if remote then
-			remote:FireServer(key, value)
-		end
+		pending[key] = value
+		lastChange = os.clock()
+		schedule(SEND_DELAY)
 	end
 end
 
@@ -110,11 +168,21 @@ if RunService:IsClient() then
 		if not ok or type(decoded) ~= "table" then
 			return
 		end
+		local now = os.clock()
 		for k, v in pairs(decoded) do
 			local clean = ClientSettings.sanitize(k, v)
-			if clean ~= nil and values[k] ~= clean then
-				values[k] = clean
-				changed:Fire(k, clean)
+			if clean ~= nil then
+				serverValues[k] = clean
+				local w = awaiting[k]
+				if w and (w.value == clean or now > w.untilT) then
+					awaiting[k] = nil
+					w = nil
+				end
+				-- écriture locale en attente (pas encore envoyée, ou envoyée mais pas encore revenue) : on garde la valeur locale
+				if pending[k] == nil and w == nil and values[k] ~= clean then
+					values[k] = clean
+					changed:Fire(k, clean)
+				end
 			end
 		end
 	end
