@@ -36,7 +36,7 @@
 	CartoonFX.isRelevant(pos, a?, v?) est publique (les autres systèmes peuvent s'en servir).
 
 	RÉGLAGES (ClientSettings) : ComicWords, DamageNumbers, ReducedFlashes, Quality (Low/Medium/High), ScreenShake,
-	FOVKick, SFXVolume / MusicVolume (SoundGroups « SFX » et « Music » de SoundService, créés ici côté client).
+	FOVKick, SFXVolume (SoundGroup « SFX » de SoundService, créé ici côté client).
 
 	Tous les éléments sont créés localement (jamais répliqués) et nettoyés automatiquement (Debris).
 	Budget : CartoonFX.count(n) réduit les quantités selon la qualité ET la charge récente (pas d'avalanche de parts).
@@ -87,7 +87,7 @@ do
 		end
 	end
 end
-local SETTING_DEFAULTS = { ComicWords = true, DamageNumbers = true, ReducedFlashes = false, Quality = "High", ScreenShake = 1, FOVKick = true, SFXVolume = 1, MusicVolume = 0.5 }
+local SETTING_DEFAULTS = { ComicWords = true, DamageNumbers = true, ReducedFlashes = false, Quality = "High", ScreenShake = 1, FOVKick = true, SFXVolume = 1 }
 local function setting(key)
 	if ClientSettings then
 		local ok, v = pcall(ClientSettings.get, key)
@@ -212,19 +212,13 @@ end
 function CartoonFX.sfxGroup(): SoundGroup
 	return soundGroup("SFX", "SFXVolume")
 end
-function CartoonFX.musicGroup(): SoundGroup
-	return soundGroup("Music", "MusicVolume")
-end
 
 if RunService:IsClient() then
 	CartoonFX.sfxGroup()
-	CartoonFX.musicGroup()
 	if ClientSettings and ClientSettings.Changed then
 		ClientSettings.Changed:Connect(function(key, value)
 			if key == "SFXVolume" then
 				CartoonFX.sfxGroup().Volume = tonumber(value) or 1
-			elseif key == "MusicVolume" then
-				CartoonFX.musicGroup().Volume = tonumber(value) or 0.5
 			end
 		end)
 	end
