@@ -672,47 +672,69 @@ local function at(t, pose)
 	return f
 end
 
+-- v2 : poids du corps (accroupi à l'armé, fente vers l'avant à l'impact, menton) ajouté aux poses écrites
+local function withBody(pose, dy, dz, n)
+	local o = table.clone(pose)
+	local rj = table.clone(pose.RJ or {})
+	rj.dy = (rj.dy or 0) + dy
+	rj.dz = (rj.dz or 0) + dz
+	o.RJ = rj
+	if n and not pose.N then
+		o.N = n
+	end
+	return o
+end
+local function eased(frame, e)
+	frame.e = e
+	return frame
+end
+
 local POSES = setmetatable({}, { __mode = "k" }) -- [frames] = { armé (final), impact } : sert au jongle dérivé
 local function swing(i, antic, impact)
 	local w, d = M1Cfg.Windup[i] or 0.15, M1_DUR[i]
 	local f = { { t = 0 } }
 	POSES[f] = { i >= 5 and antic[2] or antic, impact }
 	if i >= 5 then
-		table.insert(f, at(w - 0.1, antic[1]))
-		table.insert(f, at(w - 0.04, antic[2]))
-		table.insert(f, at(w, impact))
-		table.insert(f, at(0.5, scaled(impact, 0.92)))
-		table.insert(f, at(0.75, scaled(impact, 0.35)))
-		table.insert(f, { t = 1.0, RS = { p = 0.4, r = -0.3 }, LS = { p = 0.4, r = -0.3 }, RJ = { ln = 0.25 } }) -- souffle (endlag)
+		-- FINISHER d'archétype : enroulé accroupi en 2 temps, impact qui se déplie en fente (easing « back »)
+		local hit = withBody(impact, 0.05, 0.32, { p = -0.05 })
+		table.insert(f, at(w - 0.1, withBody(antic[1], -0.3, -0.05, { p = 0.2 })))
+		table.insert(f, eased(at(w - 0.04, withBody(antic[2], -0.38, -0.08, { p = 0.25 })), "inout"))
+		table.insert(f, eased(at(w, hit), "back"))
+		table.insert(f, at(0.5, scaled(hit, 0.92)))
+		table.insert(f, eased(at(0.75, scaled(hit, 0.35)), "inout"))
+		table.insert(f, { t = 1.0, RS = { p = 0.4, r = -0.3 }, LS = { p = 0.4, r = -0.3 }, RJ = { ln = 0.25, dy = -0.15 }, N = { p = 0.3 } }) -- souffle (endlag)
 	else
-		table.insert(f, at(w - 0.04, antic))
-		table.insert(f, at(w, impact))
-		table.insert(f, at(w + 0.14, scaled(impact, 0.92)))
-		table.insert(f, at(d - 0.14, scaled(impact, 0.3)))
+		-- coups 1-4 : léger poids du corps (genoux à l'armé, buste qui suit le coup)
+		local hit = withBody(impact, 0, 0.14)
+		table.insert(f, at(w - 0.04, withBody(antic, -0.1, -0.04)))
+		table.insert(f, eased(at(w, hit), "back"))
+		table.insert(f, at(w + 0.14, scaled(hit, 0.92)))
+		table.insert(f, eased(at(d - 0.14, scaled(hit, 0.3)), "inout"))
 	end
-	table.insert(f, { t = d })
+	table.insert(f, eased({ t = d }, "inout"))
 	return f
 end
 
 -- variantes au timing d'une anim de base : armé à tA, impact à tI, suivi tenu à tH, fin à tE (+ réception optionnelle)
-local function timed(tA, tI, tH, tE, antic, impact, landing)
-	local f = { { t = 0 }, at(tA, antic), at(tI, impact), at(tH, scaled(impact, 0.94)) }
+local function timed(tA, tI, tH, tE, antic, impact, landing, impactEase)
+	local f = { { t = 0 }, eased(at(tA, antic), "inout"), eased(at(tI, impact), impactEase or "back"), at(tH, scaled(impact, 0.94)) }
 	if landing then
 		table.insert(f, at(tH + (tE - tH) * 0.45, landing))
 	end
-	table.insert(f, { t = tE })
+	table.insert(f, eased({ t = tE }, "inout"))
 	return f
 end
 local UpCfg, SlamCfg, DashCfg, AirCfg = CombatCfg.Uppercut, CombatCfg.Downslam, CombatCfg.DashStrike, CombatCfg.Air
+-- (v2 : accroupi à l'armé, extension / fente à l'impact, regard vers la cible)
 local function up(antic, impact) -- comme Uppercut : impact 0,2 s, fin 0,65 s
-	return timed(UpCfg.Windup - 0.05, UpCfg.Windup, 0.45, 0.65, antic, impact)
+	return timed(UpCfg.Windup - 0.05, UpCfg.Windup, 0.45, 0.65, withBody(antic, -0.4, 0, { p = -0.3 }), withBody(impact, 0.25, 0.15, { p = -0.3 }))
 end
 local function slam(antic, impact) -- comme Downslam : impact 0,16 s, fin 0,7 s
-	return timed(SlamCfg.Windup - 0.04, SlamCfg.Windup, 0.45, 0.7, antic, impact)
+	return timed(SlamCfg.Windup - 0.04, SlamCfg.Windup, 0.45, 0.7, withBody(antic, 0.12, 0, { p = -0.3 }), withBody(impact, -0.4, 0.3, { p = -0.35 }), nil, "in")
 end
-local DASH_LAND = { RJ = { ln = 0.3 }, RH = { p = 0.5 }, LH = { p = -0.3 }, RS = { p = 0.6 }, LS = { p = 0.6 } }
+local DASH_LAND = { RJ = { ln = 0.3, dy = -0.3, dz = 0.1 }, RH = { p = 0.85 }, LH = { p = -0.2 }, RS = { p = 0.6 }, LS = { p = 0.6 }, N = { p = -0.1 } }
 local function dash(antic, impact) -- comme DashStrike : impact 0,16 s, tenu jusqu'à 0,48 s, réception, fin 0,8 s
-	return timed(DashCfg.Windup - 0.06, DashCfg.Windup, 0.48, 0.8, antic, impact, DASH_LAND)
+	return timed(DashCfg.Windup - 0.06, DashCfg.Windup, 0.48, 0.8, withBody(antic, -0.4, 0, { p = -0.25 }), withBody(impact, 0.05, 0.35, { p = -0.2 }), DASH_LAND)
 end
 -- jongle : poses d'un coup au sol, jambes repliées, buste moins penché (impact au Windup Air = 0,11 s, fin 0,4 s)
 local AIR_LEGS = { RH = { p = 1.1 }, LH = { p = 0.6 } }
