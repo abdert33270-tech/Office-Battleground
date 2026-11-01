@@ -440,6 +440,10 @@ M.Kinds = {
 
 	-- Let's Take This Offline : bond sur la cible devant, classeur géant qui plaque au sol
 	CSOffline = function(attacker, cfg, aim, api)
+		-- anticipation interruptible (télégraphe propre au point d'impact, plus bas)
+		if api.windup and not api.windup(attacker, cfg.Windup or 0, cfg, false) then
+			return
+		end
 		local root = Kit.root(attacker)
 		local dir = Kit.aimDir(attacker, aim)
 		local target = frontTarget(attacker, dir, cfg.Range)

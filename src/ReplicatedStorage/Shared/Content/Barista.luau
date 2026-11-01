@@ -324,13 +324,20 @@ M.Kinds = {
 
 	-- To-Go Order : saisie, la victime est enfermée dans un gobelet géant secoué, puis lancée
 	BarToGo = function(attacker, cfg, aim, api)
-		task.wait(0.12)
+		-- anticipation interruptible + télégraphe (AbilityService.windup)
+		if api.windup then
+			if not api.windup(attacker, cfg.Windup or 0.12, cfg) then
+				return
+			end
+		else
+			task.wait(cfg.Windup or 0.12)
+		end
 		if not ready(attacker, api) then
 			return
 		end
 		local root = Kit.root(attacker)
 		local victim = api.Hitbox.box(root.CFrame * CFrame.new(0, 0, -cfg.HitboxOffset), cfg.HitboxSize, attacker, 1)[1]
-		if not victim or Kit.isProtected(victim) then
+		if not victim or Kit.isProtected(victim) or api.CharacterState.isKnockedDown(victim) then
 			return
 		end
 		local vh = victim:FindFirstChildOfClass("Humanoid")

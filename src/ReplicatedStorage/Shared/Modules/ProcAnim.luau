@@ -6,7 +6,9 @@
 
 	Angles (radians), identiques pour les membres gauche et droit (le miroir est géré ici) :
 		p = pitch : vers l'avant (0 = le long du corps, 1.57 = tendu devant, 3.1 = au-dessus de la tête)
-		y = twist du membre, r = écarter sur le côté (négatif = vers l'extérieur)
+		y = twist du membre, r = écarter sur le côté : POSITIF = vers l'extérieur (calcul du C0 R6 + vérifié en jeu, voir
+		SkinRevealController) ; négatif = ramené devant / en travers du corps. NB : beaucoup d'anciennes animations ont
+		été écrites avec la convention inverse (r < 0 « écarté ») : elles restent telles quelles (docs/Animation-v2.md).
 	Joints : RS / LS (épaules), RH / LH (hanches),
 		RJ (buste : tw = rotation (+ = épaule droite en avant), ln = penché en avant, sd = penché à gauche,
 		    dy = hauteur du corps en studs (négatif = accroupi), dz = translation vers l'avant en studs (fente)),
@@ -357,24 +359,24 @@ local ANIMS = {
 	-- réactions DIRECTIONNELLES (ProcAnim.reactionFor : direction de l'attaquant vs LookVector / RightVector de la victime)
 	HitLightL = { -- frappé côté GAUCHE : l'épaule gauche part en arrière, buste et tête rejetés vers la droite
 		{ t = 0 },
-		{ t = 0.05, RJ = { tw = 0.4, sd = -0.22, ln = -0.08, dz = -0.05 }, LS = { p = 0.35, r = -0.75 }, RS = { p = 0.55, r = -0.25 }, LH = { r = -0.25 }, RH = { r = 0.1 }, N = { y = -0.55, r = -0.3, p = -0.1 }, e = "back" },
+		{ t = 0.05, RJ = { tw = 0.4, sd = -0.22, ln = -0.08, dz = -0.05 }, LS = { p = 0.35, r = 0.75 }, RS = { p = 0.55, r = -0.2 }, LH = { r = 0.2 }, RH = { r = -0.05 }, N = { y = -0.55, r = -0.3, p = -0.1 }, e = "back" },
 		{ t = 0.3, e = "inout" },
 	},
 	HitLightR = { -- frappé côté DROIT (miroir)
 		{ t = 0 },
-		{ t = 0.05, RJ = { tw = -0.4, sd = 0.22, ln = -0.08, dz = -0.05 }, RS = { p = 0.35, r = -0.75 }, LS = { p = 0.55, r = -0.25 }, RH = { r = -0.25 }, LH = { r = 0.1 }, N = { y = 0.55, r = 0.3, p = -0.1 }, e = "back" },
+		{ t = 0.05, RJ = { tw = -0.4, sd = 0.22, ln = -0.08, dz = -0.05 }, RS = { p = 0.35, r = 0.75 }, LS = { p = 0.55, r = -0.2 }, RH = { r = 0.2 }, LH = { r = -0.05 }, N = { y = 0.55, r = 0.3, p = -0.1 }, e = "back" },
 		{ t = 0.3, e = "inout" },
 	},
 	HitBack = { -- frappé dans le DOS : poitrine projetée en avant, dos cambré, tête qui part en arrière, bras rejetés
 		{ t = 0 },
-		{ t = 0.05, RJ = { ln = -0.3, dz = 0.3, dy = -0.05 }, RS = { p = -0.6, r = -0.35 }, LS = { p = -0.6, r = -0.35 }, RH = { p = -0.35 }, LH = { p = 0.25 }, N = { p = -0.5 }, e = "back" },
-		{ t = 0.18, RJ = { ln = -0.2, dz = 0.2 }, RS = { p = -0.45, r = -0.3 }, LS = { p = -0.45, r = -0.3 }, RH = { p = -0.25 }, LH = { p = 0.2 }, N = { p = -0.3 } },
+		{ t = 0.05, RJ = { ln = -0.3, dz = 0.3, dy = -0.05 }, RS = { p = -0.6, r = 0.35 }, LS = { p = -0.6, r = 0.35 }, RH = { p = -0.35 }, LH = { p = 0.25 }, N = { p = -0.5 }, e = "back" },
+		{ t = 0.18, RJ = { ln = -0.2, dz = 0.2 }, RS = { p = -0.45, r = 0.3 }, LS = { p = -0.45, r = 0.3 }, RH = { p = -0.25 }, LH = { p = 0.2 }, N = { p = -0.3 } },
 		{ t = 0.36, e = "inout" },
 	},
 	AirHit = { -- frappé EN L'AIR : jambes repliées, buste qui bascule en arrière, bras ballants écartés
 		{ t = 0 },
-		{ t = 0.05, RJ = { ln = -0.5, tw = 0.15 }, RS = { p = 1.0, r = -1.0 }, LS = { p = 1.0, r = -1.0 }, RH = { p = 1.0 }, LH = { p = 0.55 }, N = { p = -0.4 }, e = "back" },
-		{ t = 0.3, RJ = { ln = -0.4, tw = 0.1 }, RS = { p = 0.9, r = -0.9 }, LS = { p = 0.9, r = -0.9 }, RH = { p = 0.85 }, LH = { p = 0.5 }, N = { p = -0.3 } },
+		{ t = 0.05, RJ = { ln = -0.5, tw = 0.15 }, RS = { p = 1.0, r = 1.0 }, LS = { p = 1.0, r = 1.0 }, RH = { p = 1.0 }, LH = { p = 0.55 }, N = { p = -0.4 }, e = "back" },
+		{ t = 0.3, RJ = { ln = -0.4, tw = 0.1 }, RS = { p = 0.9, r = 0.9 }, LS = { p = 0.9, r = 0.9 }, RH = { p = 0.85 }, LH = { p = 0.5 }, N = { p = -0.3 } },
 		{ t = 0.45, e = "inout" },
 	},
 	BlockPush = { -- coup encaissé en garde : la garde tient, mais on glisse en arrière, genoux qui plient
