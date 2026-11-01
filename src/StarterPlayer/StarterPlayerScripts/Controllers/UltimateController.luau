@@ -4,7 +4,12 @@
 	- Phase "Cutin" (automatique) : panneau cut-in (lanceur + victime), bandeau pour les spectateurs proches,
 	  assombrissement du monde (< 80 studs), son, mini hit-stop, caméra dramatique du lanceur (orbite sur son visage).
 	- Phase "End" (automatique) : rend la caméra, retire bandes noires / assombrissement / objets suivis (K.track / K.prop).
-	- Sécurité : si "End" n'arrive jamais, nettoyage forcé au bout de 10 s.
+	- Lisibilité (v3) : bandes noires pendant toute l'ulti (lanceur + victime), contour (Highlight) sur le lanceur puis sur la
+	  victime dès qu'elle est tenue, titre de temps fort (def.Beats[phase] ou payload.beat), hit-stop sur chaque coup
+	  (phase interne "_Hit" envoyée par U.hit / U.finish), pose d'anticipation (phase interne "_Windup" de U.windup).
+	  Les phases qui commencent par "_" ne sont PAS transmises au Client du module.
+	- Sécurité : si "End" n'arrive jamais, nettoyage forcé au bout de 12 s ; caméra rendue tout de suite à la mort / au respawn
+	  et si le lanceur disparaît.
 	- Garde le personnage local ancré tant que le serveur l'ancre (attribut UltAnchor), même si un hit-stop local le relâche.
 	API : UltimateController.request(target) = ce que fait la touche G pendant l'Overtime (CombatController.transform le fait déjà).
 ]]
@@ -21,7 +26,8 @@ UltimateController.Priority = 45
 
 local player = Players.LocalPlayer
 local defs = {}
-local live = {} -- [seq] = true tant que l'ulti n'est pas finie
+local live = {} -- [seq] = data de la phase "Cutin" tant que l'ulti n'est pas finie
+local lit = {} -- [seq] = { [model] = true } persos déjà entourés
 
 local function getDef(id)
 	if type(id) ~= "string" then
@@ -62,6 +68,87 @@ local function runClient(def, data)
 	end
 end
 
+local function highlightOnce(data, model, color)
+	if typeof(model) ~= "Instance" or not model.Parent then
+		return
+	end
+	local set = lit[data.seq]
+	if not set then
+		set = {}
+		lit[data.seq] = set
+	end
+	if set[model] then
+		return
+	end
+	set[model] = true
+	K.highlight(data, model, color, 0.85)
+end
+
+-- la victime est entourée dès qu'elle est tenue par CETTE ulti (attribut UltHeld = seq)
+local function checkVictim(data)
+	local v = data.target
+	if typeof(v) == "Instance" and v.Parent and v:GetAttribute("UltHeld") == data.seq then
+		local r = K.root(v)
+		if r and K.near(r.Position, 90) then
+			highlightOnce(data, v, Color3.fromRGB(255, 70, 70))
+		end
+	end
+end
+
+-- hit-stop automatique sur chaque coup d'ulti (U.hit / U.finish)
+local function builtinHit(data)
+	local v = data.victim
+	local vr = K.root(v)
+	if not (K.involved(data) or (vr and K.near(vr.Position, 90))) then
+		return
+	end
+	if typeof(v) == "Instance" and v == data.target then
+		highlightOnce(data, v, Color3.fromRGB(255, 70, 70))
+	end
+	local fin = data.fin == true
+	-- laisse la pose de frappe arriver, puis gèle
+	K.at(data, 0.035, function()
+		K.hitStop({ data.caster, v }, fin and 0.16 or 0.07)
+	end)
+	if fin and K.involved(data) then
+		K.fov(6)
+	end
+end
+
+-- anticipation automatique (U.windup)
+local function builtinWindup(data)
+	local c = data.caster
+	local r = K.root(c)
+	if not r or not (K.involved(data) or K.near(r.Position, 90)) then
+		return
+	end
+	K.windup(c, data.t or 0.2, data.color)
+	if K.involved(data) then
+		K.fov(-4)
+	end
+end
+
+-- titre du temps fort
+local function beatTitle(def, data)
+	local text = data.beat
+	if text == nil and def and type(def.Beats) == "table" then
+		text = def.Beats[data.phase]
+	end
+	if type(text) ~= "string" then
+		return
+	end
+	local r = K.root(data.caster)
+	if K.involved(data) or (r and K.near(r.Position, 80)) then
+		K.beatTitle(data, text, data.color)
+	end
+end
+
+local function cleanupSeq(data)
+	live[data.seq] = nil
+	lit[data.seq] = nil
+	K._cleanup(data)
+end
+
 -- cut-in automatique
 local function builtinCutin(data)
 	local c = data.caster
@@ -90,11 +177,16 @@ local function builtinCutin(data)
 	if c then
 		K.freezeAnim(c, 0.12)
 	end
+	-- bandes noires pendant toute l'ulti (lanceur + victime), contour sur le lanceur
+	K.letterbox(data, true, 0.25)
+	if near then
+		highlightOnce(data, c, data.color)
+	end
 	-- caméra du lanceur : orbite serrée sur le visage, devant lui
 	if root then
 		local head = c:FindFirstChild("Head") or root
 		K.shot(data, "orbit", {
-			only = "caster", tag = "cutin", at = head, basis = root.CFrame,
+			only = "caster", tag = "cutin", at = head, basis = root.CFrame, fit = false,
 			r0 = 9, r1 = 5.2, dur = dur, height = 0.6, angle = 35, speed = -28,
 			lookOffset = Vector3.new(0, -0.3, 0), fov = 55,
 		})
@@ -111,24 +203,60 @@ local function onFX(data)
 	if type(data) ~= "table" or type(data.seq) ~= "number" then
 		return
 	end
+	local phase = data.phase
+	-- phases internes (ne vont pas au module)
+	if phase == "_Hit" then
+		if live[data.seq] then
+			pcall(builtinHit, data)
+		end
+		return
+	elseif phase == "_Windup" then
+		if live[data.seq] then
+			pcall(builtinWindup, data)
+		end
+		return
+	end
 	local def = getDef(data.id)
-	if data.phase == "Cutin" then
-		live[data.seq] = true
+	if phase == "Cutin" then
+		live[data.seq] = data
 		local ok, err = pcall(builtinCutin, data)
 		if not ok then
 			warn("[UltimateController] cut-in", err)
 		end
-		task.delay(10, function()
+		-- si le lanceur disparaît (mort, départ) sans "End", on nettoie quand même
+		local c = data.caster
+		if typeof(c) == "Instance" then
+			local conn
+			conn = c.AncestryChanged:Connect(function(_, parent)
+				if parent == nil then
+					conn:Disconnect()
+					task.delay(0.6, function()
+						if live[data.seq] then
+							cleanupSeq(data)
+						end
+					end)
+				end
+			end)
+			task.delay(12, function()
+				if conn.Connected then
+					conn:Disconnect()
+				end
+			end)
+		end
+		task.delay(12, function()
 			if live[data.seq] then
-				live[data.seq] = nil
-				K._cleanup(data)
+				cleanupSeq(data)
 			end
 		end)
+	elseif phase ~= "End" and live[data.seq] then
+		pcall(checkVictim, data)
+		pcall(beatTitle, def, data)
 	end
 	runClient(def, data)
-	if data.phase == "End" then
+	if phase == "End" then
 		live[data.seq] = nil
 		task.delay(0.05, function()
+			lit[data.seq] = nil
 			K._cleanup(data)
 		end)
 	end
@@ -154,9 +282,22 @@ function UltimateController.init()
 			end
 		end)
 	end
-	player.CharacterAdded:Connect(hook)
+	-- mort / respawn : la caméra et les bandes noires sont rendues tout de suite
+	local function onCharacter(c)
+		hook(c)
+		K.releaseAll(true)
+		K.letterbox(nil, false, 0.1)
+		local hum = c:WaitForChild("Humanoid", 10)
+		if hum and hum:IsA("Humanoid") then
+			hum.Died:Connect(function()
+				K.releaseAll(true)
+				K.letterbox(nil, false, 0.2)
+			end)
+		end
+	end
+	player.CharacterAdded:Connect(onCharacter)
 	if player.Character then
-		hook(player.Character)
+		task.spawn(onCharacter, player.Character)
 	end
 	RunService.Stepped:Connect(function()
 		local c = player.Character

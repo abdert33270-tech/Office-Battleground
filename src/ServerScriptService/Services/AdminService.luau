@@ -8,6 +8,7 @@
 	/cash <n>     /crate [n]     /allskins   (skins : SkinService)
 	/givechar <playerName|me> <charId|all>     /takechar <playerName|me> <charId|all>   (UnlockService)
 	/level <n> [playerName|me]   (DataService.setLevel : niveau + récompenses des niveaux jamais atteints)
+	/resetdaily [full]   (récompense quotidienne réclamable de nouveau ; full = série à zéro)     /afkpay   (paie AFK tout de suite)
 	/char force le perso (sans déblocage, pour les tests).
 ]]
 local Players = game:GetService("Players")
@@ -181,7 +182,7 @@ end
 local COMMANDS = {}
 
 COMMANDS.help = function(player)
-	reply(player, "/spawn /event /events /collapse /nextfloor /skip /overtime /char /god /heal /dummy /xp /grade /level /cash /crate /allskins /givechar /takechar")
+	reply(player, "/spawn /event /events /collapse /nextfloor /skip /overtime /char /god /heal /dummy /xp /grade /level /cash /crate /allskins /givechar /takechar /resetdaily /afkpay")
 end
 
 COMMANDS.spawn = function(player, args)
@@ -380,6 +381,25 @@ end
 COMMANDS.allskins = function(player)
 	if call(player, "SkinService", "grantAll", player) then
 		reply(player, "All skins unlocked")
+	end
+end
+
+COMMANDS.resetdaily = function(player, args)
+	local full = string.lower(args[1] or "") == "full"
+	if call(player, "DailyRewardService", "reset", player, full) then
+		reply(player, full and "Daily streak wiped" or "Daily reward claimable again")
+	end
+end
+
+COMMANDS.afkpay = function(player)
+	local afk = service("AFKService")
+	if not afk or type(afk.forcePay) ~= "function" then
+		return reply(player, "AFKService is not available yet", false)
+	end
+	if afk.forcePay(player) then
+		reply(player, "AFK payout incoming")
+	else
+		reply(player, "Enter the AFK Break Room first", false)
 	end
 end
 

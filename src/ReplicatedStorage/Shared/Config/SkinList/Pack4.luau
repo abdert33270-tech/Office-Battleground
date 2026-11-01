@@ -484,6 +484,9 @@ S({ Id = "MarketingGuru_Epic", Character = "MarketingGuru", Rarity = "Epic", Nam
 		-- montre en or (poignet gauche)
 		P(LA, B, V(1.07, 0.14, 1.07), GOLD, ME, 0, -0.62, 0),
 		P(LA, B, V(0.32, 0.22, 0.05), CYAN, NE, 0, -0.62, -0.56),
+		-- mégaphone (main droite, v4 : objet tenu)
+		P(RA, CY, V(0.8, 0.36, 0.36), WHT, SP, 0, -1.05, -0.72, 0, 90, 0),
+		P(RA, CY, V(0.14, 0.78, 0.78), MAG, SP, 0, -1.05, -1.16, 0, 90, 0),
 	},
 	-- manches remontées
 	sym(LA, RA, function(l)
@@ -897,8 +900,8 @@ S({ Id = "Mascot_Epic", Character = "Mascot", Rarity = "Epic", Name = "Super Mas
 		R(H, V(0.22, 0.34, 0.12), HAIRB, SP, 0.12, 0.5, -0.64, 0, 0, 30),
 		-- cape + col + fermoirs + emblème
 		P(T, B, V(1.9, 0.4, 0.15), MRED, FA, 0, 1.15, 0.45, -15, 0, 0),
-		P(T, B, V(2.3, 3.3, 0.08), MRED, FA, 0, -0.6, 0.68, 6, 0, 0),
-		P(T, B, V(0.95, 0.95, 0.05), MUST, SP, 0, 0.25, 0.65, 6, 0, 0, { Text = { Text = "M", Font = "Bangers", Color = MRED, Face = "Back" } }),
+		P(T, B, V(2.3, 3.3, 0.08), MRED, FA, 0, -0.6, 0.68, -6, 0, 0),
+		P(T, B, V(0.95, 0.95, 0.05), MUST, SP, 0, 0.25, 0.665, -6, 0, 0, { Text = { Text = "M", Font = "Bangers", Color = MRED, Face = "Back" } }),
 		R(T, V(0.28, 0.28, 0.12), MUST, ME, -0.72, 0.82, -0.52),
 		R(T, V(0.28, 0.28, 0.12), MUST, ME, 0.72, 0.82, -0.52),
 		-- ceinture
@@ -988,9 +991,9 @@ S({ Id = "Mascot_Legendary", Character = "Mascot", Rarity = "Legendary", Name = 
 		P(T, B, V(0.2, 0.2, 0.2), MAG, SP, 0, 3.4, 0, { Transparency = 1,
 			Particles = { Kind = "Sparkle", Color = MAG, Rate = 8, Speed = 4, Size = 0.3, Life = 1.2, Spread = 180, Accel = -4, React = true } }),
 		-- canon à t-shirts sur l'épaule (transformation)
-		cannon(CY, V(1.7, 0.5, 0.5), C(70, 70, 80), ME, 1.35, 1.4, -0.1),
+		cannon(CY, V(1.7, 0.5, 0.5), C(70, 70, 80), ME, 1.35, 1.26, -0.1),
 		cannon(CY, V(0.9, 0.38, 0.38), MRED, SP, 1.35, 1.05, 0.45),
-		cannon(CY, V(0.1, 0.6, 0.6), MUST, NE, 1.35, 1.4, -0.95, {
+		cannon(CY, V(0.1, 0.6, 0.6), MUST, NE, 1.35, 1.26, -0.95, {
 			Particles = { Kind = "Spark", Color = WHT, Rate = 10, Dir = "Front", Speed = 9, Size = 0.5, Life = 0.6, Spread = 15, TransformOnly = true } }),
 	},
 	-- épaulettes de football, manchettes en fourrure, gros gants

@@ -413,16 +413,22 @@ S({ Id = "Consultant_Legendary", Character = "Consultant", Rarity = "Legendary",
 		-- mallette dorée (mesh généré) main gauche
 		{ Limb = LA, Asset = "Consultant_Legendary_Briefcase", Size = V(1.7, 1.85, 1.0), Offset = CFrame.new(0, -1.9, 0) * CFrame.Angles(0, rad(90), 0), Color = GOLD, Material = "Foil", Light = GOLD },
 		-- flèche de croissance holographique au-dessus de l'épaule droite
-		P(T, B, V(0.25, 1.0, 0.1), C(90, 230, 120), NE, 1.65, 1.75, 0, 0, 0, -30, { Anim = { Bob = 0.2, BobSpeed = 1.6, Seed = 41 } }),
-		P(T, WE, V(0.1, 0.5, 0.6), C(90, 230, 120), NE, 1.95, 2.25, 0, 0, 90, -30, { Anim = { Bob = 0.2, BobSpeed = 1.6, Seed = 41 } }),
-		-- graphiques holographiques en orbite
-		holo(0, 5, 2.4, 0.6, ORANGE, V(0.35, 0.8, 0.08), 52), holo(1, 5, 2.4, 0.6, TEAL, V(0.35, 1.1, 0.08), 52),
-		holo(2, 5, 2.4, 0.6, YELLOW, V(0.35, 0.6, 0.08), 52), holo(3, 5, 2.4, 0.6, PINK, V(0.35, 1.3, 0.08), 52),
-		holo(4, 5, 2.4, 0.6, ROYAL2, V(0.7, 0.7, 0.08), 52),
+		P(T, B, V(0.25, 1.0, 0.1), ROYAL2, NE, 1.65, 1.75, 0, 0, 0, -30, { Anim = { Bob = 0.2, BobSpeed = 1.6, Seed = 41 } }),
+		P(T, WE, V(0.1, 0.5, 0.6), ROYAL2, NE, 1.95, 2.25, 0, 0, 90, -30, { Anim = { Bob = 0.2, BobSpeed = 1.6, Seed = 41 } }),
+		-- graphiques holographiques en orbite (v4 : bleu roi / or, plus d'arc-en-ciel)
+		holo(0, 5, 2.4, 0.6, ROYAL2, V(0.35, 0.8, 0.08), 52), holo(1, 5, 2.4, 0.6, GOLD2, V(0.35, 1.1, 0.08), 52),
+		holo(2, 5, 2.4, 0.6, ROYAL2, V(0.35, 0.6, 0.08), 52), holo(3, 5, 2.4, 0.6, GOLD2, V(0.35, 1.3, 0.08), 52),
+		holo(4, 5, 2.4, 0.6, ROYAL, V(0.7, 0.7, 0.08), 52),
+		-- v4 : col relevé doré + cape marine bordée d'or (rx négatif = le bas s'écarte du dos)
+		P(T, B, V(2.0, 0.5, 0.1), GOLD, FO, 0, 1.12, 0.52, 15, 0, 0),
+		P(T, B, V(2.1, 2.4, 0.08), NAVY, FA, 0, -0.45, 0.6, -6, 0, 0),
+		P(T, B, V(2.12, 0.08, 0.1), GOLD2, NE, 0, -1.64, 0.735, -6, 0, 0),
 	},
-	-- manchettes + chaussures vernies
+	-- épaulettes « power suit » + manchettes + chaussures vernies
 	sym(LA, RA, function(l, s)
 		return {
+			R(l, V(1.3, 0.5, 1.3), GOLD, FO, 0.06 * s, 0.9, 0),
+			P(l, B, V(1.32, 0.06, 1.32), ROYAL2, NE, 0.06 * s, 0.72, 0),
 			P(l, B, V(1.07, 0.2, 1.07), WHT, SP, 0, -0.75, 0),
 			P(l, BA, V(0.16, 0.16, 0.16), ROYAL2, NE, 0.5 * s, -0.75, 0),
 		}

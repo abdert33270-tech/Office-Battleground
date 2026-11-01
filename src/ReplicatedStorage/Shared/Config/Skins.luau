@@ -9,12 +9,28 @@
 	          crate.Odds = {Rare, Epic, Legendary} (somme 100, Legendary <= 5 vérifié au chargement),
 	          crate.Pool = nil (tous) | {charId...}, crate.SkinPool = {Rare={ids}, Epic={ids}, Legendary={ids}} (calculé).
 	          Skins.Crate = alias de la Mystery Briefcase.
+	Persos SANS skins (Skins.NoSkins, ex. Bacon, ou fiche Characters avec NoSkins = true) : pas de skin Base,
+	ByCharacter[charId] = {} (liste vide), exclus des caisses ; Skins.hasSkins(charId) -> false.
 ]]
 local Characters = require(script.Parent.Characters)
 
 local Skins = {}
 
 Skins.AVATAR = "Avatar"
+
+-- persos « uniques » sans aucun skin (look fixe). Bacon : perso phare, ONE OF A KIND par design.
+Skins.NoSkins = { Bacon = true }
+
+function Skins.hasSkins(charId)
+	if type(charId) ~= "string" or Skins.NoSkins[charId] then
+		return false
+	end
+	local def = Characters[charId]
+	return not (type(def) == "table" and def.NoSkins == true)
+end
+
+-- plafonds de pièces (perf), mêmes valeurs que Modules/SkinBuilder
+local PART_CAPS = { Rare = 30, Epic = 40, Legendary = 60 }
 
 Skins.Rarities = {
 	Order = { "Base", "Rare", "Epic", "Legendary" },
@@ -109,7 +125,9 @@ end
 -- skins de base générés depuis Config/Characters (nouveau perso = nouveau skin Base automatiquement)
 for _, charId in ipairs(Characters.Order) do
 	local def = Characters[charId]
-	if type(def) == "table" then
+	if type(def) == "table" and not Skins.hasSkins(charId) then
+		Skins.ByCharacter[charId] = {} -- perso sans skins : liste vide (pas d'uniforme non plus)
+	elseif type(def) == "table" then
 		local skin = {
 			Id = Skins.baseId(charId),
 			Character = charId,
@@ -142,6 +160,9 @@ local function check(e)
 	if type(e.Character) ~= "string" or not Skins.ByCharacter[e.Character] then
 		return "unknown Character " .. tostring(e.Character)
 	end
+	if not Skins.hasSkins(e.Character) then
+		return "character " .. e.Character .. " has no skins by design"
+	end
 	if e.Rarity ~= "Rare" and e.Rarity ~= "Epic" and e.Rarity ~= "Legendary" then
 		return "bad Rarity " .. tostring(e.Rarity)
 	end
@@ -150,6 +171,10 @@ local function check(e)
 	end
 	if e.Parts ~= nil and type(e.Parts) ~= "table" then
 		return "Parts must be a table"
+	end
+	if type(e.Parts) == "table" and #e.Parts > (PART_CAPS[e.Rarity] or 30) then
+		-- pas bloquant : SkinBuilder coupe au plafond
+		warn("[Skins] " .. e.Id .. " : " .. #e.Parts .. " pièces (max " .. (PART_CAPS[e.Rarity] or 30) .. ")")
 	end
 	if e.FX ~= nil and type(e.FX) ~= "table" then
 		return "FX must be a table"
@@ -209,13 +234,16 @@ for _, c in ipairs(Skins.Crates) do
 			if not Skins.ByCharacter[charId] then
 				warn("[Skins] crate " .. c.Id .. " : perso inconnu " .. tostring(charId))
 			end
-			allowed[charId] = true
+			if Skins.hasSkins(charId) then
+				allowed[charId] = true
+			end
 		end
 	end
 	c.SkinPool = { Rare = {}, Epic = {}, Legendary = {} }
 	for r, ids in pairs(Skins.Pool) do
 		for _, id in ipairs(ids) do
-			if not allowed or allowed[Skins.List[id].Character] then
+			local ch = Skins.List[id].Character
+			if (not allowed or allowed[ch]) and Skins.hasSkins(ch) then
 				table.insert(c.SkinPool[r], id)
 			end
 		end

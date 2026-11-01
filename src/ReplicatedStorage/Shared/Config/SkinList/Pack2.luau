@@ -560,7 +560,7 @@ do
 			P(T, B, V(2.12, 0.08, 0.1), GOLD, NE, 0, -1.645, 0.756, -6, 0, 0),
 			P(T, B, V(2.2, 0.5, 0.1), GOLD, FO, 0, 1.12, 0.56, 18, 0, 0),
 			-- pièce d'or géante (auréole)
-			P(H, CY, V(0.14, 2.0, 2.0), GOLD, ME, 0, 0.55, 1.05, 0, 90, 0, { Reflect = 0.3, Anim = { Bob = 0.1, Seed = 52 } }),
+			P(H, CY, V(0.14, 2.0, 2.0), GOLD, ME, 0, 0.55, 1.05, 0, 90, 0, { Reflect = 0.3, Light = C(255, 210, 90), Anim = { Bob = 0.1, Seed = 52 } }),
 			P(H, CY, V(0.17, 1.6, 1.6), GOLD2, ME, 0, 0.55, 1.05, 0, 90, 0, { Anim = { Bob = 0.1, Seed = 52 } }),
 			P(H, B, V(1.2, 1.2, 0.2), GOLD, SP, 0, 0.55, 1.05, { Transparency = 1, Text = { Text = "$", Color = C(255, 240, 150), Font = "Black", Face = "Both" },
 				Anim = { Bob = 0.1, Seed = 52 } }),
@@ -984,6 +984,9 @@ do
 			P(RA, CY, V(0.65, 0.16, 0.16), GOLD, ME, 0, -1.05, -0.6, 0, 0, 90, { Reflect = 0.2 }),
 			P(RA, BA, V(0.36, 0.36, 0.36), GOLD, FO, 0, -0.62, -0.6),
 			P(RA, CY, V(0.06, 0.2, 0.2), LIL, NE, 0, -0.8, -0.6, 0, 0, 90),
+			-- queue-de-pie à sequins (v4 : silhouette de dos ; rx négatif = le bas s'écarte du corps)
+			P(T, B, V(0.85, 1.3, 0.08), SEQ, FO, -0.46, -1.3, 0.58, -8, 0, 5),
+			P(T, B, V(0.85, 1.3, 0.08), SEQ, FO, 0.46, -1.3, 0.58, -8, 0, -5),
 			-- roue des prix (pièce générée) flottant à côté
 			A(T, "HRManager_Legendary_Wheel", V(3.0, 3.6, 1.5), -2.6, 1.5, 0.3, 0, 20, 0, { Anim = { Bob = 0.15, Swing = 6, SwingSpeed = 1, Seed = 92 } }),
 			-- panneau WINNER (transformation)

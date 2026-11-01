@@ -409,7 +409,7 @@ S({ Id = "DeliveryGuy_Epic", Character = "DeliveryGuy", Rarity = "Epic", Name = 
 		E(H, V(1.38, 0.46, 0.4), C(20, 22, 30), GL, 0, 0.14, -0.58, { Reflect = 0.5 }),
 		P(H, B, V(1.1, 0.04, 0.05), STRIPE, NE, 0, 0.38, -0.72),
 		E(H, V(1.3, 0.52, 0.56), WH, SP, 0, -0.3, -0.42),
-		P(H, B, V(0.9, 0.06, 0.32), CARB, SP, 0, 0.86, 0.52),
+		P(H, B, V(0.9, 0.06, 0.32), CARB, SP, 0, 0.74, 0.52),
 		-- collerette HANS
 		P(T, B, V(1.8, 0.26, 1.2), CARB, SP, 0, 1.06, 0.05),
 		-- gants + manchettes
@@ -496,9 +496,9 @@ S({ Id = "DeliveryGuy_Legendary", Character = "DeliveryGuy", Rarity = "Legendary
 		E(RA, V(1.2, 0.34, 1.2), GOLD, ME, 0, 1.0, 0),
 		E(LA, V(1.2, 0.34, 1.2), GOLD, ME, 0, 1.0, 0),
 		-- cape royale + hermine
-		P(T, B, V(2.2, 2.8, 0.1), CRIM, FA, 0, -0.5, 0.62, 6, 0, 0),
+		P(T, B, V(2.2, 2.8, 0.1), CRIM, FA, 0, -0.5, 0.62, -6, 0, 0),
 		E(T, V(2.4, 0.36, 0.55), WH, FA, 0, 0.95, 0.55),
-		P(T, B, V(2.22, 0.12, 0.14), GOLD, NE, 0, -1.88, 0.77, 6, 0, 0),
+		P(T, B, V(2.22, 0.12, 0.14), GOLD, NE, 0, -1.88, 0.77, -6, 0, 0),
 		P(T, BA, V(0.1, 0.1, 0.1), C(20, 20, 25), SP, -0.6, 1.0, 0.83),
 		P(T, BA, V(0.1, 0.1, 0.1), C(20, 20, 25), SP, 0, 1.08, 0.84),
 		P(T, BA, V(0.1, 0.1, 0.1), C(20, 20, 25), SP, 0.6, 1.0, 0.83),

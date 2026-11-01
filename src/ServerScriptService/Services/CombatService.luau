@@ -1,9 +1,13 @@
 --[[
-	CombatService — autorité serveur sur tous les coups.
-	- M1 (combo 4 coups) + variantes : Uppercut (Espace + 4e coup), jongle aérien, Downslam (4e coup en l'air),
-	  Dropkick (Shift+M1 ou M1 juste après un dash).
-	- Dash (annule la fin d'un combo), Block / Parry / Guard Break, Combo Breaker.
+	CombatService — autorité serveur sur tous les coups. Système « ABA » (voir Config/Combat et docs/Combat-ABA.md).
+	- Chaîne de 5 M1 (1-4 légers avec vrai hitstun, 5e = FINISHER lourd qui renverse), cadence lente et lisible.
+	  Variantes du 5e coup : Espace maintenu = UPPERCUT (+ saut automatique, 3 M1 en l'air, le 3e = DOWNSLAM),
+	  en l'air = DOWNSLAM. Dash avant + M1 = DASH STRIKE (lourd, recharge).
+	- Dash directionnel (avant / arrière / côté), EVASIVE (Q pendant un hitstun, longue recharge).
+	- Block avec jauge de garde, PERFECT BLOCK (parade), GUARD BREAK (coup lourd sur un block normal ou jauge vide).
+	- Renversé (knockdown) après les gros coups : intouchable puis relevé invulnérable (pas de jongle infini).
 	- applyHit() = point d'entrée UNIQUE de tous les dégâts du jeu (M1, objets, lancers, attaques, événements).
+	  Ignore les coups quand la victime ou l'attaquant est en zone sûre (attribut SafeZone).
 	- Hit-stop serveur (le recul part après le gel), éjection en tournoyant, wall splat, décor cassable.
 ]]
 local Players = game:GetService("Players")
@@ -26,6 +30,7 @@ CombatService.damageMods = {}      -- passifs / statuts : function(p) qui modifi
 
 local FX, Anim
 local M1 = CombatConfig.M1
+local TOL = 0.1 -- tolérance (s) sur les délais serveur : gigue réseau entre deux clics
 
 local function now()
 	return workspace:GetServerTimeNow()
@@ -219,7 +224,7 @@ local function watchFlight(victim: Model, attacker: Model?, duration: number)
 			lv.Parent = root
 			Debris:AddItem(lv, 0.1)
 			local hum = victim:FindFirstChildOfClass("Humanoid")
-			if hum and hum.Health > 0 then
+			if hum and hum.Health > 0 and not CharacterState.isProtected(victim) and not CharacterState.inSafeZone(victim) then
 				CharacterState.recordHit(victim, attacker, "Wall", attacker and "Combat" or "Event")
 				hum:TakeDamage(CombatConfig.WallSplat.Damage)
 				CharacterState.stun(victim, CombatConfig.WallSplat.Stun)
@@ -251,7 +256,7 @@ local function knockback(victim: Model, velocity: Vector3, tumble: boolean, stun
 		hum.PlatformStand = true
 		spin(root, power or 0.5)
 		task.delay(math.max(0.55, stun), function()
-			if hum.Parent and hum.Health > 0 then
+			if hum.Parent and hum.Health > 0 and not CharacterState.isKnockedDown(victim) then
 				hum.PlatformStand = false
 			end
 		end)
@@ -325,15 +330,21 @@ local function slam(victim: Model, attacker: Model?, spec)
 			if spec.Pin then
 				-- plaqué au sol : il reste allongé, étourdi
 				FX:FireAllClients({ k = "Pinned", p = ground, v = victim, a = attacker })
+			end
+			if spec.Knockdown then
+				CharacterState.knockdown(victim, CombatConfig.Knockdown.Duration)
+			elseif spec.Pin then
 				CharacterState.stun(victim, spec.Stun)
 			elseif (spec.BounceUp or 0) > 0 then
 				knockback(victim, Vector3.new(0, spec.BounceUp, 0), false, spec.Stun, attacker)
 			end
-			task.delay(math.max(0.6, spec.Stun), function()
-				if hum.Parent and hum.Health > 0 then
-					hum.PlatformStand = false
-				end
-			end)
+			if not spec.Knockdown then
+				task.delay(math.max(0.6, spec.Stun), function()
+					if hum.Parent and hum.Health > 0 and not CharacterState.isKnockedDown(victim) then
+						hum.PlatformStand = false
+					end
+				end)
+			end
 		end
 	end)
 end
@@ -355,15 +366,36 @@ function CombatService.addOvertime(character: Model, amount: number)
 end
 
 ------------------------------------------------------------------------
+-- Guard break : le block est cassé (coup lourd sur un block normal, ou jauge de garde vide)
+------------------------------------------------------------------------
+local function guardBreak(victim: Model, attacker: Model?, p, root: BasePart, hum: Humanoid)
+	releaseTether(victim)
+	CharacterState.guardBreak(victim, CombatConfig.Block.GuardBreakStun)
+	FX:FireAllClients({ k = "GuardBreak", p = root.Position + Vector3.new(0, 1.5, 0), v = victim, a = attacker })
+	Anim:FireAllClients(victim, "GuardBroken")
+	local chip = (p.damage or 0) * (1 - CombatConfig.Block.Reduction)
+	if chip > 0 then
+		CharacterState.recordHit(victim, attacker, p.weapon, p.cause)
+		hum:TakeDamage(chip)
+	end
+	knockback(victim, (p.dir or Vector3.new(0, 0, -1)) * 9, false, 0.1, attacker)
+	if attacker then
+		CombatService.addOvertime(attacker, (p.damage or 0) * CombatConfig.Overtime.DealMult)
+	end
+	Signals.GuardBroken:Fire(victim, attacker)
+end
+
+------------------------------------------------------------------------
 -- applyHit : point d'entrée unique des dégâts
 --[[
 	p = {
 		attacker: Model?, victim: Model, damage, dir: Vector3 (horizontal, de l'attaquant vers la victime),
 		knockback, up, stun, category, power, words?, material?, hitPos?, weapon?, cause?, seq?,
 		unblockable?, air? (suspension aérienne), launch? (Vector3 : vitesse imposée), slam? (spec Downslam),
-		itemId?, kitchen?, finisher?, noFlinch?
+		itemId?, kitchen?, finisher?, noFlinch?, pin?,
+		heavy? (casse le block ; sinon déduit de category == "Heavy"), knockdown? (renverse la victime)
 	}
-	Retourne "Hit" | "Blocked" | "Parried" | nil
+	Retourne "Hit" | "Blocked" | "Parried" | "GuardBreak" | nil
 ]]
 ------------------------------------------------------------------------
 function CombatService.applyHit(p)
@@ -377,6 +409,14 @@ function CombatService.applyHit(p)
 		return nil
 	end
 	local attacker = p.attacker
+	-- zone sûre (zone AFK) : personne n'y frappe ni n'y est frappé
+	if CharacterState.inSafeZone(victim) or CharacterState.inSafeZone(attacker) then
+		return nil
+	end
+	-- renversé : intouchable (sauf coups imparables = ultimes) -> pas de jongle infini
+	if not p.unblockable and CharacterState.isKnockedDown(victim) then
+		return nil
+	end
 	-- laisse de combo : seul un coup « collant » du même attaquant la garde, tout autre coup la relâche
 	if tethers[victim] and not (p.tether and attacker and tethers[victim].a == attacker) then
 		releaseTether(victim)
@@ -389,6 +429,7 @@ function CombatService.applyHit(p)
 	end
 	local vs = CharacterState.get(victim)
 	local B = CombatConfig.Block
+	local heavy = p.heavy == true or p.category == "Heavy"
 
 	-- garde : seulement contre un coup de face
 	if vs.blocking and not p.unblockable then
@@ -396,15 +437,18 @@ function CombatService.applyHit(p)
 		if frontal then
 			releaseTether(victim)
 			local t = os.clock()
-			if t - vs.blockStart <= B.ParryWindow then
-				-- PARADE : l'attaquant est repoussé, étourdi et désarmé
+			if t - vs.blockStart <= (B.PerfectWindow or B.ParryWindow) then
+				-- PERFECT BLOCK (parade) : marche aussi contre les coups lourds ; l'attaquant est repoussé, étourdi, désarmé
 				vs.blockStart = -10
 				FX:FireAllClients({ k = "Parry", p = root.Position + p.dir * -1.5 + Vector3.new(0, 1, 0), v = victim, a = attacker })
+				FX:FireAllClients({ k = "ComboName", a = victim, name = "PERFECT BLOCK!" })
+				Anim:FireAllClients(victim, "PerfectBlock")
 				if attacker then
 					attacker:SetAttribute("ParriedAt", now())
 				end
 				if attacker and CharacterState.isAlive(attacker) then
 					local aRoot = attacker:FindFirstChild("HumanoidRootPart")
+					releaseTether(attacker)
 					CharacterState.stun(attacker, B.ParryStun)
 					if aRoot then
 						knockback(attacker, -p.dir * B.ParryKnockback + Vector3.new(0, 10, 0), false, B.ParryStun, victim)
@@ -417,19 +461,19 @@ function CombatService.applyHit(p)
 				CombatService.addOvertime(victim, CombatConfig.Overtime.Parry or 5)
 				return "Parried"
 			end
-			-- BLOCK : dégâts réduits, la garde s'use
-			vs.guard = math.min(B.MaxGuard, vs.guard + (t - (vs.guardT or t)) * B.GuardRegen)
-			vs.guardT = t
-			vs.guard -= p.trayGuard and 0 or p.damage
-			local chip = p.trayGuard and 0 or p.damage * (1 - B.Reduction)
-			if vs.guard <= 0 then
-				vs.guard = B.MaxGuard
-				CharacterState.setBlocking(victim, false)
-				CharacterState.stun(victim, B.GuardBreakStun)
-				FX:FireAllClients({ k = "GuardBreak", p = root.Position + Vector3.new(0, 1.5, 0), v = victim, a = attacker })
-			else
-				FX:FireAllClients({ k = "Block", p = root.Position + p.dir * -1.2 + Vector3.new(0, 1, 0), v = victim, a = attacker, d = chip })
+			-- GUARD BREAK : un coup lourd casse un block normal (sauf garde spéciale type Tray Guard)
+			if heavy and B.HeavyBreaks and not p.trayGuard then
+				guardBreak(victim, attacker, p, root, hum)
+				return "GuardBreak"
 			end
+			-- BLOCK : dégâts réduits, la jauge de garde s'use
+			local left = p.trayGuard and CharacterState.guardNow(victim) or CharacterState.drainGuard(victim, p.damage)
+			if left <= 0 then
+				guardBreak(victim, attacker, p, root, hum)
+				return "GuardBreak"
+			end
+			local chip = p.trayGuard and 0 or p.damage * (1 - B.Reduction)
+			FX:FireAllClients({ k = "Block", p = root.Position + p.dir * -1.2 + Vector3.new(0, 1, 0), v = victim, a = attacker, d = chip })
 			if chip > 0 then
 				CharacterState.recordHit(victim, attacker, p.weapon, p.cause)
 				hum:TakeDamage(chip)
@@ -443,11 +487,10 @@ function CombatService.applyHit(p)
 	local ko = hum.Health - damage <= 0
 	local category = p.category or "Light"
 	local hitStop = ko and CombatConfig.HitStop.KO
-		or (category == "Heavy" and CombatConfig.HitStop.Heavy)
+		or (heavy and CombatConfig.HitStop.Heavy)
 		or CombatConfig.HitStop.Light
 
 	CharacterState.recordHit(victim, attacker, p.weapon, p.cause)
-	CharacterState.addStreak(victim)
 	local combo = 0
 	if attacker then
 		combo = CharacterState.addCombo(attacker, victim)
@@ -455,10 +498,10 @@ function CombatService.applyHit(p)
 	end
 	CombatService.addOvertime(victim, damage * CombatConfig.Overtime.TakeMult)
 
-	local reaction = (p.slam or p.pin) and "Slam" or (p.launch and "Launch") or ((category == "Heavy" or p.knockback >= 30) and "Heavy" or "Light")
+	local reaction = (p.slam or p.pin) and "Slam" or (p.launch and "Launch") or ((heavy or p.knockback >= 30) and "Heavy" or "Light")
 	FX:FireAllClients({
 		k = "Hit", a = attacker, v = victim, p = p.hitPos or root.Position,
-		c = category, pw = p.power or 0.4, d = damage, w = p.words, m = p.material,
+		c = heavy and category ~= "Heavy" and "Heavy" or category, pw = p.power or 0.4, d = damage, w = p.words, m = p.material,
 		ko = ko, seq = p.seq, r = reaction, combo = combo, fin = p.finisher,
 	})
 	Signals.Hit:Fire(attacker, victim, damage, { weapon = p.weapon, category = category, combo = combo, finisher = p.finisher })
@@ -483,7 +526,15 @@ function CombatService.applyHit(p)
 	end
 	hum:TakeDamage(damage)
 	CharacterState.stun(victim, p.stun or 0.3)
-	if p.tether and attacker then
+	if p.knockdown then
+		releaseTether(victim)
+		if p.slam then
+			-- intouchable pendant la chute ; le vrai renversé démarre à l'atterrissage (slam)
+			victim:SetAttribute("KnockdownUntil", math.max(victim:GetAttribute("KnockdownUntil") or 0, now() + hitStop + 1))
+		else
+			CharacterState.knockdown(victim, hitStop + CombatConfig.Knockdown.Duration)
+		end
+	elseif p.tether and attacker then
 		setTether(victim, attacker, math.min(p.stun or 0.6, 0.8) + 0.12)
 	end
 
@@ -494,18 +545,13 @@ function CombatService.applyHit(p)
 		if p.pin and not p.slam then
 			p.slam = { SlamSpeed = 150, Stun = CombatConfig.PinStun, BounceUp = 0, Pin = true }
 		end
-		-- coup aérien pendant la montée du Rising Duo : on ne casse pas l'envol (ni recul ni suspension)
-		local rising = attacker and not p.slam and not p.launch and os.clock() < (CharacterState.get(attacker).duoRiseUntil or 0)
-		if rising then
-			return
-		end
 		if p.slam then
 			slam(victim, attacker, p.slam)
 		elseif p.launch then
 			knockback(victim, p.launch, false, p.stun or 1, attacker)
 			hum.PlatformStand = true
 			task.delay(math.max(0.6, p.stun or 1), function()
-				if hum.Parent and hum.Health > 0 then
+				if hum.Parent and hum.Health > 0 and not CharacterState.isKnockedDown(victim) then
 					hum.PlatformStand = false
 				end
 			end)
@@ -519,21 +565,16 @@ function CombatService.applyHit(p)
 			if attacker then
 				local aRoot = attacker:FindFirstChild("HumanoidRootPart")
 				if aRoot then
-					for _, n in ipairs({ "AirStall", "Lift" }) do
-						local c = aRoot:FindFirstChild(n)
-						if c then
-							c:Destroy()
-						end
+					local c = aRoot:FindFirstChild("AirStall")
+					if c then
+						c:Destroy()
 					end
 				end
 				attacker:SetAttribute("AirRelease", now()) -- le client de l'attaquant retire ses suspensions locales
 			end
 		elseif p.air then
 			CombatService.airStall(victim, CombatConfig.Air.Stall)
-			-- pendant un Rising Duo, le client du joueur gère lui-même sa montée et sa suspension :
-			-- une suspension serveur freinerait la montée (l'attaquant resterait au sol)
-			local selfLift = attacker and Players:GetPlayerFromCharacter(attacker) and os.clock() < (CharacterState.get(attacker).duoUntil or 0)
-			if attacker and not selfLift then
+			if attacker then
 				CombatService.airStall(attacker, CombatConfig.Air.Stall)
 			end
 		end
@@ -551,7 +592,7 @@ function CombatService.burn(victim: Model, attacker: Model?, burn)
 			if not hum or hum.Health <= 0 or not head then
 				return
 			end
-			if not CharacterState.isProtected(victim) then
+			if not CharacterState.isProtected(victim) and not CharacterState.inSafeZone(victim) then
 				CharacterState.recordHit(victim, attacker, "Burn", attacker and "Combat" or "Event")
 				hum:TakeDamage(burn.Damage)
 				FX:FireAllClients({ k = "Burn", v = victim, p = head.Position, d = burn.Damage })
@@ -562,11 +603,13 @@ end
 
 -- Hitbox devant un personnage -> applique les coups. Utilisé par le M1, les objets et les attaques.
 -- spec : HitboxOffset, HitboxSize, MaxTargets, Damage, Knockback, KnockUp, Stun, Category, Power, Words, Material,
---        Launch (Vector3 relatif : X = recul, Y = hauteur), Air, Slam, Unblockable, Weapon, ItemId, Kitchen, FinisherName
+--        Launch (Vector3 relatif : X = recul, Y = hauteur), Air, Slam, Unblockable, Weapon, ItemId, Kitchen, FinisherName,
+--        Heavy, Knockdown, Tether, ComboTarget
+-- Retourne : landed (touchés + bloqués + gardes cassées), hits (vraiment touchés)
 function CombatService.swing(attacker: Model, spec, seq)
 	local cf = Hitbox.frontCFrame(attacker, spec.HitboxOffset)
 	if not cf then
-		return {}
+		return {}, {}
 	end
 	local size = spec.HitboxSize + Vector3.one * CombatConfig.LatencyTolerance
 	local hits = Hitbox.box(cf, size, attacker, spec.MaxTargets or 3)
@@ -580,7 +623,7 @@ function CombatService.swing(attacker: Model, spec, seq)
 		end
 	end
 	local aRoot = attacker:FindFirstChild("HumanoidRootPart")
-	local landed = {}
+	local landed, really = {}, {}
 	for _, victim in ipairs(hits) do
 		local vRoot = victim:FindFirstChild("HumanoidRootPart")
 		if vRoot and aRoot then
@@ -590,7 +633,7 @@ function CombatService.swing(attacker: Model, spec, seq)
 				knockback = spec.Knockback, up = spec.KnockUp, stun = spec.Stun,
 				category = spec.Category, power = spec.Power, words = spec.Words, material = spec.Material,
 				seq = seq, unblockable = spec.Unblockable, weapon = spec.Weapon, itemId = spec.ItemId, kitchen = spec.Kitchen,
-				tether = spec.Tether,
+				tether = spec.Tether, heavy = spec.Heavy, knockdown = spec.Knockdown,
 				hitPos = vRoot.Position:Lerp(aRoot.Position, 0.3) + Vector3.new(0, 0.6, 0),
 			}
 			if spec.Launch then
@@ -614,129 +657,189 @@ function CombatService.swing(attacker: Model, spec, seq)
 				p.words = { string.upper(spec.FinisherName) .. " COMBO!" }
 			end
 			local result = CombatService.applyHit(p)
-			if result == "Hit" or result == "Blocked" then
+			if result == "Hit" or result == "Blocked" or result == "GuardBreak" then
 				table.insert(landed, victim)
+				if result == "Hit" then
+					table.insert(really, victim)
+				end
 			elseif result == "Parried" then
 				break
 			end
 		end
 	end
-	return landed
+	return landed, really
 end
 
 ------------------------------------------------------------------------
--- M1 et variantes
+-- Peut-on commencer une attaque ? (M1, dash, attaques de perso : AbilityService peut l'appeler)
+------------------------------------------------------------------------
+function CombatService.canStartAttack(character: Model?): boolean
+	if not character or not CharacterState.isAlive(character) or CharacterState.isStunned(character) then
+		return false
+	end
+	if CharacterState.inSafeZone(character) then
+		return false
+	end
+	local s = CharacterState.get(character)
+	return os.clock() >= (s.busyUntil or 0) - TOL and not s.blocking
+end
+
+------------------------------------------------------------------------
+-- M1 et variantes (chaîne de 5, uppercut, jongle, downslam, dash strike)
 ------------------------------------------------------------------------
 local function slowAttacker(character: Model, duration: number)
 	CharacterState.setSpeedMod(character, "Attack", CombatConfig.AttackSlow, duration)
 end
 
+-- récupération après un coup : cooldown = délai avant le prochain M1 ;
+-- heavy = endlag (pas de dash ni de block pendant toute la durée), sinon le block revient après DropEndlag
+local function setRecovery(character: Model, s, t: number, cooldown: number, heavy: boolean)
+	s.nextAttack = t + cooldown
+	s.busyUntil = t + cooldown + (heavy and 0 or M1.DropEndlag)
+	s.endlagUntil = heavy and (t + cooldown) or 0
+	slowAttacker(character, cooldown + 0.05)
+end
+
+-- index du coup dans la chaîne. Le client envoie le sien (want) : accepté s'il continue la chaîne serveur
+-- (ou repart de 1) ; sinon on suit la logique serveur. Impossible de sauter directement au 5e coup.
+local function nextIndex(s, t: number, want): number
+	local continuing = s.combo > 0 and s.combo < M1.Hits and t - s.lastM1 <= M1.ComboReset + 0.3
+	local i
+	if want == 1 then
+		i = 1
+	elseif continuing and want == s.combo + 1 then
+		i = want
+	elseif continuing and t - s.lastM1 <= M1.ComboReset then
+		i = s.combo + 1
+	else
+		i = 1
+	end
+	s.lastM1 = t
+	s.combo = (i >= M1.Hits) and 0 or i
+	return i
+end
+
+local function downslamSpec()
+	local S = CombatConfig.Downslam
+	local A = CombatConfig.Air
+	return {
+		HitboxOffset = A.HitboxOffset, HitboxSize = A.HitboxSize, MaxTargets = 2, Damage = S.Damage,
+		Knockback = 0, Stun = S.Stun, Category = "Heavy", Power = S.Power, Words = S.Words, Slam = S, Weapon = "Downslam",
+		Knockdown = S.Knockdown, Heavy = true,
+	}
+end
+
+local function airSpec(i: number)
+	local A = CombatConfig.Air
+	return {
+		HitboxOffset = A.HitboxOffset, HitboxSize = A.HitboxSize, MaxTargets = 2, Damage = A.Damage[((i - 1) % #A.Damage) + 1],
+		Knockback = 3, KnockUp = 2, Stun = A.Stun, Category = "Light", Power = 0.4, Air = true, Weapon = "Punch",
+		Tether = true, -- la victime reste devant l'attaquant en l'air
+	}
+end
+
 local function doM1(player: Player, character: Model, seq: number, mods)
 	local s = CharacterState.get(character)
 	local t = os.clock()
-	if t < s.nextAttack - 0.05 or s.blocking then
+	if t < s.nextAttack - TOL or s.blocking or CharacterState.inSafeZone(character) then
 		return
 	end
-	-- après un Rising Duo, la montée est appliquée par le client avec un léger retard : on compte déjà les M1 comme aériens
-	local airborne = CharacterState.isAirborne(character) or t < (s.duoUntil or 0)
-	local wantsDropkick = (mods.shift or t - (s.lastDash or -10) < CombatConfig.Dash.AttackWindow)
+	-- en l'air : vu par le serveur, ou annoncé par le client pendant le jongle d'uppercut (la montée arrive avec du retard)
+	local airborne = CharacterState.isAirborne(character) or (mods.air and t < s.airChainUntil)
+	local DS = CombatConfig.DashStrike
+	local U = CombatConfig.Uppercut
 	local spec, anim, windup, onLanded
 
-	if wantsDropkick and not airborne and t >= s.nextDropkick then
-		local D = CombatConfig.Dropkick
-		s.nextDropkick = t + D.Cooldown
-		character:SetAttribute("CDDropkick", now() + D.Cooldown)
-		character:SetAttribute("CDMaxDropkick", D.Cooldown)
-		s.nextAttack = t + 0.75
-		s.combo, s.m1Landed = 0, 0
-		anim, windup = D.Anim, D.Windup
+	if not airborne and s.lastDashKind == "F" and t - s.lastDash <= DS.Window + TOL and t >= s.nextDashStrike - TOL then
+		-- DASH STRIKE : dash avant + M1
+		s.nextDashStrike = t + DS.Cooldown
+		character:SetAttribute("CDDashStrike", now() + DS.Cooldown)
+		s.lastDash = -10
+		s.combo = 0
+		setRecovery(character, s, t, DS.Endlag, true)
+		anim, windup = DS.Anim, DS.Windup
 		spec = {
-			HitboxOffset = D.HitboxOffset, HitboxSize = D.HitboxSize, MaxTargets = 3, Damage = D.Damage,
-			Knockback = D.Knockback, KnockUp = D.KnockUp, Stun = D.Stun, Category = "Heavy", Power = D.Power,
-			Words = D.Words, Weapon = "Dropkick",
+			HitboxOffset = DS.HitboxOffset, HitboxSize = DS.HitboxSize, MaxTargets = 3, Damage = DS.Damage,
+			Knockback = DS.Knockback, KnockUp = DS.KnockUp, Stun = DS.Stun, Category = "Heavy", Power = DS.Power,
+			Words = DS.Words, Weapon = "Dash Strike", Heavy = true, Knockdown = true,
 		}
-	elseif airborne and mods.pin and (s.m1Landed or 0) == 3 and t - (s.lastM1Hit or -10) < CombatConfig.GroundPin.Window then
-		-- 3 M1 + saut + M1 : GROUND PIN
-		local G = CombatConfig.GroundPin
-		s.combo, s.m1Landed = 0, 0
-		character:SetAttribute("ComboStep", 0)
-		s.nextAttack = t + 0.7
-		anim, windup = "Downslam", 0.08
-		FX:FireAllClients({ k = "ComboName", a = character, name = "GROUND PIN!" })
-		spec = {
-			HitboxOffset = 3, HitboxSize = Vector3.new(8, 15, 8), MaxTargets = 2, Damage = G.Damage,
-			Knockback = 0, Stun = G.Stun, Category = "Heavy", Power = G.Power, Words = G.Words, Weapon = "Ground Pin",
-			Slam = { SlamSpeed = G.SlamSpeed, Stun = G.Stun, BounceUp = 0, Pin = true },
-		}
-	elseif airborne then
-		local C = CombatConfig.Combos
-		local max = (t < (s.airMaxUntil or 0)) and s.airMax or C.AirMaxDefault
-		if t - s.lastAir > 1.0 then
-			s.airCombo = 0
-		end
+	elseif airborne and t < s.airChainUntil then
+		-- jongle après un uppercut : AirHits coups, le dernier = DOWNSLAM
 		s.airCombo += 1
-		s.lastAir = t
-		local i = s.airCombo
-		if i >= max then
-			local S = CombatConfig.Downslam
-			s.airCombo = 0
-			s.airMaxUntil = 0
-			s.duoUntil, s.duoRiseUntil = 0, 0
-			character:SetAttribute("AirMax", C.AirMaxDefault)
-			s.nextAttack = t + 0.7
-			anim, windup = S.Anim, 0.1
-			spec = {
-				HitboxOffset = 3, HitboxSize = Vector3.new(7, 11, 7.5), MaxTargets = 2, Damage = S.Damage,
-				Knockback = 0, Stun = S.Stun, Category = "Heavy", Power = S.Power, Words = S.Words, Slam = S, Weapon = "Downslam",
-			}
+		if s.airCombo >= U.AirHits then
+			s.airCombo, s.airChainUntil = 0, 0
+			setRecovery(character, s, t, CombatConfig.Downslam.Endlag, true)
+			anim, windup = CombatConfig.Downslam.Anim, CombatConfig.Downslam.Windup
+			spec = downslamSpec()
 		else
-			local A = CombatConfig.Air
-			s.nextAttack = t + 0.3
-			anim, windup = A.Anim[((i - 1) % #A.Anim) + 1], 0.05
-			spec = {
-				HitboxOffset = 3, HitboxSize = Vector3.new(7, 11, 7.5), MaxTargets = 2, Damage = A.Damage[((i - 1) % #A.Damage) + 1],
-				Knockback = 4, KnockUp = 2, Stun = 0.8, Category = "Light", Power = 0.45, Air = true, Weapon = "Punch",
-				Tether = true, -- la victime reste devant l'attaquant en l'air
-			}
+			setRecovery(character, s, t, CombatConfig.Air.Cooldown, false)
+			anim, windup = CombatConfig.Air.Anim[((s.airCombo - 1) % #CombatConfig.Air.Anim) + 1], CombatConfig.Air.Windup
+			spec = airSpec(s.airCombo)
+		end
+	elseif airborne then
+		-- chaîne de M1 en l'air : le 5e coup devient un DOWNSLAM
+		local i = nextIndex(s, t, mods.i)
+		if i >= M1.Hits then
+			setRecovery(character, s, t, CombatConfig.Downslam.Endlag, true)
+			anim, windup = CombatConfig.Downslam.Anim, CombatConfig.Downslam.Windup
+			spec = downslamSpec()
+		else
+			setRecovery(character, s, t, M1.Cooldown[i], false)
+			anim, windup = CombatConfig.Air.Anim[((i - 1) % #CombatConfig.Air.Anim) + 1], CombatConfig.Air.Windup
+			spec = airSpec(i)
 		end
 	else
-		if t - s.lastM1 > M1.ComboReset then
-			s.combo, s.m1Landed = 0, 0
-		end
-		s.combo = s.combo % 4 + 1
-		local i = s.combo
-		s.lastM1 = t
-		s.nextAttack = t + M1.Cooldown[i]
-		slowAttacker(character, M1.Cooldown[i] + 0.05)
-		if i == 4 then
-			s.combo = 0
-		end
-		windup = M1.Windup
-		anim = M1.Anim[i]
-		spec = {
-			HitboxOffset = M1.HitboxOffset, HitboxSize = M1.HitboxSize, MaxTargets = M1.MaxTargets,
-			Damage = M1.Damage[i], Knockback = M1.Knockback[i], KnockUp = M1.KnockUp[i], Stun = M1.Stun[i],
-			Category = M1.Category[i], Power = M1.Power[i], Weapon = "Punch",
-			Tether = i < 4, -- coups 1-3 : la victime suit l'attaquant ; le finisher la relâche
-		}
-		if i == 4 then
-			spec.Words = { "FINISHER!", "WHAM!", "KAPOW!" }
-		end
-		onLanded = function(landed)
-			if #landed > 0 and i < 4 then
-				s.m1Landed = (s.m1Landed or 0) + 1
-				s.lastM1Victim = landed[1]
-				s.lastM1Hit = os.clock()
-				character:SetAttribute("ComboStep", s.m1Landed)
-			else
-				s.m1Landed = 0
-				character:SetAttribute("ComboStep", 0)
+		local i = nextIndex(s, t, mods.i)
+		if i >= M1.Hits and mods.up then
+			-- UPPERCUT (Espace maintenu sur le 5e coup) : endlag complet s'il rate, raccourci s'il touche
+			setRecovery(character, s, t, M1.Cooldown[M1.Hits], true)
+			anim, windup = U.Anim, U.Windup
+			spec = {
+				HitboxOffset = M1.HitboxOffset, HitboxSize = M1.HitboxSize, MaxTargets = 2, Damage = U.Damage,
+				Knockback = 0, Stun = U.Stun, Category = "Heavy", Power = U.Power, Words = U.Words, Weapon = "Uppercut",
+				Launch = Vector3.new(U.LaunchForward, U.LaunchUp, 0), Heavy = true,
+			}
+			onLanded = function(_, hits)
+				if #hits == 0 then
+					return
+				end
+				local t2 = os.clock()
+				s.nextAttack = t2 + 0.2
+				s.busyUntil = t2 + 0.2
+				s.endlagUntil = 0
+				s.airCombo = 0
+				s.airChainUntil = t2 + U.AirWindow
+				s.lastM1Victim, s.lastM1Hit = hits[1], t2
+				FX:FireAllClients({ k = "ComboName", a = character, name = "UPPERCUT!" })
+				-- le client de l'attaquant saute tout seul derrière la victime (sa physique lui appartient)
+				character:SetAttribute("AutoFollow", now())
+			end
+		else
+			setRecovery(character, s, t, M1.Cooldown[i], i >= M1.Hits)
+			windup = M1.Windup[i]
+			anim = M1.Anim[i]
+			spec = {
+				HitboxOffset = M1.HitboxOffset, HitboxSize = M1.HitboxSize, MaxTargets = M1.MaxTargets,
+				Damage = M1.Damage[i], Knockback = M1.Knockback[i], KnockUp = M1.KnockUp[i], Stun = M1.Stun[i],
+				Category = M1.Category[i], Power = M1.Power[i], Weapon = "Punch",
+				Tether = i < M1.Hits, -- coups 1-4 : la victime suit l'attaquant ; le finisher la relâche
+			}
+			if i >= M1.Hits then
+				spec.Words = M1.FinisherWords
+				spec.Heavy = true
+				spec.Knockdown = true
+			end
+			onLanded = function(_, hits)
+				if #hits > 0 and i < M1.Hits then
+					s.lastM1Victim = hits[1]
+					s.lastM1Hit = os.clock()
+				end
 			end
 		end
 	end
 	Anim:FireAllClients(character, anim)
 	task.delay(windup, function()
-		if not CharacterState.isAlive(character) or CharacterState.isStunned(character) then
+		if not CharacterState.isAlive(character) or CharacterState.isStunned(character) or CharacterState.inSafeZone(character) then
 			return
 		end
 		-- tolérance de portée pour la fluidité : la hitbox suit la dernière victime si elle est juste devant
@@ -750,129 +853,71 @@ local function doM1(player: Player, character: Model, seq: number, mods)
 			end
 		end
 		spec.ComboTarget = vr and v or nil
-		local landed = CombatService.swing(character, spec, seq)
+		local landed, hits = CombatService.swing(character, spec, seq)
 		if onLanded then
-			onLanded(landed)
+			onLanded(landed, hits)
 		end
 	end)
 end
 
 ------------------------------------------------------------------------
--- Lanceurs (Espace pendant la chaîne de M1) : Rising Duo (2 M1) et Uppercut (3 M1)
+-- EVASIVE (combo breaker) : Q pendant un hitstun
 ------------------------------------------------------------------------
-local function liftAttacker(character: Model, up: number)
-	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then
-		return
-	end
-	local att = root:FindFirstChild("KBAtt") or Instance.new("Attachment")
-	att.Name = "KBAtt"
-	att.Parent = root
-	local lv = Instance.new("LinearVelocity")
-	lv.Name = "Lift"
-	lv.Attachment0 = att
-	lv.MaxForce = 1e6
-	lv.VectorVelocity = Vector3.new(0, up, 0) + root.CFrame.LookVector * 4
-	lv.Parent = root
-	Debris:AddItem(lv, 0.14)
-end
-
-local function doLaunch(player: Player, character: Model, seq: number)
+local function evasive(character: Model): boolean
 	local s = CharacterState.get(character)
-	local C = CombatConfig.Combos
+	local E = CombatConfig.Evasive
 	local t = os.clock()
-	local victim = s.lastM1Victim
-	local step = s.m1Landed or 0
-	if (step ~= 2 and step ~= 3) or t - (s.lastM1Hit or -10) > C.Window or not CharacterState.isAlive(victim) then
-		return
-	end
-	local root, vRoot = character:FindFirstChild("HumanoidRootPart"), victim:FindFirstChild("HumanoidRootPart")
-	if not root or not vRoot or (vRoot.Position - root.Position).Magnitude > 11 then
-		return
-	end
-	s.combo, s.m1Landed = 0, 0
-	character:SetAttribute("ComboStep", 0)
-	s.nextAttack = t + 0.3
-	local dir = flatUnit(vRoot.Position - root.Position, root.CFrame.LookVector)
-	local duo = step == 2
-	local L = duo and C.RisingDuo or C.Uppercut
-	Anim:FireAllClients(character, duo and "RisingDuo" or "Uppercut")
-	FX:FireAllClients({ k = "ComboName", a = character, name = duo and "RISING DUO!" or "UPPERCUT!" })
-	task.delay(0.06, function()
-		if not CharacterState.isAlive(character) or CharacterState.isStunned(character) then
-			return
-		end
-		local result = CombatService.applyHit({
-			attacker = character, victim = victim, damage = L.Damage, dir = dir, stun = 1.3,
-			category = "Heavy", power = L.Power, words = L.Words, weapon = duo and "Rising Duo" or "Uppercut",
-			launch = dir * 3 + Vector3.new(0, L.VictimUp, 0), seq = seq, unblockable = false,
-			hitPos = vRoot.Position + Vector3.new(0, 0.5, 0),
-		})
-		if result ~= "Hit" then
-			return
-		end
-		s.airMax = L.AirHits
-		s.airMaxUntil = os.clock() + 3
-		s.airCombo = 0
-		character:SetAttribute("AirMax", L.AirHits)
-		if duo then
-			s.duoUntil = os.clock() + L.Stall + 0.8
-			s.duoRiseUntil = os.clock() + 0.62
-			-- les deux montent ensemble et restent suspendus en haut
-			-- (l'attaquant est un joueur : c'est SON client qui applique la montée, sinon elle arrive trop tard)
-			if Players:GetPlayerFromCharacter(character) then
-				character:SetAttribute("LiftUp", L.AttackerUp)
-				character:SetAttribute("LiftStall", L.Stall)
-				character:SetAttribute("LiftAt", now())
-			else
-				liftAttacker(character, L.AttackerUp)
-			end
-			task.delay(0.62, function()
-				-- (si le slam a déjà eu lieu, airMaxUntil vaut 0 : on ne re-suspend pas la victime)
-				if victim.Parent and os.clock() < (s.airMaxUntil or 0) then
-					CombatService.airStall(victim, L.Stall)
-					if CharacterState.isAlive(victim) and CharacterState.isAlive(character) then
-						setTether(victim, character, L.Stall + 0.2) -- en haut : la victime reste devant l'attaquant
-					end
-				end
-			end)
-		else
-			character:SetAttribute("FollowUntil", now() + CombatConfig.Uppercut.FollowWindow)
-		end
-	end)
-end
-------------------------------------------------------------------------
--- Combo breaker : petite explosion qui libère
-------------------------------------------------------------------------
-local function comboBreaker(character: Model)
-	local s = CharacterState.get(character)
-	local C = CombatConfig.ComboBreaker
 	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then
-		return
+	if not root or t < s.nextBreak then
+		return false
 	end
-	s.nextBreak = os.clock() + C.Cooldown
-	s.hitStreak = 0
-	character:SetAttribute("CanBreak", false)
-	character:SetAttribute("CDBreak", now() + C.Cooldown)
-	CharacterState.clearStun(character)
-	CharacterState.protect(character, C.Protect)
+	-- interdit : guard break (punition du block), renversé (déjà intouchable), tenu par une ulti
+	if CharacterState.isGuardBroken(character) or CharacterState.isKnockedDown(character)
+		or character:GetAttribute("UltHeld") ~= nil or character:GetAttribute("UltAnchor") then
+		return false
+	end
+	s.nextBreak = t + E.Cooldown
+	character:SetAttribute("CDEvasive", now() + E.Cooldown)
+	character:SetAttribute("CDMaxEvasive", E.Cooldown)
+	releaseTether(character)
+	for _, n in ipairs({ "KB", "AirStall", "Spin" }) do
+		local c = root:FindFirstChild(n)
+		if c then
+			c:Destroy()
+		end
+	end
+	CharacterState.clearStun(character) -- remet aussi PlatformStand à false
+	CharacterState.protect(character, E.IFrames, false)
+	character:SetAttribute("EvasiveAt", now()) -- le client fait un petit bond en arrière
 	for _, other in ipairs(Hitbox.characters()) do
 		local oRoot = other ~= character and other:FindFirstChild("HumanoidRootPart")
-		if oRoot and (oRoot.Position - root.Position).Magnitude <= C.Radius then
+		if oRoot and (oRoot.Position - root.Position).Magnitude <= E.Radius and not CharacterState.inSafeZone(other)
+			and not CharacterState.isProtected(other) then
 			local dir = flatUnit(oRoot.Position - root.Position, root.CFrame.LookVector)
-			CharacterState.stun(other, 0.6)
-			knockback(other, dir * C.Knockback + Vector3.new(0, 18, 0), true, 0.6, character)
+			releaseTether(other)
+			CharacterState.stun(other, E.AttackerStun)
+			knockback(other, dir * E.Knockback + Vector3.new(0, 16, 0), false, E.AttackerStun, character)
 		end
 	end
 	FX:FireAllClients({ k = "Breaker", p = root.Position, a = character })
+	Anim:FireAllClients(character, "Evasive")
+	return true
 end
+
+local DASH_ANIMS = { F = "Dash", B = "DashBack", L = "SideDashL", R = "SideDashR" }
 
 ------------------------------------------------------------------------
 function CombatService.init()
 	FX = Net.get("FX")
 	Anim = Net.get("Anim")
 	RunService.Heartbeat:Connect(updateTethers)
+	-- jauge de garde qui remonte : attribut Guard mis à jour 5 fois par seconde (HUD)
+	task.spawn(function()
+		while true do
+			task.wait(0.2)
+			CharacterState.tickGuards()
+		end
+	end)
 
 	-- Overtime : rendu au respawn, remis à zéro quand on se transforme (la jauge est consommée)
 	Signals.CharacterSpawned:Connect(function(character, player)
@@ -903,22 +948,26 @@ function CombatService.init()
 			return
 		end
 		mods = type(mods) == "table" and mods or {}
-		mods = { up = mods.up == true, shift = mods.shift == true, launch = mods.launch == true, pin = mods.pin == true }
+		local wantI = tonumber(mods.i)
+		mods = {
+			up = mods.up == true,
+			air = mods.air == true,
+			i = (wantI and wantI == math.floor(wantI) and wantI >= 1 and wantI <= M1.Hits) and wantI or nil,
+		}
 		local character = player.Character
-		if not CharacterState.isAlive(character) or CharacterState.isStunned(character) then
+		if not CharacterState.isAlive(character) or CharacterState.isStunned(character) or CharacterState.inSafeZone(character) then
 			return
 		end
 		local s = CharacterState.get(character)
-		if mods.launch then
-			doLaunch(player, character, seq)
-		elseif s.held and CombatService.itemUseHandler then
+		if s.held and CombatService.itemUseHandler then
 			CombatService.itemUseHandler(player, character, seq)
 		else
 			doM1(player, character, seq, mods)
 		end
 	end)
 
-	Net.get("Dash").OnServerEvent:Connect(function(player)
+	-- Q : dash directionnel (kind = "F" | "B" | "L" | "R") ; pendant un hitstun = EVASIVE
+	Net.get("Dash").OnServerEvent:Connect(function(player, kind)
 		if not Net.allow(player, "Dash", R.Dash) then
 			return
 		end
@@ -929,21 +978,31 @@ function CombatService.init()
 		local s = CharacterState.get(character)
 		local t = os.clock()
 		if CharacterState.isStunned(character) then
-			if character:GetAttribute("CanBreak") and t >= s.nextBreak then
-				comboBreaker(character)
-			end
+			evasive(character)
 			return
 		end
-		if t < s.nextDash - 0.1 then
+		if CharacterState.inSafeZone(character) or t < s.nextDash - 0.15 or t < s.endlagUntil - TOL then
 			return
+		end
+		if kind ~= "F" and kind ~= "B" and kind ~= "L" and kind ~= "R" then
+			kind = "F"
 		end
 		local D = CombatConfig.Dash
 		s.nextDash = t + D.Cooldown
 		s.lastDash = t
-		s.nextAttack = math.min(s.nextAttack, t) -- dash cancel
+		s.lastDashKind = kind
+		-- dash cancel au milieu de la chaîne (jamais pendant l'endlag d'un coup lourd, voir plus haut)
+		if t < s.nextAttack then
+			s.nextAttack = t
+		end
+		s.busyUntil = math.min(s.busyUntil, t)
+		s.combo = 0
+		s.wantBlock = false
 		CharacterState.setBlocking(character, false)
 		character:SetAttribute("CDDash", now() + D.Cooldown)
-		FX:FireAllClients({ k = "Dash", a = character })
+		character:SetAttribute("CDMaxDash", D.Cooldown)
+		FX:FireAllClients({ k = "Dash", a = character, kind = kind })
+		Anim:FireAllClients(character, DASH_ANIMS[kind])
 	end)
 
 	Net.get("Run").OnServerEvent:Connect(function(player, on)
@@ -961,7 +1020,13 @@ function CombatService.init()
 		CharacterState.setRunning(character, on)
 	end)
 
-	Net.get("Block").OnServerEvent:Connect(function(player, on)
+	-- F : block (maintenu). auto = true : réactivation automatique (F maintenu) -> pas de PERFECT BLOCK
+	local function startBlock(character: Model, auto: boolean)
+		CharacterState.setBlocking(character, true, auto)
+		CharacterState.setRunning(character, false)
+		Anim:FireAllClients(character, "BlockStart")
+	end
+	Net.get("Block").OnServerEvent:Connect(function(player, on, auto)
 		if type(on) ~= "boolean" or not Net.allow(player, "Block", R.Block) then
 			return
 		end
@@ -969,14 +1034,31 @@ function CombatService.init()
 		if not CharacterState.isAlive(character) then
 			return
 		end
-		if on and (CharacterState.isStunned(character)) then
+		local s = CharacterState.get(character)
+		s.wantBlock = on
+		if not on then
+			s.blockReq = nil
+			CharacterState.setBlocking(character, false)
 			return
 		end
-		CharacterState.setBlocking(character, on)
-		if on then
-			CharacterState.setRunning(character, false)
-			Anim:FireAllClients(character, "BlockStart")
+		if CharacterState.isStunned(character) or CharacterState.isGuardBroken(character) then
+			return
 		end
+		auto = auto == true
+		local t = os.clock()
+		if t < s.busyUntil then
+			-- encore en récupération d'attaque (le client est un peu en avance) : on bloque dès qu'elle finit
+			local req = {}
+			s.blockReq = req
+			task.delay(s.busyUntil - t + 0.01, function()
+				if s.blockReq == req and s.wantBlock and CharacterState.isAlive(character) and not CharacterState.isStunned(character)
+					and os.clock() >= s.busyUntil - 0.02 then
+					startBlock(character, auto)
+				end
+			end)
+			return
+		end
+		startBlock(character, auto)
 	end)
 end
 

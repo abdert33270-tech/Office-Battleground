@@ -146,8 +146,24 @@ local function crate()
 	return crateDef(curCrate)
 end
 
--- les 4 skins d'un perso (Base, Rare, Epic, Legendary) ; secours = Base seul
+-- perso sans aucun skin par design (Bacon) : Config/Skins.hasSkins, secours = liste locale
+local function noSkins(charId)
+	if type(charId) ~= "string" then
+		return false
+	end
+	local S = SkinsCfg()
+	if S and type(S.hasSkins) == "function" then
+		return not S.hasSkins(charId)
+	end
+	local kit = Characters[charId]
+	return charId == "Bacon" or (type(kit) == "table" and kit.NoSkins == true)
+end
+
+-- les 4 skins d'un perso (Base, Rare, Epic, Legendary) ; secours = Base seul ; perso sans skins = {}
 local function skinsOf(charId)
+	if noSkins(charId) then
+		return {}
+	end
 	local S = SkinsCfg()
 	local list = S and S.ByCharacter and S.ByCharacter[charId]
 	if type(list) == "table" and #list > 0 then
@@ -400,16 +416,22 @@ local function buildModel(skinId)
 	end
 	m = m or fallbackMannequin()
 	local done = false
+	-- perso sans skins : son look fixe (aucun skin + accessoires de métier)
+	local unique = string.match(tostring(skinId), "^(.+)_Base$")
+	if not noSkins(unique) then
+		unique = nil
+	end
 	if B and B.dress then
-		local ok, err = pcall(B.dress, m, skinId, { preview = true })
+		local ok, err = pcall(B.dress, m, unique and AVATAR or skinId, { preview = true })
 		done = ok
 		if not ok then
 			warn("[CharacterSelect] SkinBuilder.dress " .. tostring(skinId) .. " : " .. tostring(err))
 		end
 	end
 	local def = skinDef(skinId)
-	if done and def and not def.HideIdentity and def.Character and B.identity then
-		local ok, err = pcall(B.identity, m, def.Character)
+	local idChar = unique or (def and not def.HideIdentity and def.Character)
+	if done and idChar and B.identity then
+		local ok, err = pcall(B.identity, m, idChar)
 		if not ok then
 			warn("[CharacterSelect] SkinBuilder.identity : " .. tostring(err))
 		end
@@ -685,7 +707,10 @@ local function refreshGrid()
 		local eq = equippedOf(id)
 		local d = skinDef(eq)
 		showView(c.view, d and eq or baseId(id))
-		if eq == AVATAR or not d then
+		if noSkins(id) then
+			c.tag.BackgroundColor3 = COL.Gold
+			c.tagL.Text = "UNIQUE"
+		elseif eq == AVATAR or not d then
 			c.tag.BackgroundColor3 = COL.Avatar
 			c.tagL.Text = "AVATAR"
 		else
@@ -829,6 +854,19 @@ local function refreshPreview()
 		return
 	end
 	ui.previewGrad.Color = ColorSequence.new(kit.Color:Lerp(Color3.new(0, 0, 0), 0.2), COL.Dark)
+	if noSkins(selChar) then
+		-- perso unique : son look fixe en 3D, pas de skins
+		previewView.vf.Visible = true
+		ui.previewImg.Visible = false
+		showView(previewView, baseId(selChar))
+		ui.previewName.Text = "ONE OF A KIND"
+		ui.previewTag.BackgroundColor3 = COL.Gold
+		ui.previewTagL.Text = "NO SKINS"
+		ui.previewLock.Visible = false
+		ui.previewHint.Visible = true
+		ui.previewGlow.Visible = false
+		return
+	end
 	if selSkin == AVATAR then
 		previewView.vf.Visible = false
 		ui.previewImg.Visible = true
@@ -920,6 +958,17 @@ local function refreshSkins()
 	for i = 1, 4 do
 		entries[i + 1] = list[i] and list[i].Id or nil
 	end
+	-- perso sans skins : rangée vide + mention ONE OF A KIND
+	local unique = noSkins(selChar)
+	if unique then
+		entries = {}
+	end
+	if unique and not ui.noSkinsNote then
+		ui.noSkinsNote = UIKit.label({ Text = "ONE OF A KIND  -  NO SKINS", Size = UDim2.fromOffset(666, 60), LayoutOrder = 0, Stroke = 2, TextColor3 = COL.Gold, Visible = false, Parent = ui.skins })
+	end
+	if ui.noSkinsNote then
+		ui.noSkinsNote.Visible = unique
+	end
 	local eq = equippedOf(selChar)
 	for i, sc in ipairs(skinCards) do
 		local id = entries[i]
@@ -969,7 +1018,10 @@ local function refreshButtons()
 		return
 	end
 	local eq = equippedOf(selChar)
-	if selSkin == eq then
+	if noSkins(selChar) then
+		ui.equip.Label.Text = "NO SKINS"
+		ui.equip.BackgroundColor3 = COL.Grey
+	elseif selSkin == eq then
 		ui.equip.Label.Text = "EQUIPPED"
 		ui.equip.BackgroundColor3 = COL.Grey
 	elseif not owns(selSkin) then
@@ -989,6 +1041,9 @@ local function refreshButtons()
 	local nm = eq == AVATAR and "My Avatar" or (ed and ed.Name or tostring(eq))
 	local c = eq == AVATAR and COL.Avatar or rarity(ed and ed.Rarity).Color
 	ui.status.Text = 'EQUIPPED ON ' .. UIKit.escape(string.upper(shortName(selChar))) .. ':\n<font color="' .. UIKit.hex(c) .. '">' .. UIKit.escape(nm) .. "</font>"
+	if noSkins(selChar) then
+		ui.status.Text = UIKit.escape(string.upper(shortName(selChar))) .. ':\n<font color="' .. UIKit.hex(COL.Gold) .. '">One of a kind - no skins</font>'
+	end
 	-- PLAY si possédé, sinon BUY / COMING SOON
 	local ue = unlockOf(selChar)
 	local owned = ownsChar(selChar)

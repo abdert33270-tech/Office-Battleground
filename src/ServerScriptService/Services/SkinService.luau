@@ -17,6 +17,8 @@
 	              grantAll(player) | getState(player) | equip(player, charId, skinId) | openCrate(player, crateId?)
 	              rollSkin(crateId?, rng?) (debug, ne donne rien) | crateList()
 	Gains : jamais sur les mannequins (Hit / Died ne comptent que des victimes joueurs).
+	Persos sans skins (Skins.hasSkins(charId) == false, ex. Bacon) : look fixe (avatar d'origine + accessoires de
+	métier), Equip refusé sauf "Avatar", jamais dans les caisses.
 ]]
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -54,7 +56,9 @@ function SkinService.getState(player: Player)
 	local d = data(player)
 	local owned, equipped = {}, {}
 	for _, charId in ipairs(Characters.Order) do
-		owned[Skins.baseId(charId)] = true
+		if Skins.hasSkins(charId) then
+			owned[Skins.baseId(charId)] = true
+		end
 		equipped[charId] = AVATAR
 	end
 	if d then
@@ -131,7 +135,7 @@ end
 local function equippedFor(player, charName)
 	local d = data(player)
 	local id = d and d.Equipped[charName] or AVATAR
-	if id == AVATAR then
+	if id == AVATAR or not Skins.hasSkins(charName) then
 		return AVATAR
 	end
 	local s = Skins.get(id)
@@ -166,14 +170,21 @@ function SkinService.applyTo(character: Model, player: Player?, charName: string
 		return
 	end
 	if not player then
-		-- mannequins : on garde leur look ; autres PNJ : uniforme
-		if not character:GetAttribute("IsDummy") then
+		-- mannequins : on garde leur look ; autres PNJ : uniforme (perso sans skins : rien à mettre)
+		if not character:GetAttribute("IsDummy") and Skins.hasSkins(charName) then
 			SkinBuilder.dress(character, Skins.baseId(charName))
 		end
 		SkinBuilder.identity(character, charName)
 		return
 	end
 	local snap = snapshotOf(character)
+	if not Skins.hasSkins(charName) then
+		-- perso unique (Bacon) : avatar d'origine + son look de métier, aucun skin possible
+		SkinBuilder.restore(character, snap)
+		SkinBuilder.identity(character, charName)
+		character:SetAttribute("SkinId", AVATAR)
+		return
+	end
 	local id = equippedFor(player, charName)
 	if id == AVATAR then
 		SkinBuilder.restore(character, snap)
@@ -204,6 +215,9 @@ function SkinService.equip(player: Player, charId, skinId)
 		return false
 	end
 	if skinId ~= AVATAR then
+		if not Skins.hasSkins(charId) then
+			return false
+		end
 		local s = Skins.get(skinId)
 		if not s or s.Character ~= charId then
 			return false

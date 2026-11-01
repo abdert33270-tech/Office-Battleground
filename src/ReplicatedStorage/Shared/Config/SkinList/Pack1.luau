@@ -65,6 +65,11 @@ local function join(...)
 	return out
 end
 
+-- palette commune (déclarée avant faceKit qui utilise WHT)
+local WHT, BLK, DARK, GOLD = C(245, 245, 245), C(20, 20, 25), C(35, 35, 42), C(255, 200, 40)
+local RED, GREEN, CYAN, PINK = C(230, 35, 45), C(80, 255, 120), C(40, 230, 255), C(255, 80, 200)
+local SIL = C(205, 210, 220)
+
 -- Paint : éléments de SurfaceGui peints sur le corps
 local function E(kind, x, y, w, h, col, opt)
 	local e = { Type = kind, Pos = { x, y }, Size = { w, h }, Color = col }
@@ -178,9 +183,6 @@ local function S(def)
 	L[#L + 1] = def
 end
 
-local WHT, BLK, DARK, GOLD = C(245, 245, 245), C(20, 20, 25), C(35, 35, 42), C(255, 200, 40)
-local RED, GREEN, CYAN, PINK = C(230, 35, 45), C(80, 255, 120), C(40, 230, 255), C(255, 80, 200)
-local SIL = C(205, 210, 220)
 
 -- ===================== INTERN =====================
 do
@@ -264,6 +266,10 @@ do
 			P(RA, CY, V(0.14, 0.5, 0.5), SIL, ME, 0, -1.1, -0.45, 0, 90, 0),
 			P(RA, CY, V(0.03, 0.4, 0.4), WHT, SP, 0, -1.1, -0.53, 0, 90, 0),
 			P(RA, B, V(0.1, 0.12, 0.1), RED, NE, 0, -0.8, -0.45),
+			-- sac d'hydratation de coureur (dos) + tuyau par-dessus l'épaule droite (v4 : silhouette de dos)
+			P(T, B, V(1.15, 1.25, 0.42), K, SP, 0, 0.2, 0.7, o(SPH)),
+			P(T, B, V(0.08, 0.95, 0.06), G, NE, 0, 0.2, 0.92),
+			P(T, CY, V(1.1, 0.08, 0.08), G2, SP, 0.55, 1.04, 0.1, 0, 90, 0),
 			-- transformation : panneau GOLD SPLIT
 			P(H, B, V(1.8, 0.4, 0.05), GOLD, SP, 0, 2.6, 0, { Transform = true, Transparency = 1,
 				Text = { Text = "GOLD SPLIT!", Color = GOLD, Font = "Arcade", Face = "Both", Blink = 4 }, Anim = sync }),
@@ -325,6 +331,7 @@ do
 			P(H, CY, V(0.08, 2.7, 2.7), WHT, NE, 0, 0.3, 0.95, 0, 90, 0),
 			P(H, CY, V(0.1, 2.15, 2.15), C(40, 40, 50), SP, 0, 0.3, 0.9, 0, 90, 0),
 			P(H, CY, V(0.1, 2.15, 2.15), C(40, 40, 50), SP, 0, 0.3, 1.0, 0, 90, 0),
+			P(T, B, V(0.16, 0.55, 0.48), C(40, 40, 50), ME, 0, 0.72, 0.73),
 			-- drone caméra en orbite
 			{ Limb = H, Asset = "Intern_Legendary_Drone", Size = V(1.1, 0.6, 0.8), Offset = CFrame.new(2.0, 0.95, 0) * CFrame.Angles(0, rad(-90), 0), Anim = drone },
 			P(H, BA, V(0.14, 0.14, 0.14), RED, NE, 2.0, 1.28, 0, { Anim = o(drone, { Pulse = 0.8, PulseSpeed = 5 }) }),
@@ -964,6 +971,10 @@ do
 			-- ceinture
 			P(T, B, V(2.06, 0.3, 1.06), DSTEEL, ME, 0, -0.88, 0),
 			P(T, B, V(0.4, 0.2, 0.06), CY2, NE, 0, -0.88, -0.55),
+			-- matraque à impulsion (main droite, v4 : objet tenu)
+			P(RA, CY, V(1.5, 0.17, 0.17), DSTEEL, ME, 0, -1.05, -0.6, 0, 90, 0),
+			P(RA, CY, V(0.07, 0.38, 0.38), CHR, ME, 0, -1.05, -0.88, 0, 90, 0),
+			P(RA, CY, V(0.6, 0.2, 0.2), CY2, NE, 0, -1.05, -1.62, 0, 90, 0, { Anim = { Pulse = 0.4, PulseSpeed = 7, React = true } }),
 			-- transformation : laser de scan + ailerons
 			P(H, B, V(2.6, 0.04, 3.0), RED, NE, 0, 0.12, -2.2, { Transform = true, Transparency = 0.5, Anim = { Swing = 25, SwingAxis = "X", SwingSpeed = 2 } }),
 			P(T, WE, V(0.1, 1.4, 0.9), CY2, NE, -0.6, 0.9, 1.25, 0, 0, 0, { Transform = true }),

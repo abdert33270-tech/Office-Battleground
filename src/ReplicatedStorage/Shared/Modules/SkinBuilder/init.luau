@@ -82,6 +82,13 @@
 	def.KeepAccessories = true -- désactive ce défaut. Tout est restauré au undress.
 	Part.Transform = true : les textes (SurfaceGui), particules, lumières et traînées de la pièce sont aussi cachés hors
 	    transformation (toujours visibles dans les aperçus du menu).
+	=== SKINS v4 (moteur) ===
+	- Échelle : les pièces suivent la taille du perso (buste.Size.Y / 2) : tailles, offsets, assets ; l'animateur
+	  client recalcule l'offset des pièces animées avec l'échelle courante (perso agrandi par Model:ScaleTo).
+	- Shape "Ball" aux dimensions non uniformes (ou "Cylinder" avec Y ~= Z) => bloc + SpecialMesh Sphere / Cylinder :
+	  l'ellipsoïde voulu est respecté (Roblox forcerait sinon une sphère / une section ronde).
+	- Legendary : reflet (« shimmer ») qui balaie les pièces Metal / Foil (attribut ShimmerBase, tag SkinShimmer) ;
+	  def.Shimmer = false pour le couper. Les Highlight ne s'affichent pas en ViewportFrame (aperçus du menu).
 	Astuce : pas de Material "Glass" devant un visage peint (casque bulle...) : en jeu le verre masque les SurfaceGui
 	derrière lui ; utiliser SmoothPlastic + Transparency ~0.7. Exemple complet : module enfant DemoSkins.
 ]]
@@ -616,10 +623,11 @@ local function setAttachedVisible(p, on)
 end
 
 -- pièce animée : Weld (C0 modifié par l'animateur client) ou, en mode statique, CFrame recalculé chaque frame
-local function attachAnimated(p, limb, offset, static, parent, pd, ctx)
+local function attachAnimated(p, limb, offset, static, parent, pd, ctx, design)
 	local a = type(pd.Anim) == "table" and pd.Anim or {}
 	p.CFrame = limb.CFrame * offset
-	p:SetAttribute("AnimBase", offset)
+	-- AnimBase = offset « design » (perso R6 standard) ; l'animateur l'adapte à l'échelle courante du perso
+	p:SetAttribute("AnimBase", design or offset)
 	p:SetAttribute("AnimLimb", limb.Name)
 	-- Seed identique => pièces synchronisées (groupe rigide : drone, écran + cadre...)
 	p:SetAttribute("AnimSeed", tonumber(a.Seed) or math.random() * 10)
@@ -748,15 +756,18 @@ local function fitScale(size, want)
 end
 
 -- renvoie la part racine (le MeshPart lui-même, ou une part invisible portant le Model) + isModel
-local function makeAsset(pd)
+-- scale = échelle du perso (1 = R6 standard) : la boîte voulue (pd.Size) est agrandie d'autant
+local function makeAsset(pd, scale)
+	scale = scale or 1
 	local src = assetSource(pd.Asset)
 	if not src then
 		return nil
 	end
+	local want = typeof(pd.Size) == "Vector3" and pd.Size * scale or nil
 	if src:IsA("BasePart") then
 		local p = src:Clone()
 		stripJunk(p)
-		local k = fitScale(p.Size, pd.Size)
+		local k = want and fitScale(p.Size, want) or scale
 		p.Size = p.Size * k
 		local sm = p:FindFirstChildOfClass("SpecialMesh")
 		if sm and sm.MeshType == Enum.MeshType.FileMesh then
@@ -770,7 +781,7 @@ local function makeAsset(pd)
 		local mdl = src:Clone()
 		stripJunk(mdl)
 		local cf, size = mdl:GetBoundingBox()
-		local k = fitScale(size, pd.Size)
+		local k = want and fitScale(size, want) or scale
 		if math.abs(k - 1) > 1e-3 then
 			mdl:ScaleTo(mdl:GetScale() * k)
 			cf, size = mdl:GetBoundingBox()
@@ -828,27 +839,37 @@ local function buildPart(folder, model, pd, static, ctx)
 	if not limb or not limb:IsA("BasePart") then
 		return
 	end
+	local k = ctx and ctx.scale or 1
 	local p, isModel
 	if type(pd.Asset) == "string" then
-		p, isModel = makeAsset(pd)
+		p, isModel = makeAsset(pd, k)
 		if not p then
 			return
 		end
 	else
-		local className = (pd.Shape == "Wedge" and "WedgePart") or (pd.Shape == "CornerWedge" and "CornerWedgePart") or "Part"
-		p = basePart(className)
-		p.Name = "SkinPart"
-		if className == "Part" then
-			p.Shape = SHAPES[pd.Shape] or Enum.PartType.Block
-		end
-		p.Size = typeof(pd.Size) == "Vector3" and pd.Size or Vector3.one
-		p.Color = typeof(pd.Color) == "Color3" and pd.Color or Color3.new(1, 1, 1)
-		p.Material = MATERIALS[pd.Material] or Enum.Material.SmoothPlastic
-		p.Transparency = type(pd.Transparency) == "number" and pd.Transparency or 0
+		local shape = pd.Shape
+		local size = typeof(pd.Size) == "Vector3" and pd.Size or Vector3.one
 		local mesh = pd.Mesh
 		if type(mesh) == "string" then
 			mesh = { Type = mesh }
 		end
+		-- Ball / Cylinder aux dimensions non uniformes : Roblox les forcerait (sphère / section ronde) ;
+		-- on garde la forme voulue (ellipsoïde / cylindre elliptique) avec un bloc + SpecialMesh.
+		if mesh == nil and shape == "Ball" and (math.abs(size.X - size.Y) > 1e-3 or math.abs(size.Y - size.Z) > 1e-3) then
+			shape, mesh = "Block", { Type = "Sphere" }
+		elseif mesh == nil and shape == "Cylinder" and math.abs(size.Y - size.Z) > 1e-3 then
+			shape, mesh = "Block", { Type = "Cylinder" }
+		end
+		local className = (shape == "Wedge" and "WedgePart") or (shape == "CornerWedge" and "CornerWedgePart") or "Part"
+		p = basePart(className)
+		p.Name = "SkinPart"
+		if className == "Part" then
+			p.Shape = SHAPES[shape] or Enum.PartType.Block
+		end
+		p.Size = size * k
+		p.Color = typeof(pd.Color) == "Color3" and pd.Color or Color3.new(1, 1, 1)
+		p.Material = MATERIALS[pd.Material] or Enum.Material.SmoothPlastic
+		p.Transparency = type(pd.Transparency) == "number" and pd.Transparency or 0
 		if type(mesh) == "table" then
 			local sm = Instance.new("SpecialMesh")
 			sm.MeshType = MESH_TYPES[mesh.Type] or Enum.MeshType.Sphere
@@ -856,7 +877,7 @@ local function buildPart(folder, model, pd, static, ctx)
 				sm.Scale = mesh.Scale
 			end
 			if typeof(mesh.Offset) == "Vector3" then
-				sm.Offset = mesh.Offset
+				sm.Offset = mesh.Offset * k
 			end
 			sm.Parent = p
 		end
@@ -864,7 +885,9 @@ local function buildPart(folder, model, pd, static, ctx)
 	if pd.Reflect then
 		p.Reflectance = tonumber(pd.Reflect) or 0.3
 	end
-	local offset = typeof(pd.Offset) == "CFrame" and pd.Offset or CFrame.new()
+	local design = typeof(pd.Offset) == "CFrame" and pd.Offset or CFrame.new()
+	-- offset à l'échelle du perso (les animations repartent de l'offset « design », mis à l'échelle à chaque frame)
+	local offset = k == 1 and design or (CFrame.new(design.Position * k) * design.Rotation)
 	if type(pd.Text) == "string" or type(pd.Text) == "table" then
 		addText(p, pd.Text)
 	end
@@ -883,7 +906,7 @@ local function buildPart(folder, model, pd, static, ctx)
 		addParticles(p, pd.Particles, ctx)
 	end
 	if type(pd.Anim) == "table" or pd.Transform == true then
-		attachAnimated(p, limb, offset, static, folder, pd, ctx)
+		attachAnimated(p, limb, offset, static, folder, pd, ctx, design)
 	else
 		attach(p, limb, offset, static, folder)
 	end
@@ -1505,6 +1528,34 @@ local function hookReactive(model, folder, list)
 	apply()
 end
 
+-- échelle du perso par rapport au R6 standard (buste 2 studs de haut) : 1 en temps normal, 1.15 si le perso a été
+-- agrandi (Model:ScaleTo), etc. Les pièces (tailles, offsets, assets) suivent cette échelle.
+local function bodyScale(model)
+	local torso = model:FindFirstChild("Torso")
+	if not (torso and torso:IsA("BasePart")) then
+		return 1
+	end
+	local k = math.clamp(torso.Size.Y / 2, 0.25, 4)
+	return math.abs(k - 1) < 0.01 and 1 or k
+end
+
+-- Legendary : reflet qui balaie les pièces métal / dorure (animateur client, attribut ShimmerBase)
+local SHIMMER_MATS = { [Enum.Material.Metal] = true, [Enum.Material.Foil] = true, [Enum.Material.DiamondPlate] = true }
+local MAX_SHIMMER = 24
+local function markShimmer(folder)
+	local n = 0
+	for _, d in ipairs(folder:GetDescendants()) do
+		if d:IsA("BasePart") and SHIMMER_MATS[d.Material] and d.Transparency < 0.5 then
+			d:SetAttribute("ShimmerBase", d.Reflectance)
+			CollectionService:AddTag(d, "SkinShimmer")
+			n += 1
+			if n >= MAX_SHIMMER then
+				break
+			end
+		end
+	end
+end
+
 function SkinBuilder.dress(model: Model, skin, opts)
 	if not model then
 		return nil
@@ -1529,7 +1580,7 @@ function SkinBuilder.dress(model: Model, skin, opts)
 	folder:SetAttribute("SkinId", def.Id)
 	folder:SetAttribute("HideIdentity", def.HideIdentity == true)
 	folder.Parent = model
-	local ctx = { reactive = {} }
+	local ctx = { reactive = {}, scale = bodyScale(model) }
 	local n = 0
 	local cap = PART_CAPS[def.Rarity] or DEFAULT_CAP
 	for _, pd in ipairs(type(def.Parts) == "table" and def.Parts or {}) do
@@ -1562,6 +1613,9 @@ function SkinBuilder.dress(model: Model, skin, opts)
 	end
 	if def.HideFace then
 		setFaceHidden(model, true)
+	end
+	if def.Rarity == "Legendary" and def.Shimmer ~= false then
+		markShimmer(folder)
 	end
 	if not static then
 		hookReactive(model, folder, ctx.reactive)
@@ -1691,6 +1745,7 @@ end
 
 local function stepParts(dt, camPos)
 	local trCache = {}
+	local scaleCache = {}
 	for _, p in ipairs(CollectionService:GetTagged("SkinAnim")) do
 		local a = animCache[p]
 		if not a then
@@ -1745,6 +1800,15 @@ local function stepParts(dt, camPos)
 		if a.spin then
 			cf = cf * CFrame.fromAxisAngle(a.axis, ph * a.spin)
 		end
+		-- perso agrandi / réduit (Model:ScaleTo) : l'offset suit l'échelle du buste
+		local k = scaleCache[model]
+		if k == nil then
+			k = bodyScale(model)
+			scaleCache[model] = k
+		end
+		if k ~= 1 then
+			cf = CFrame.new(cf.Position * k) * cf.Rotation
+		end
 		if a.static then
 			local limb = model:FindFirstChild(a.limb)
 			if limb and limb:IsA("BasePart") then
@@ -1762,6 +1826,25 @@ local function stepParts(dt, camPos)
 			p.Transparency = math.clamp(a.tr + (0.5 + 0.5 * math.sin(ph * a.pulseSpeed)) * a.pulse, 0, 1)
 		elseif a.transform and not a.static and p.Transparency ~= a.tr then
 			p.Transparency = a.tr
+		end
+	end
+end
+
+-- reflet Legendary : un éclat qui monte le long du perso toutes les ~3,5 s
+local function stepShimmer(t, camPos)
+	for _, p in ipairs(CollectionService:GetTagged("SkinShimmer")) do
+		local base = p:GetAttribute("ShimmerBase")
+		if type(base) ~= "number" or not p:IsA("BasePart") then
+			continue
+		end
+		if (p.Position - camPos).Magnitude > CULL * 0.5 then
+			continue
+		end
+		local wave = math.sin(t * 1.8 - p.Position.Y * 0.9)
+		local glint = wave > 0.9 and (wave - 0.9) * 10 or 0
+		local r = math.clamp(base + glint * 0.3, 0, 1)
+		if math.abs(p.Reflectance - r) > 0.005 then
+			p.Reflectance = r
 		end
 	end
 end
@@ -1791,6 +1874,7 @@ if RunService:IsClient() and RunService:IsRunning() and not _G.__SkinAnimator th
 			stepOrbits(t)
 			stepParts(math.min(dt, 0.1), camPos)
 			stepTexts(t)
+			stepShimmer(t, camPos)
 		end)
 		if not ok and not _G.__SkinAnimWarned then
 			_G.__SkinAnimWarned = true

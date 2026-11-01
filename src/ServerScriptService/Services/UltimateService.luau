@@ -9,6 +9,7 @@
 	- Déroulé : 1) CUT-IN automatique (def.Startup s, 1.0 par défaut, ≤ 1.2) : lanceur invulnérable + figé + tourné vers la cible,
 	  panneau cut-in, caméra, assombrissement (UltimateController). 2) def.Server(U, caster, target, ctx) : l'attaque + la cinématique.
 	  3) Nettoyage automatique (ancrages, prises, caméra, bandes noires…) même si quelqu'un meurt / quitte, puis phase "End".
+	  Si la victime tenue meurt / part / est téléportée avant le finisher (ou le lanceur est téléporté), l'ulti s'arrête (0,5 s).
 	- Le lanceur reste invulnérable et ne peut ni attaquer ni utiliser d'attaque pendant toute l'ulti.
 	- Dégâts : 30–40 au total sur la cible, 8–12 de zone au finisher. TOUT passe par U.hit / U.finish / U.splash
 	  (CombatService.applyHit : cause "Combat", weapon = nom de l'ulti, category "Ultimate", imparable, sans parade).
@@ -21,17 +22,25 @@
 		Startup = 1.0,                                     -- durée du cut-in (facultatif, ≤ 1.2)
 		Server = function(U, caster, target, ctx) ... end, -- target = cible verrouillée encore valide après le cut-in, ou nil
 		Client = function(K, data) ... end,                -- K = UltKit (voir son en-tête), data = phase envoyée par U.fx
+		Beats = { Connect = "GOTCHA", Impact = "OVERLOADED" }, -- titres de temps forts affichés à ces phases (facultatif)
+		Tempo = 1.12,                                      -- allongement des U.wait après le cut-in (facultatif, 1 par défaut)
 	}
 	Le Server tourne dans son propre thread : il enchaîne U.fx (effets clients) et U.wait (temps), et S'ARRÊTE dès
 	qu'un U.wait renvoie false (ulti annulée : lanceur mort / parti / trop long). Durée max conseillée : 0,5 s d'attaque
-	+ 3,5 s de cinématique (au-delà de 8 s l'ulti est coupée de force).
+	+ 4 s de cinématique (au-delà de 10 s l'ulti est coupée de force).
 
 	═════════════════════════════  API SERVEUR  U  ═════════════════════════════
 	ctx = { caster, player, target, id, def, name, color, color2, seq, t0, range, angle, data = {} (libre) }
 
 	Temps / effets
 		U.fx(ctx, phase, payload?)        envoie la phase à TOUS les clients -> def.Client(K, data) (payload copié dans data)
+		                                  payload.beat = "TEXTE" affiche un titre de temps fort (sinon def.Beats[phase])
 		U.wait(ctx, seconds) -> bool      attend ; false = ulti annulée -> fais `if not U.wait(ctx, 0.2) then return end`
+		                                  v3 : le PREMIER U.wait après un coup ajoute un hit-stop (0,05 s ; 0,12 s au finisher) ;
+		                                  si def.Tempo est donné, les attentes après le cut-in sont multipliées par Tempo
+		                                  (uniquement pour les modules à attentes RELATIVES ; les modules à minutage absolu
+		                                  « T » partagé client/serveur ralentissent plutôt leur table T)
+		U.windup(ctx, seconds, payload?) -> bool   pose d'anticipation automatique du lanceur (client) puis U.wait
 		U.alive(ctx) -> bool
 
 	Lecture
@@ -96,7 +105,10 @@ UltimateService.api = U
 
 local FXR
 local READY_DELAY = 1.5
-local MAX_TIME = 8
+local MAX_TIME = 10
+local DEFAULT_TEMPO = 1
+local HITSTOP, HITSTOP_FIN = 0.05, 0.12
+local TELEPORT_DIST = 25
 local active = {} -- [caster] = ctx
 local tokens = setmetatable({}, { __mode = "k" })
 local hooked = setmetatable({}, { __mode = "k" })
@@ -261,7 +273,16 @@ function U.alive(ctx)
 end
 
 function U.wait(ctx, t)
-	local t1 = os.clock() + (t or 0)
+	t = t or 0
+	if ctx.paced then
+		-- rythme v3 : temps forts un peu plus lents + hit-stop après chaque coup
+		t *= ctx.tempo or 1
+		if (ctx.debt or 0) > 0 then
+			t += ctx.debt
+			ctx.debt = 0
+		end
+	end
+	local t1 = os.clock() + t
 	repeat
 		if ctx.done or ctx.aborted then
 			return false
@@ -288,6 +309,26 @@ function U.fx(ctx, phase, payload)
 	FXR:FireAllClients(d)
 end
 
+-- anticipation : le client joue une pose d'armement sur le lanceur, puis on attend
+function U.windup(ctx, t, payload)
+	t = t or 0.2
+	local d = {}
+	if type(payload) == "table" then
+		for k, v in pairs(payload) do
+			d[k] = v
+		end
+	end
+	d.t = t * (ctx.paced and ctx.tempo or 1)
+	U.fx(ctx, "_Windup", d)
+	return U.wait(ctx, t)
+end
+
+-- hit-stop : prévient les clients (gel des animations) et allonge la prochaine attente
+local function hitStop(ctx, v, fin)
+	ctx.debt = math.max(ctx.debt or 0, fin and HITSTOP_FIN or HITSTOP)
+	pcall(U.fx, ctx, "_Hit", { victim = v, fin = fin })
+end
+
 ------------------------------------------------------------------------
 -- Ancrages / prises
 ------------------------------------------------------------------------
@@ -306,7 +347,7 @@ local function pinOf(ctx, model, create)
 		if not r then
 			return nil
 		end
-		pin = { cf = r.CFrame }
+		pin = { cf = r.CFrame, set = r.CFrame }
 		ctx.pins[model] = pin
 		clearForces(r)
 		model:SetAttribute("UltAnchor", true)
@@ -327,7 +368,11 @@ function U.anchor(ctx, model, cf)
 	if cf then
 		pin.cf = cf
 		pin.glide = nil
-		U.root(model).CFrame = cf
+		pin.set = cf
+		local r = U.root(model)
+		if r then
+			r.CFrame = cf
+		end
 	end
 	return true
 end
@@ -395,6 +440,7 @@ function U.hold(ctx, v, cf)
 	end
 	if not ctx.held[v] then
 		ctx.held[v] = true
+		ctx.everHeld[v] = true
 		v:SetAttribute("UltHeld", ctx.seq)
 		CharacterState.setBlocking(v, false)
 		CharacterState.setRunning(v, false)
@@ -458,7 +504,11 @@ function U.hit(ctx, v, dmg, o)
 	if hum and hum.Health - dmg <= 0 then
 		U.release(ctx, v, true)
 	end
-	return baseHit(ctx, v, dmg, o)
+	local res = baseHit(ctx, v, dmg, o)
+	if res then
+		hitStop(ctx, v, false)
+	end
+	return res
 end
 
 function U.finish(ctx, v, dmg, o)
@@ -468,6 +518,7 @@ function U.finish(ctx, v, dmg, o)
 	end
 	local vr = U.root(v)
 	local center = (o.splash and o.splash.center) or (vr and vr.Position)
+	ctx.finished = true
 	U.release(ctx, v, true)
 	local res = nil
 	if CharacterState.isAlive(v) then
@@ -476,6 +527,9 @@ function U.finish(ctx, v, dmg, o)
 		p.power = p.power or 1.4
 		p.stun = p.stun or 1.3
 		res = baseHit(ctx, v, dmg, p)
+		if res then
+			hitStop(ctx, v, true)
+		end
 	end
 	if o.splash and center then
 		U.splash(ctx, center, o.splash.radius or 12, o.splash.damage or 10, { exclude = v })
@@ -581,16 +635,37 @@ local function step(ctx)
 	if os.clock() - ctx.clock0 > MAX_TIME then
 		ctx.aborted = true
 	end
+	local t = os.clock()
+	-- victime perdue (morte, partie) avant le finisher : on arrête l'ulti après un court délai
+	if not ctx.finished and not ctx.lostAt then
+		for v in pairs(ctx.everHeld) do
+			if not v.Parent or not CharacterState.isAlive(v) then
+				ctx.lostAt = t
+				break
+			end
+		end
+	end
+	if ctx.lostAt and not ctx.finished and t - ctx.lostAt > 0.5 then
+		ctx.aborted = true
+	end
 	if ctx.aborted then
 		task.spawn(cleanup, ctx)
 		return
 	end
-	local t = os.clock()
 	for model, pin in pairs(ctx.pins) do
 		local r = U.root(model)
 		local hum = model:FindFirstChildOfClass("Humanoid")
 		if not r or not model.Parent or not hum or hum.Health <= 0 then
 			U.release(ctx, model, true)
+		elseif pin.set and (r.Position - pin.set.Position).Magnitude > TELEPORT_DIST then
+			-- téléporté par autre chose (fin de manche, zone…) : on ne le ramène pas de force
+			U.release(ctx, model, false)
+			if model == c then
+				ctx.aborted = true
+			elseif not ctx.finished then
+				ctx.lostAt = ctx.lostAt or t
+				ctx.everHeld[model] = nil
+			end
 		else
 			if pin.glide then
 				local g = pin.glide
@@ -604,6 +679,7 @@ local function step(ctx)
 				r.Anchored = true
 			end
 			r.CFrame = pin.cf
+			pin.set = pin.cf
 		end
 	end
 	-- verrous (toutes les 0,2 s) : lanceur sans attaque, victimes étourdies sans combo breaker
@@ -662,7 +738,8 @@ local function run(player, c, def, hint)
 		color = def.Color or Color3.new(1, 1, 1), color2 = def.Color2 or Color3.new(1, 1, 1),
 		seq = seqCounter, t0 = now(), clock0 = os.clock(), lastLock = 0,
 		range = def.Range or 25, angle = def.Angle or 70,
-		pins = {}, held = {}, data = {},
+		pins = {}, held = {}, everHeld = {}, data = {},
+		tempo = math.clamp(tonumber(def.Tempo) or DEFAULT_TEMPO, 0.8, 1.4), debt = 0,
 	}
 	active[c] = ctx
 	c:SetAttribute("UltActive", true)
@@ -676,23 +753,38 @@ local function run(player, c, def, hint)
 	CharacterState.setRunning(c, false)
 	CharacterState.clearStun(c)
 
-	local target = pickTarget(c, ctx.range, ctx.angle, hint)
-	ctx.target = target
-	local cr = U.root(c)
-	local cf = cr.CFrame
-	if target then
-		cf = U.facing(cr.Position, U.root(target).Position)
-	end
-	U.anchor(ctx, c, cf)
-	ctx.conn = RunService.Heartbeat:Connect(function()
-		step(ctx)
+	local ok0, err0 = pcall(function()
+		local target = pickTarget(c, ctx.range, ctx.angle, hint)
+		ctx.target = target
+		local cr = U.root(c)
+		if not cr then
+			ctx.aborted = true
+			return
+		end
+		local cf = cr.CFrame
+		local tr = target and U.root(target)
+		if tr then
+			cf = U.facing(cr.Position, tr.Position)
+		end
+		U.anchor(ctx, c, cf)
+		ctx.conn = RunService.Heartbeat:Connect(function()
+			step(ctx)
+		end)
 	end)
+	if not ok0 then
+		warn("[UltimateService] start", ctx.id, err0)
+		ctx.aborted = true
+	end
 	local startup = math.clamp(def.Startup or 1.0, 0.4, 1.2)
-	U.fx(ctx, "Cutin", { dur = startup })
-	if U.wait(ctx, startup) then
+	if not ctx.aborted then
+		pcall(U.fx, ctx, "Cutin", { dur = startup })
+	end
+	if not ctx.aborted and U.wait(ctx, startup) then
+		ctx.paced = true
 		-- la cible doit encore être valable (vivante, non protégée, à portée)
 		local t = ctx.target
-		if t and not (U.valid(t, ctx) and (U.root(t).Position - U.root(c).Position).Magnitude <= ctx.range + 8) then
+		local cr2 = U.root(c)
+		if t and not (cr2 and U.valid(t, ctx) and (U.root(t).Position - cr2.Position).Magnitude <= ctx.range + 8) then
 			t = nil
 		end
 		ctx.target = t

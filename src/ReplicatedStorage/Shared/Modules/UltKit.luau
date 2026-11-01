@@ -55,6 +55,8 @@
 	                                        (automatique : lanceur au cut-in, victime dès qu'elle est tenue)
 	K.beatTitle(data, text, color)          titre de temps fort en bas de l'écran (automatique : def.Beats[phase] ou payload.beat)
 	K.windup(character, dur, color)         pose d'anticipation générique (automatique : U.windup côté serveur)
+	K.beats(data, { {t, "TEXT"}, ... })     titres de temps forts sur le minutage d'une phase
+	K.anticipate(data, t, character?, lead?, color?)  pose d'anticipation lead s avant le coup prévu à t
 	K.hitStop(chars, dur)                   = K.slowmo (automatique sur chaque U.hit / U.finish)
 	Anti-fouillis automatique : sparks/debris/shards réduits (et selon "Quality"), au plus 1 onomatopée K.word / 0,45 s,
 	2 ondes / sphères / anneaux / lumières par 0,12 s ; images d'impact ≤ 3 images, 1 série / 0,4 s, aucune si ReducedFlashes.
@@ -318,11 +320,22 @@ function K.tween(obj, t, props, style, dir)
 end
 
 local tracked = {} -- [seq] = { instances }
+local ended = {} -- [seq] = true une fois l'ulti nettoyée (les K.at en retard ne recréent rien de durable)
 function K.track(data, inst)
 	local seq = data.seq or 0
+	if ended[seq] then
+		if typeof(inst) == "Instance" then
+			Debris:AddItem(inst, 0.1)
+		end
+		return inst
+	end
 	tracked[seq] = tracked[seq] or {}
 	table.insert(tracked[seq], inst)
 	return inst
+end
+
+function K.ended(data)
+	return ended[data.seq or 0] == true
 end
 
 -- part soudée à un membre du personnage (accessoire d'ulti), détruite à "End"
@@ -1534,6 +1547,7 @@ function K.highlight(data, model, color, fill)
 	h.DepthMode = Enum.HighlightDepthMode.Occluded
 	h.Parent = model
 	K.tween(h, 0.2, { FillTransparency = fill or 0.82, OutlineTransparency = 0 })
+	Debris:AddItem(h, 14)
 	K.track(data, h)
 	return h
 end
@@ -1541,7 +1555,7 @@ end
 -- titre du temps fort (bas de l'écran, au-dessus des bandes noires)
 local beatGui
 function K.beatTitle(data, text, color)
-	if type(text) ~= "string" or text == "" then
+	if type(text) ~= "string" or text == "" or (data and ended[data.seq or 0]) then
 		return
 	end
 	local pg = playerGui()
@@ -1585,6 +1599,35 @@ function K.beatTitle(data, text, color)
 		if l.Parent then
 			K.tween(l, 0.3, { TextTransparency = 1 })
 			K.tween(st, 0.3, { Transparency = 1 })
+		end
+	end)
+end
+
+-- titres de temps forts sur un minutage : list = { { t, "TEXT", color? }, ... } (lanceur, victime, spectateurs proches)
+function K.beats(data, list)
+	if type(list) ~= "table" then
+		return
+	end
+	local r = K.root(data.caster)
+	if not (K.involved(data) or (r and K.near(r.Position, 80))) then
+		return
+	end
+	for _, b in ipairs(list) do
+		local t, text = b[1], b[2]
+		if type(t) == "number" and type(text) == "string" then
+			K.at(data, t, function()
+				K.beatTitle(data, text, b[3])
+			end)
+		end
+	end
+end
+
+-- anticipation avant un coup prévu à t (temps de la phase) : pose d'armement pendant lead secondes
+function K.anticipate(data, t, character, lead, color)
+	lead = lead or 0.2
+	K.at(data, math.max(0, t - lead), function()
+		if not ended[data.seq or 0] then
+			K.windup(character or data.caster, lead, color or data.color)
 		end
 	end)
 end
@@ -1637,6 +1680,11 @@ K.CFX = setmetatable({
 -- Nettoyage d'une ulti (appelé par UltimateController à "End")
 ------------------------------------------------------------------------
 function K._cleanup(data)
+	local seq = data.seq or 0
+	ended[seq] = true
+	task.delay(60, function()
+		ended[seq] = nil
+	end)
 	K.release(data)
 	if lbGui and lbGui.Parent then
 		K.letterbox(nil, false, 0.25)

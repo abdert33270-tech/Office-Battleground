@@ -91,7 +91,7 @@ local function ears(col, inner, sc, mat, opt, innerMat)
 	return out
 end
 -- queue en S (boules), cols = couleurs alternées, tip = bout
-local TAIL = { { -0.75, 0.62, 0.52 }, { -0.85, 0.98, 0.48 }, { -0.62, 1.32, 0.45 }, { -0.22, 1.52, 0.42 }, { 0.22, 1.56, 0.4 }, { 0.62, 1.42, 0.42 } }
+local TAIL = { { -0.75, 0.62, 0.56 }, { -0.85, 0.98, 0.54 }, { -0.62, 1.32, 0.52 }, { -0.22, 1.52, 0.5 }, { 0.22, 1.56, 0.48 }, { 0.62, 1.42, 0.48 } }
 local function tail(cols, tip, mat, n, opt, tipOpt)
 	n = n or #TAIL
 	local out = {}
@@ -181,8 +181,8 @@ S({ Id = "OfficeCat_Rare", Character = "OfficeCat", Rarity = "Rare", Name = "Tux
 			P(T, B, V(0.42, 0.34, 0.12), TUXRED, SP, 0.24, 0.84, -0.58, 0, 0, 12),
 			R(T, V(0.2, 0.2, 0.16), C(170, 25, 40), SP, 0, 0.84, -0.62),
 			-- queue-de-pie
-			P(T, B, V(0.85, 1.25, 0.1), C(12, 12, 16), FA, -0.45, -1.3, 0.55, 8, 0, -5),
-			P(T, B, V(0.85, 1.25, 0.1), C(12, 12, 16), FA, 0.45, -1.3, 0.55, 8, 0, 5),
+			P(T, B, V(0.85, 1.25, 0.1), C(12, 12, 16), FA, -0.45, -1.3, 0.55, -8, 0, -5),
+			P(T, B, V(0.85, 1.25, 0.1), C(12, 12, 16), FA, 0.45, -1.3, 0.55, -8, 0, 5),
 		},
 		sym(LA, RA, function(l)
 			return { R(l, V(1.16, 0.62, 1.16), WHT, SP, 0, -0.8, 0) }
@@ -230,8 +230,8 @@ S({ Id = "OfficeCat_Epic", Character = "OfficeCat", Rarity = "Epic", Name = "Cyb
 			R(H, V(0.16, 0.16, 0.16), NCYAN, NE, -0.62, -0.45, -0.5),
 			-- capuche du hoodie
 			R(T, V(1.7, 0.55, 0.7), DPUR, FA, 0, 1.02, 0.45),
-			P(T, B, V(0.08, 0.6, 0.08), NCYAN, NE, -0.3, 0.55, -0.55), -- cordons
-			P(T, B, V(0.08, 0.6, 0.08), NCYAN, NE, 0.3, 0.55, -0.55),
+			P(T, B, V(0.08, 0.6, 0.08), NCYAN, SP, -0.3, 0.55, -0.55), -- cordons
+			P(T, B, V(0.08, 0.6, 0.08), NCYAN, SP, 0.3, 0.55, -0.55),
 			-- poisson holographique (transformation) + pelote en orbite
 			R(T, V(0.9, 0.5, 0.3), NCYAN, NE, 1.6, 1.7, 0.4, { Transform = true, Anim = { Float = true, Seed = 62 } }),
 			P(T, WE, V(0.15, 0.5, 0.4), NCYAN, NE, 2.15, 1.7, 0.4, 0, 90, 0, { Transform = true, Anim = { Float = true, Seed = 62 } }),
@@ -250,7 +250,7 @@ S({ Id = "OfficeCat_Epic", Character = "OfficeCat", Rarity = "Epic", Name = "Cyb
 				P(l, B, V(1.1, 0.1, 1.34), NCYAN, NE, 0, -0.98, -0.12),
 			}
 		end),
-		tail({ NPINK, NCYAN }, WHT, NE, 6, nil, { Particles = { Kind = "Sparkle", Color = NPINK, Rate = 6, Speed = 1.5, Size = 0.3, Life = 0.8, Spread = 180, React = true } })
+		tail({ DGREY, NPINK }, NCYAN, SP, 6, nil, { Material = NE, Particles = { Kind = "Sparkle", Color = NPINK, Rate = 6, Speed = 1.5, Size = 0.3, Life = 0.8, Spread = 180, React = true } })
 	),
 	Paint = {
 		face(H, "Front", {
@@ -294,7 +294,12 @@ S({ Id = "OfficeCat_Legendary", Character = "OfficeCat", Rarity = "Legendary", N
 		{
 			A(H, "OfficeCat_Legendary_Head", V(2.3, 2.35, 1.95), 0, 0.42, -0.05),
 			P(T, CY, V(0.3, 1.45, 1.45), LRED, FA, 0, 1.0, 0, 0, 0, 90), -- collier
-			R(T, V(0.62, 0.62, 0.62), LGOLD, ME, 0, 0.7, -0.74, { Reflect = 0.35 }), -- grelot
+			R(T, V(0.62, 0.62, 0.62), LGOLD, ME, 0, 0.7, -0.74, { Reflect = 0.35, Light = LGOLD }), -- grelot
+			-- v4 : nœud de ruban derrière le grelot + porte-bonheur (omamori) dans la patte droite
+			R(T, V(0.5, 0.32, 0.14), LRED, FA, -0.32, 0.78, -0.6, 0, 0, 20),
+			R(T, V(0.5, 0.32, 0.14), LRED, FA, 0.32, 0.78, -0.6, 0, 0, -20),
+			P(RA, B, V(0.42, 0.6, 0.16), LRED, FA, 0, -1.35, -0.42, { Text = { Text = "福", Color = LGOLD, Font = "Black" } }),
+			P(RA, B, V(0.44, 0.08, 0.18), LGOLD, ME, 0, -1.06, -0.42),
 			P(T, B, V(0.4, 0.05, 0.14), LGOLDD, ME, 0, 0.6, -1.0),
 			R(T, V(1.45, 0.95, 0.14), LRED, FA, 0, 0.3, -0.56, { Text = { Text = "LUCK", Font = "Bangers", Color = LGOLD } }), -- bavoir
 			-- koban (pièce d'or ovale) dans la patte gauche
@@ -309,6 +314,9 @@ S({ Id = "OfficeCat_Legendary", Character = "OfficeCat", Rarity = "Legendary", N
 		{ coin(0, 0.3), coin(60, 0.9), coin(120, 0.3), coin(180, 0.9), coin(240, 0.3), coin(300, 0.9) },
 		sym(LA, RA, function(l)
 			return {
+				-- v4 : mantelet de fête (épaules rouges bordées d'or)
+				R(l, V(1.32, 0.5, 1.32), LRED, FA, 0, 0.9, 0),
+				P(l, B, V(1.34, 0.07, 1.34), LGOLD, ME, 0, 0.72, 0),
 				R(l, V(1.3, 0.9, 1.3), LWHT, SP, 0, -0.85, 0),
 				P(l, B, V(1.08, 0.14, 1.08), LGOLD, ME, 0, 0.15, 0),
 				P(l, B, V(1.08, 0.08, 1.08), LRED, FA, 0, 0.0, 0),
